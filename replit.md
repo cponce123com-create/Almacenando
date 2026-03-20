@@ -12,7 +12,8 @@ Legado is a digital legacy platform (MVP) where users can create and store messa
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
 - **Frontend**: React + Vite (wouter router, TanStack Query, Tailwind CSS, shadcn/ui, framer-motion)
-- **Database**: PostgreSQL + Drizzle ORM (Replit built-in DB)
+- **Database**: PostgreSQL + Drizzle ORM (Replit built-in DB or Neon — auto-detects via DATABASE_URL)
+- **File Storage**: Cloudinary (images, videos, audio, PDFs) — env vars: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
 - **Auth**: JWT (jsonwebtoken + bcryptjs) — stored in localStorage
 - **Validation**: Zod, drizzle-zod
 - **API codegen**: Orval (from OpenAPI spec)
@@ -69,6 +70,7 @@ All routes under `/api/`:
 - Access Portal: `/access/:token`
 - Dashboard: `/dashboard/stats`
 - Admin: `/admin/login`, `/admin/death-reports`, `/admin/death-reports/:id`, `/admin/death-reports/:id/approve`, `/admin/death-reports/:id/reject`
+- Upload: `POST /upload` (multipart/form-data, field "file", max 200 MB) → returns `{ url, publicId, resourceType, format, bytes }`
 
 ## Admin Setup
 

@@ -11,6 +11,7 @@ import deathReportsRouter from "./death-reports";
 import accessRouter from "./access";
 import dashboardRouter from "./dashboard";
 import adminRouter from "./admin";
+import uploadRouter from "./upload";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use("/death-reports", deathReportsRouter);
 router.use("/access", accessRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/admin", adminRouter);
+router.use("/upload", uploadRouter);
 
 export default router;
