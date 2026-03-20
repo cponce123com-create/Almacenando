@@ -12,6 +12,7 @@ export const profilesTable = pgTable("profiles", {
   city: text("city"),
   avatarUrl: text("avatar_url"),
   introMessage: text("intro_message"),
+  dni: text("dni"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
