@@ -75,6 +75,13 @@ export function useAuth() {
     return result;
   };
 
+  // Set session directly from pre-fetched token + user (no extra API call)
+  const setUserSession = (userToken: string, userData: UserResponse) => {
+    localStorage.setItem(TOKEN_KEY, userToken);
+    setToken(userToken);
+    queryClient.setQueryData(["/api/auth/me"], userData);
+  };
+
   const register = async (data: RegisterRequest) => {
     const res = await fetch("/api/auth/register", {
       method: "POST",
@@ -108,5 +115,6 @@ export function useAuth() {
     login,
     register,
     logout,
+    setUserSession,
   };
 }
