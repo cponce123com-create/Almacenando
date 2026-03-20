@@ -1,11 +1,20 @@
 import { useAdminReports } from "@/hooks/use-admin";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, ShieldAlert, ArrowRight } from "lucide-react";
+import { Loader2, ShieldAlert, ArrowRight, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
+
+const ADMIN_TOKEN_KEY = "legado_admin_token";
 
 export default function AdminDashboard() {
   const { data: reports, isLoading } = useAdminReports();
+  const [_, setLocation] = useLocation();
+
+  const handleLogout = () => {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setLocation("/admin/login");
+  };
 
   return (
     <div className="min-h-screen bg-zinc-100 p-8">
@@ -14,6 +23,15 @@ export default function AdminDashboard() {
           <h1 className="text-2xl font-bold text-zinc-900 flex items-center gap-2">
             <ShieldAlert className="text-rose-600" /> Panel de Administración
           </h1>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-zinc-500 hover:text-rose-600"
+            onClick={handleLogout}
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Cerrar sesión
+          </Button>
         </div>
 
         {isLoading ? (
@@ -59,7 +77,7 @@ export default function AdminDashboard() {
                     </tr>
                   ))}
                   {reports?.length === 0 && (
-                    <tr><td colSpan={5} className="p-8 text-center text-zinc-500">No hay reportes de fallecimiento.</td></tr>
+                    <tr><td colSpan={5} className="p-8 text-center text-zinc-500">No hay reportes de fallecimiento pendientes.</td></tr>
                   )}
                 </tbody>
               </table>

@@ -1,9 +1,9 @@
-import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, getAdminAuthToken } from "@/hooks/use-auth";
 
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
@@ -18,6 +18,7 @@ import FuneralPreferences from "@/pages/funeral/index";
 import ActivationSettings from "@/pages/activation/index";
 import AccessPortal from "@/pages/access/portal";
 
+import AdminLogin from "@/pages/admin/login";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminReportDetail from "@/pages/admin/report-detail";
 
@@ -69,6 +70,21 @@ function PublicOnlyRoute({ component: Component }: { component: React.ComponentT
   return <Component />;
 }
 
+function AdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const [_, setLocation] = useLocation();
+  const hasToken = !!getAdminAuthToken();
+
+  useEffect(() => {
+    if (!hasToken) {
+      setLocation("/admin/login");
+    }
+  }, [hasToken]);
+
+  if (!hasToken) return null;
+
+  return <Component />;
+}
+
 function Router() {
   return (
     <Switch>
@@ -87,8 +103,9 @@ function Router() {
       <Route path="/funeral"><ProtectedRoute component={FuneralPreferences} /></Route>
       <Route path="/activation"><ProtectedRoute component={ActivationSettings} /></Route>
 
-      <Route path="/admin" component={AdminDashboard} />
-      <Route path="/admin/death-reports/:id" component={AdminReportDetail} />
+      <Route path="/admin/login" component={AdminLogin} />
+      <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>
+      <Route path="/admin/death-reports/:id"><AdminRoute component={AdminReportDetail} /></Route>
 
       <Route component={NotFound} />
     </Switch>
