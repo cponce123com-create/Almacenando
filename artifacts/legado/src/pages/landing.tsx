@@ -63,9 +63,9 @@ export default function Landing() {
                   Crear mi legado
                 </Button>
               </Link>
-              <Link href="/login">
+              <Link href="#como-funciona">
                 <Button size="lg" variant="outline" className="rounded-xl px-8 py-6 text-lg bg-white/20 backdrop-blur-sm border border-white/40 text-white hover:bg-white/30">
-                  Ver ejemplo
+                  Ver cómo funciona
                 </Button>
               </Link>
             </div>

@@ -1,7 +1,8 @@
-import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 
 import NotFound from "@/pages/not-found";
@@ -17,47 +18,75 @@ import FuneralPreferences from "@/pages/funeral/index";
 import ActivationSettings from "@/pages/activation/index";
 import AccessPortal from "@/pages/access/portal";
 
-// Admin
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminReportDetail from "@/pages/admin/report-detail";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
-// Protected Route Wrapper
-function ProtectedRoute({ component: Component, ...rest }: any) {
+function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
   const [_, setLocation] = useLocation();
 
-  if (isLoading) return <div className="h-screen w-full bg-background"></div>;
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      setLocation("/login");
+    }
+  }, [isLoading, isAuthenticated]);
 
-  if (!isAuthenticated) {
-    setLocation("/login");
-    return null;
+  if (isLoading) {
+    return (
+      <div className="h-screen w-full bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
   }
 
-  return <Component {...rest} />;
+  if (!isAuthenticated) return null;
+
+  return <Component />;
+}
+
+function PublicOnlyRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [_, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      setLocation("/dashboard");
+    }
+  }, [isLoading, isAuthenticated]);
+
+  if (isLoading) return null;
+  if (isAuthenticated) return null;
+
+  return <Component />;
 }
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
-      <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
-      
-      {/* Recipient Portal (Public via token) */}
+      <Route path="/login"><PublicOnlyRoute component={Login} /></Route>
+      <Route path="/register"><PublicOnlyRoute component={Register} /></Route>
+
       <Route path="/access/:token" component={AccessPortal} />
 
-      {/* Protected User Routes */}
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
       <Route path="/legacy"><ProtectedRoute component={LegacyList} /></Route>
+      <Route path="/legacy/new"><ProtectedRoute component={LegacyForm} /></Route>
       <Route path="/legacy/:id"><ProtectedRoute component={LegacyForm} /></Route>
       <Route path="/recipients"><ProtectedRoute component={Recipients} /></Route>
       <Route path="/trusted-contacts"><ProtectedRoute component={TrustedContacts} /></Route>
       <Route path="/funeral"><ProtectedRoute component={FuneralPreferences} /></Route>
       <Route path="/activation"><ProtectedRoute component={ActivationSettings} /></Route>
 
-      {/* Admin Routes (Simplified for MVP, would normally have admin auth wrapper) */}
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/death-reports/:id" component={AdminReportDetail} />
 
