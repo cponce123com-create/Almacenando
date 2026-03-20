@@ -50,6 +50,9 @@ artifacts-monorepo/
 8. **Recipient Portal** — Token-based access at `/access/:token`
 9. **Admin Panel** — `/admin` (login via `/admin/login`), review and approve/reject death reports
 10. **Dashboard** — Shows completion percentage and progress steps
+11. **Mis Medios page** (`/media`) — Upload up to 5 photos, 1 video (with live camera recording up to 2 min), 3 documents; all encrypted AES-256-GCM client-side
+12. **Profile page** (`/profile`) — Full profile management including DNI number field
+13. **Public DNI search** — Landing page search box + `GET /api/public/legacy-check?dni=...` endpoint (returns `{ hasLegacy: boolean }` only, no personal data)
 
 ## Database Schema
 

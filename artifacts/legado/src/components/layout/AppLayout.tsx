@@ -10,6 +10,8 @@ import {
   LogOut,
   Menu,
   MoreHorizontal,
+  Images,
+  UserCircle,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -29,6 +31,8 @@ const primaryNav = [
 ];
 
 const secondaryNav = [
+  { name: "Mis Medios", href: "/media", icon: Images },
+  { name: "Mi Perfil", href: "/profile", icon: UserCircle },
   { name: "Preferencias Funerarias", href: "/funeral", icon: Flower2 },
   { name: "Activación", href: "/activation", icon: Settings },
 ];
@@ -204,7 +208,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             onClick={() => setMoreOpen(true)}
             className={cn(
               "flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors min-h-[44px]",
-              (location.startsWith("/funeral") || location.startsWith("/activation"))
+              (location.startsWith("/funeral") || location.startsWith("/activation") || location.startsWith("/media") || location.startsWith("/profile"))
                 ? "text-primary"
                 : "text-muted-foreground"
             )}

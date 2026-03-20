@@ -17,6 +17,8 @@ import TrustedContacts from "@/pages/trusted-contacts/index";
 import FuneralPreferences from "@/pages/funeral/index";
 import ActivationSettings from "@/pages/activation/index";
 import AccessPortal from "@/pages/access/portal";
+import MediaPage from "@/pages/media/index";
+import ProfilePage from "@/pages/profile/index";
 
 import AdminLogin from "@/pages/admin/login";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -102,6 +104,8 @@ function Router() {
       <Route path="/trusted-contacts"><ProtectedRoute component={TrustedContacts} /></Route>
       <Route path="/funeral"><ProtectedRoute component={FuneralPreferences} /></Route>
       <Route path="/activation"><ProtectedRoute component={ActivationSettings} /></Route>
+      <Route path="/media"><ProtectedRoute component={MediaPage} /></Route>
+      <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
 
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>

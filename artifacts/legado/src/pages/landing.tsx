@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
+import { Input } from "@/components/ui/input";
+import { motion, AnimatePresence } from "framer-motion";
 import { 
   Heart, 
   Lock, 
@@ -13,10 +15,36 @@ import {
   Users, 
   ShieldCheck, 
   Asterisk, 
-  ChevronRight 
+  ChevronRight,
+  Search,
+  CheckCircle2,
+  XCircle,
+  Loader2,
 } from "lucide-react";
 
 export default function Landing() {
+  const [dniQuery, setDniQuery] = useState("");
+  const [dniResult, setDniResult] = useState<"found" | "not_found" | null>(null);
+  const [dniLoading, setDniLoading] = useState(false);
+
+  async function handleDniSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const q = dniQuery.trim().toUpperCase();
+    if (!q || q.length < 3) return;
+    setDniLoading(true);
+    setDniResult(null);
+    try {
+      const res = await fetch(`/api/public/legacy-check?dni=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error();
+      const { hasLegacy } = await res.json();
+      setDniResult(hasLegacy ? "found" : "not_found");
+    } catch {
+      setDniResult("not_found");
+    } finally {
+      setDniLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-white flex flex-col font-sans overflow-x-hidden">
       {/* Navigation */}
@@ -73,8 +101,75 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* DNI Search Section */}
+      <section className="relative z-20 px-4 pt-10 pb-4 max-w-2xl mx-auto w-full">
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.4 }}
+          className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 p-6"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Search className="w-5 h-5 text-violet-500" />
+            <h2 className="font-semibold text-gray-900 text-base">¿Alguien dejó un legado?</h2>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">
+            Ingresa el número de DNI de la persona. Solo te diremos si existe o no — ningún dato personal será revelado.
+          </p>
+          <form onSubmit={handleDniSearch} className="flex gap-2">
+            <Input
+              value={dniQuery}
+              onChange={(e) => { setDniQuery(e.target.value.toUpperCase()); setDniResult(null); }}
+              placeholder="Ej. 12345678A"
+              className="flex-1 uppercase tracking-widest font-mono"
+              maxLength={20}
+            />
+            <Button
+              type="submit"
+              disabled={dniLoading || dniQuery.trim().length < 3}
+              className="bg-violet-600 hover:bg-violet-700 text-white shrink-0"
+            >
+              {dniLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            </Button>
+          </form>
+
+          <AnimatePresence>
+            {dniResult && (
+              <motion.div
+                initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                className="overflow-hidden"
+              >
+                {dniResult === "found" ? (
+                  <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-100 rounded-xl">
+                    <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-green-800 text-sm">Sí hay legado registrado</p>
+                      <p className="text-xs text-green-600 mt-0.5">
+                        Esta persona dejó mensajes y recuerdos para sus seres queridos. Serán entregados en el momento indicado.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-3 p-4 bg-gray-50 border border-gray-100 rounded-xl">
+                    <XCircle className="w-5 h-5 text-gray-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-gray-700 text-sm">No encontramos un legado para ese DNI</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Puede que la persona no haya registrado un legado o que el DNI sea distinto.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      </section>
+
       {/* Feature Cards Row (Overlapping hero) */}
-      <section className="relative z-20 px-4 -mt-16 md:-mt-24 max-w-7xl mx-auto w-full">
+      <section className="relative z-20 px-4 max-w-7xl mx-auto w-full">
         <div className="flex flex-row overflow-x-auto pb-4 gap-4 snap-x hide-scrollbar md:justify-center">
           {[
             { icon: Play, title: "Video final", desc: "Graba un mensaje", bg: "bg-indigo-100", color: "text-indigo-600" },

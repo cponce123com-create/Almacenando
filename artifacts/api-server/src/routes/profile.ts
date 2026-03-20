@@ -25,6 +25,7 @@ router.get("/", requireAuth, async (req, res) => {
     city: p.city,
     avatarUrl: p.avatarUrl,
     introMessage: p.introMessage,
+    dni: p.dni,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   });
@@ -32,7 +33,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 router.put("/", requireAuth, async (req, res) => {
   const userId = (req as typeof req & { userId: string }).userId;
-  const { fullName, displayName, birthDate, country, city, avatarUrl, introMessage } = req.body;
+  const { fullName, displayName, birthDate, country, city, avatarUrl, introMessage, dni } = req.body;
 
   const existing = await db.select().from(profilesTable).where(eq(profilesTable.userId, userId)).limit(1);
 
@@ -48,10 +49,11 @@ router.put("/", requireAuth, async (req, res) => {
       city,
       avatarUrl,
       introMessage,
+      dni: dni ? dni.trim().toUpperCase() : undefined,
     });
     const newProfile = await db.select().from(profilesTable).where(eq(profilesTable.id, id)).limit(1);
     const p = newProfile[0]!;
-    res.json({ id: p.id, userId: p.userId, fullName: p.fullName, displayName: p.displayName, birthDate: p.birthDate, country: p.country, city: p.city, avatarUrl: p.avatarUrl, introMessage: p.introMessage, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() });
+    res.json({ id: p.id, userId: p.userId, fullName: p.fullName, displayName: p.displayName, birthDate: p.birthDate, country: p.country, city: p.city, avatarUrl: p.avatarUrl, introMessage: p.introMessage, dni: p.dni, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() });
     return;
   }
 
@@ -63,12 +65,13 @@ router.put("/", requireAuth, async (req, res) => {
     city: city !== undefined ? city : existing[0]!.city,
     avatarUrl: avatarUrl !== undefined ? avatarUrl : existing[0]!.avatarUrl,
     introMessage: introMessage !== undefined ? introMessage : existing[0]!.introMessage,
+    dni: dni !== undefined ? (dni ? dni.trim().toUpperCase() : null) : existing[0]!.dni,
     updatedAt: new Date(),
   }).where(eq(profilesTable.userId, userId));
 
   const updated = await db.select().from(profilesTable).where(eq(profilesTable.userId, userId)).limit(1);
   const p = updated[0]!;
-  res.json({ id: p.id, userId: p.userId, fullName: p.fullName, displayName: p.displayName, birthDate: p.birthDate, country: p.country, city: p.city, avatarUrl: p.avatarUrl, introMessage: p.introMessage, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() });
+  res.json({ id: p.id, userId: p.userId, fullName: p.fullName, displayName: p.displayName, birthDate: p.birthDate, country: p.country, city: p.city, avatarUrl: p.avatarUrl, introMessage: p.introMessage, dni: p.dni, createdAt: p.createdAt.toISOString(), updatedAt: p.updatedAt.toISOString() });
 });
 
 export default router;

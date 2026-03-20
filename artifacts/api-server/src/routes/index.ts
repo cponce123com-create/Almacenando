@@ -12,9 +12,11 @@ import accessRouter from "./access";
 import dashboardRouter from "./dashboard";
 import adminRouter from "./admin";
 import uploadRouter from "./upload";
+import publicRouter from "./public";
 
 const router: IRouter = Router();
 
+router.use("/public", publicRouter);
 router.use(healthRouter);
 router.use("/auth", authRouter);
 router.use("/profile", profileRouter);
