@@ -24,6 +24,7 @@ type RoleChoice = {
   hasAdmin: boolean;
   userToken?: string;
   userInfo?: UserResponse;
+  userEncryptionKey?: string;
   adminToken?: string;
 };
 
@@ -74,13 +75,13 @@ export default function Login() {
 
     // Both roles available → show selection
     if (hasUser && hasAdmin) {
-      setRoleChoice({ hasUser, hasAdmin, userToken: userPayload?.token, userInfo: userPayload?.user, adminToken });
+      setRoleChoice({ hasUser, hasAdmin, userToken: userPayload?.token, userInfo: userPayload?.user, userEncryptionKey: userPayload?.encryptionKey, adminToken });
       return;
     }
 
     // Only user
     if (hasUser && userPayload) {
-      setUserSession(userPayload.token, userPayload.user);
+      setUserSession(userPayload.token, userPayload.user, userPayload.encryptionKey);
       setLocation("/dashboard");
       return;
     }
@@ -94,7 +95,7 @@ export default function Login() {
 
   function enterAsUser() {
     if (!roleChoice?.userToken || !roleChoice?.userInfo) return;
-    setUserSession(roleChoice.userToken, roleChoice.userInfo);
+    setUserSession(roleChoice.userToken, roleChoice.userInfo, roleChoice.userEncryptionKey);
     setLocation("/dashboard");
   }
 

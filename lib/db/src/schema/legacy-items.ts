@@ -13,6 +13,7 @@ export const legacyItemsTable = pgTable("legacy_items", {
   mediaUrl: text("media_url"),
   mediaPublicId: text("media_public_id"),
   mediaResourceType: text("media_resource_type"),
+  mediaEncryptionIv: text("media_encryption_iv"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
