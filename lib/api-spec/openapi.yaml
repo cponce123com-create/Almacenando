@@ -1,22 +1,42 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Legado - Digital Legacy Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: profile
+    description: User profile
+  - name: legacy
+    description: Legacy items
+  - name: media
+    description: Media uploads
+  - name: recipients
+    description: Recipients management
+  - name: trusted-contacts
+    description: Trusted contacts management
+  - name: funeral
+    description: Funeral preferences
+  - name: activation
+    description: Activation settings
+  - name: death-reports
+    description: Death reports
+  - name: access
+    description: Recipient access portal
+  - name: admin
+    description: Admin panel
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +44,671 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      summary: Get user profile
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "404":
+          description: Profile not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateProfile
+      tags: [profile]
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+
+  /legacy-items:
+    get:
+      operationId: getLegacyItems
+      tags: [legacy]
+      summary: Get all legacy items
+      responses:
+        "200":
+          description: List of legacy items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LegacyItem"
+    post:
+      operationId: createLegacyItem
+      tags: [legacy]
+      summary: Create a legacy item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLegacyItemRequest"
+      responses:
+        "201":
+          description: Created legacy item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyItem"
+
+  /legacy-items/{id}:
+    get:
+      operationId: getLegacyItem
+      tags: [legacy]
+      summary: Get a legacy item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Legacy item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateLegacyItem
+      tags: [legacy]
+      summary: Update a legacy item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLegacyItemRequest"
+      responses:
+        "200":
+          description: Updated legacy item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyItem"
+    delete:
+      operationId: deleteLegacyItem
+      tags: [legacy]
+      summary: Delete a legacy item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /legacy-items/{id}/recipients:
+    get:
+      operationId: getLegacyItemRecipients
+      tags: [legacy]
+      summary: Get recipients for a legacy item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of recipient IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+    put:
+      operationId: setLegacyItemRecipients
+      tags: [legacy]
+      summary: Set recipients for a legacy item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetRecipientsRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /recipients:
+    get:
+      operationId: getRecipients
+      tags: [recipients]
+      summary: Get all recipients
+      responses:
+        "200":
+          description: List of recipients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recipient"
+    post:
+      operationId: createRecipient
+      tags: [recipients]
+      summary: Create a recipient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecipientRequest"
+      responses:
+        "201":
+          description: Created recipient
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recipient"
+
+  /recipients/{id}:
+    put:
+      operationId: updateRecipient
+      tags: [recipients]
+      summary: Update a recipient
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecipientRequest"
+      responses:
+        "200":
+          description: Updated recipient
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recipient"
+    delete:
+      operationId: deleteRecipient
+      tags: [recipients]
+      summary: Delete a recipient
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /trusted-contacts:
+    get:
+      operationId: getTrustedContacts
+      tags: [trusted-contacts]
+      summary: Get all trusted contacts
+      responses:
+        "200":
+          description: List of trusted contacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrustedContact"
+    post:
+      operationId: createTrustedContact
+      tags: [trusted-contacts]
+      summary: Create a trusted contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTrustedContactRequest"
+      responses:
+        "201":
+          description: Created trusted contact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustedContact"
+
+  /trusted-contacts/{id}:
+    put:
+      operationId: updateTrustedContact
+      tags: [trusted-contacts]
+      summary: Update a trusted contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTrustedContactRequest"
+      responses:
+        "200":
+          description: Updated trusted contact
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustedContact"
+    delete:
+      operationId: deleteTrustedContact
+      tags: [trusted-contacts]
+      summary: Delete a trusted contact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /funeral-preferences:
+    get:
+      operationId: getFuneralPreferences
+      tags: [funeral]
+      summary: Get funeral preferences
+      responses:
+        "200":
+          description: Funeral preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuneralPreferences"
+    put:
+      operationId: updateFuneralPreferences
+      tags: [funeral]
+      summary: Update funeral preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFuneralPreferencesRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FuneralPreferences"
+
+  /activation-settings:
+    get:
+      operationId: getActivationSettings
+      tags: [activation]
+      summary: Get activation settings
+      responses:
+        "200":
+          description: Activation settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivationSettings"
+    put:
+      operationId: updateActivationSettings
+      tags: [activation]
+      summary: Update activation settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateActivationSettingsRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivationSettings"
+
+  /death-reports:
+    post:
+      operationId: createDeathReport
+      tags: [death-reports]
+      summary: Report a death (by trusted contact token)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeathReportRequest"
+      responses:
+        "201":
+          description: Death report created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeathReport"
+
+  /death-reports/{id}/confirm:
+    post:
+      operationId: confirmDeathReport
+      tags: [death-reports]
+      summary: Confirm or reject a death report
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmDeathReportRequest"
+      responses:
+        "200":
+          description: Confirmation recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /access/{token}:
+    get:
+      operationId: getRecipientAccess
+      tags: [access]
+      summary: Get recipient legacy content by token
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Legacy content for recipient
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipientAccessResponse"
+        "401":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Token not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [profile]
+      summary: Get dashboard stats and completeness
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /admin/death-reports:
+    get:
+      operationId: adminGetDeathReports
+      tags: [admin]
+      summary: Get all death reports (admin)
+      responses:
+        "200":
+          description: List of death reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminDeathReport"
+
+  /admin/death-reports/{id}:
+    get:
+      operationId: adminGetDeathReport
+      tags: [admin]
+      summary: Get death report detail (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Death report detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDeathReportDetail"
+
+  /admin/death-reports/{id}/approve:
+    post:
+      operationId: adminApproveRelease
+      tags: [admin]
+      summary: Approve release (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/death-reports/{id}/reject:
+    post:
+      operationId: adminRejectRelease
+      tags: [admin]
+      summary: Reject release (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectReleaseRequest"
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/login:
+    post:
+      operationId: adminLogin
+      tags: [admin]
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Admin logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +719,671 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required:
+        - message
+
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        fullName:
+          type: string
+      required:
+        - email
+        - password
+        - fullName
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required:
+        - email
+        - password
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/UserResponse"
+        token:
+          type: string
+      required:
+        - user
+        - token
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - email
+        - status
+        - createdAt
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        fullName:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        birthDate:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        introMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - fullName
+        - createdAt
+        - updatedAt
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        birthDate:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        city:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        introMessage:
+          type: string
+          nullable: true
+
+    LegacyItem:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        type:
+          type: string
+          enum: [video, letter, audio, photo, document, funeral_note]
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        contentText:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, active, archived]
+        mediaUrl:
+          type: string
+          nullable: true
+        mediaPublicId:
+          type: string
+          nullable: true
+        mediaResourceType:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - type
+        - title
+        - status
+        - createdAt
+        - updatedAt
+
+    CreateLegacyItemRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [video, letter, audio, photo, document, funeral_note]
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        contentText:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, active, archived]
+        mediaUrl:
+          type: string
+          nullable: true
+        mediaPublicId:
+          type: string
+          nullable: true
+        mediaResourceType:
+          type: string
+          nullable: true
+      required:
+        - type
+        - title
+
+    UpdateLegacyItemRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        contentText:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [draft, active, archived]
+        mediaUrl:
+          type: string
+          nullable: true
+        mediaPublicId:
+          type: string
+          nullable: true
+        mediaResourceType:
+          type: string
+          nullable: true
+
+    SetRecipientsRequest:
+      type: object
+      properties:
+        recipientIds:
+          type: array
+          items:
+            type: string
+      required:
+        - recipientIds
+
+    Recipient:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        fullName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        relationship:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - fullName
+        - email
+        - relationship
+        - createdAt
+        - updatedAt
+
+    CreateRecipientRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          nullable: true
+        relationship:
+          type: string
+      required:
+        - fullName
+        - email
+        - relationship
+
+    TrustedContact:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        fullName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+          nullable: true
+        relationship:
+          type: string
+        inviteStatus:
+          type: string
+          enum: [pending, sent, accepted, declined]
+        isConfirmed:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - fullName
+        - email
+        - relationship
+        - inviteStatus
+        - isConfirmed
+        - createdAt
+        - updatedAt
+
+    CreateTrustedContactRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          nullable: true
+        relationship:
+          type: string
+      required:
+        - fullName
+        - email
+        - relationship
+
+    FuneralPreferences:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        burialType:
+          type: string
+          nullable: true
+        ceremonyType:
+          type: string
+          nullable: true
+        musicNotes:
+          type: string
+          nullable: true
+        dressCode:
+          type: string
+          nullable: true
+        guestNotes:
+          type: string
+          nullable: true
+        locationNotes:
+          type: string
+          nullable: true
+        additionalNotes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - createdAt
+        - updatedAt
+
+    UpdateFuneralPreferencesRequest:
+      type: object
+      properties:
+        burialType:
+          type: string
+          nullable: true
+        ceremonyType:
+          type: string
+          nullable: true
+        musicNotes:
+          type: string
+          nullable: true
+        dressCode:
+          type: string
+          nullable: true
+        guestNotes:
+          type: string
+          nullable: true
+        locationNotes:
+          type: string
+          nullable: true
+        additionalNotes:
+          type: string
+          nullable: true
+
+    ActivationSettings:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        minConfirmations:
+          type: integer
+        adminReviewRequired:
+          type: boolean
+        status:
+          type: string
+          enum: [inactive, active, triggered, released]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - minConfirmations
+        - adminReviewRequired
+        - status
+        - createdAt
+        - updatedAt
+
+    UpdateActivationSettingsRequest:
+      type: object
+      properties:
+        minConfirmations:
+          type: integer
+        adminReviewRequired:
+          type: boolean
+
+    CreateDeathReportRequest:
+      type: object
+      properties:
+        trustedContactId:
+          type: string
+        notes:
+          type: string
+          nullable: true
+      required:
+        - trustedContactId
+
+    DeathReport:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        reportedByContactId:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, confirmed, rejected, released, admin_review]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - reportedByContactId
+        - status
+        - createdAt
+        - updatedAt
+
+    ConfirmDeathReportRequest:
+      type: object
+      properties:
+        trustedContactId:
+          type: string
+        decision:
+          type: string
+          enum: [confirmed, rejected]
+        comments:
+          type: string
+          nullable: true
+      required:
+        - trustedContactId
+        - decision
+
+    RecipientAccessResponse:
+      type: object
+      properties:
+        recipient:
+          $ref: "#/components/schemas/Recipient"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LegacyItem"
+        deceasedName:
+          type: string
+        deceasedIntroMessage:
+          type: string
+          nullable: true
+      required:
+        - recipient
+        - items
+        - deceasedName
+
+    DashboardStats:
+      type: object
+      properties:
+        legacyItemsCount:
+          type: integer
+        activeItemsCount:
+          type: integer
+        draftItemsCount:
+          type: integer
+        recipientsCount:
+          type: integer
+        trustedContactsCount:
+          type: integer
+        hasFuneralPreferences:
+          type: boolean
+        hasActivationSettings:
+          type: boolean
+        completionPercentage:
+          type: integer
+        completionSteps:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompletionStep"
+      required:
+        - legacyItemsCount
+        - activeItemsCount
+        - draftItemsCount
+        - recipientsCount
+        - trustedContactsCount
+        - hasFuneralPreferences
+        - hasActivationSettings
+        - completionPercentage
+        - completionSteps
+
+    CompletionStep:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        completed:
+          type: boolean
+      required:
+        - key
+        - label
+        - completed
+
+    AdminDeathReport:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userEmail:
+          type: string
+        userName:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, confirmed, rejected, released, admin_review]
+        confirmationsCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - userEmail
+        - status
+        - confirmationsCount
+        - createdAt
+
+    AdminDeathReportDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userEmail:
+          type: string
+        userName:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, confirmed, rejected, released, admin_review]
+        confirmations:
+          type: array
+          items:
+            $ref: "#/components/schemas/DeathConfirmation"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - userEmail
+        - status
+        - confirmations
+        - createdAt
+        - updatedAt
+
+    DeathConfirmation:
+      type: object
+      properties:
+        id:
+          type: string
+        trustedContactName:
+          type: string
+        decision:
+          type: string
+          enum: [confirmed, rejected]
+        comments:
+          type: string
+          nullable: true
+        confirmedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - trustedContactName
+        - decision
+        - confirmedAt
+
+    RejectReleaseRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true

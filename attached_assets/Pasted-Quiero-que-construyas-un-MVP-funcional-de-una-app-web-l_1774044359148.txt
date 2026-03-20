@@ -1,0 +1,716 @@
+Quiero que construyas un MVP funcional de una app web llamada temporalmente “Legado”, enfocada en legado digital póstumo.
+
+La app debe permitir que una persona deje contenido para sus familiares o destinatarios, y que ese contenido solo se entregue cuando se confirme su fallecimiento mediante un flujo de verificación.
+
+Quiero una versión moderna, limpia, emocional pero profesional. No debe sentirse lúgubre ni fúnebre; debe sentirse cálida, segura, elegante y confiable.
+
+========================
+1. OBJETIVO DEL MVP
+========================
+
+El MVP debe permitir:
+
+1. Registro e inicio de sesión de usuarios.
+2. Perfil básico del usuario.
+3. Crear y gestionar contenido de legado:
+   - video
+   - carta
+   - audio
+   - foto
+   - documento
+   - nota/instrucciones de sepelio
+4. Crear y gestionar destinatarios.
+5. Crear y gestionar contactos de confianza.
+6. Configurar reglas básicas de activación.
+7. Flujo de reporte y confirmación de fallecimiento.
+8. Panel admin mínimo para aprobar liberación.
+9. Portal privado para que los destinatarios vean solo el contenido asignado.
+10. Subida de archivos con Cloudinary.
+11. Base de datos en Neon.
+12. Despliegue pensado para Render.
+
+========================
+2. STACK TÉCNICO
+========================
+
+Quiero que uses este stack:
+
+- Next.js 14+ con App Router
+- TypeScript
+- Tailwind CSS
+- Prisma ORM
+- PostgreSQL compatible con Neon
+- Cloudinary para archivos
+- Auth.js o autenticación propia simple con email/password y sesiones seguras
+- Zod para validaciones
+- React Hook Form donde ayude
+- Render como target de deploy
+
+Si necesitas elegir entre simplicidad y complejidad, prioriza simplicidad, claridad y mantenibilidad.
+
+========================
+3. REQUISITOS DE DISEÑO
+========================
+
+Diseño:
+- moderno
+- limpio
+- elegante
+- responsive
+- con buena jerarquía visual
+- bordes redondeados
+- sombras suaves
+- tipografía moderna
+- colores suaves: blanco, gris claro, azul suave, violeta suave
+- botones y cards premium pero simples
+
+Evitar:
+- diseño oscuro depresivo
+- estética tétrica
+- interfaces recargadas
+
+La Home debe transmitir:
+- seguridad
+- privacidad
+- amor
+- organización
+- legado
+
+========================
+4. ESTRUCTURA DE PÁGINAS
+========================
+
+Páginas públicas:
+- /
+- /login
+- /register
+- /forgot-password
+- /terms
+- /privacy
+
+Páginas privadas del usuario:
+- /dashboard
+- /profile
+- /legacy
+- /legacy/new
+- /legacy/[id]
+- /recipients
+- /trusted-contacts
+- /funeral
+- /activation
+- /preview
+- /settings
+
+Portal de destinatarios:
+- /access/[token]
+
+Panel admin:
+- /admin
+- /admin/death-reports
+- /admin/death-reports/[id]
+- /admin/users/[id]
+
+========================
+5. MÓDULOS DEL MVP
+========================
+
+A. AUTENTICACIÓN
+- registro
+- login
+- logout
+- protección de rutas
+- sesión persistente
+
+B. PERFIL
+Campos:
+- fullName
+- displayName
+- birthDate
+- country
+- city
+- avatarUrl
+- introMessage
+
+C. LEGACY ITEMS
+El usuario puede crear items de estos tipos:
+- video
+- letter
+- audio
+- photo
+- document
+- funeral_note
+
+Cada item debe tener:
+- id
+- type
+- title
+- description
+- contentText (para cartas/notas)
+- status
+- createdAt
+- updatedAt
+
+Si es multimedia, debe poder asociarse a un asset de Cloudinary.
+
+D. DESTINATARIOS
+Cada usuario puede crear destinatarios con:
+- fullName
+- email
+- phone
+- relationship
+
+Ejemplos de relationship:
+- esposa
+- esposo
+- hijo
+- hija
+- madre
+- padre
+- hermano
+- hermana
+- amigo
+- otro
+
+E. CONTACTOS DE CONFIANZA
+Cada usuario puede crear contactos de confianza con:
+- fullName
+- email
+- phone
+- relationship
+- inviteStatus
+- isConfirmed
+
+F. PREFERENCIAS DE SEPELIO
+Campos:
+- burialType
+- ceremonyType
+- musicNotes
+- dressCode
+- guestNotes
+- locationNotes
+- additionalNotes
+
+G. ACTIVACIÓN
+Config básica del usuario:
+- minConfirmations
+- adminReviewRequired
+- status
+
+H. REPORTE DE FALLECIMIENTO
+Flujo:
+1. Un contacto de confianza reporta fallecimiento
+2. Se crea un death report
+3. Otros contactos pueden confirmar o rechazar
+4. Si hay mínimo 2 confirmaciones, pasa a revisión admin
+5. Admin aprueba o rechaza liberación
+6. Si aprueba, se crean accesos para los destinatarios
+
+I. PORTAL DESTINATARIO
+- acceso por token seguro
+- visualización únicamente de items asignados
+- si no tiene acceso, mostrar error elegante
+- si el token expiró, mostrar mensaje claro
+
+J. PANEL ADMIN
+Debe permitir:
+- ver reportes de fallecimiento
+- ver detalle del reporte
+- ver confirmaciones
+- aprobar liberación
+- rechazar liberación
+- ver datos básicos del usuario
+
+========================
+6. MODELO DE DATOS
+========================
+
+Quiero Prisma schema completo con modelos equivalentes a estas tablas:
+
+User
+- id
+- email
+- passwordHash
+- emailVerifiedAt
+- status
+- createdAt
+- updatedAt
+
+Profile
+- id
+- userId
+- fullName
+- displayName
+- birthDate
+- country
+- city
+- avatarUrl
+- introMessage
+- createdAt
+- updatedAt
+
+Recipient
+- id
+- userId
+- fullName
+- email
+- phone
+- relationship
+- createdAt
+- updatedAt
+
+TrustedContact
+- id
+- userId
+- fullName
+- email
+- phone
+- relationship
+- inviteStatus
+- isConfirmed
+- createdAt
+- updatedAt
+
+LegacyItem
+- id
+- userId
+- type
+- title
+- description
+- contentText
+- status
+- visibility
+- createdAt
+- updatedAt
+
+MediaAsset
+- id
+- legacyItemId
+- cloudinaryPublicId
+- secureUrl
+- resourceType
+- format
+- bytes
+- duration
+- width
+- height
+- createdAt
+
+LegacyItemRecipient
+- id
+- legacyItemId
+- recipientId
+- createdAt
+
+FuneralPreference
+- id
+- userId
+- burialType
+- ceremonyType
+- musicNotes
+- dressCode
+- guestNotes
+- locationNotes
+- additionalNotes
+- createdAt
+- updatedAt
+
+ActivationSetting
+- id
+- userId
+- minConfirmations
+- adminReviewRequired
+- status
+- createdAt
+- updatedAt
+
+DeathReport
+- id
+- userId
+- reportedByContactId
+- notes
+- status
+- createdAt
+- updatedAt
+
+DeathConfirmation
+- id
+- deathReportId
+- trustedContactId
+- decision
+- comments
+- confirmedAt
+
+ReleaseEvent
+- id
+- userId
+- deathReportId
+- releasedAt
+- releasedByAdminId
+- status
+- createdAt
+
+RecipientAccessToken
+- id
+- recipientId
+- releaseEventId
+- token
+- expiresAt
+- usedAt
+- createdAt
+
+AuditLog
+- id
+- userId
+- action
+- entityType
+- entityId
+- metadataJson
+- createdAt
+
+Admin
+- id
+- name
+- email
+- passwordHash
+- role
+- createdAt
+
+También crea enums razonables para:
+- LegacyItemType
+- LegacyItemStatus
+- InviteStatus
+- DeathReportStatus
+- ConfirmationDecision
+- ReleaseStatus
+
+========================
+7. REGLAS DE NEGOCIO
+========================
+
+Implementa estas reglas:
+
+1. Un item de legado no puede liberarse si no tiene al menos un destinatario asignado.
+2. El usuario no puede dejar su legado como “activo” si no tiene:
+   - al menos 1 destinatario
+   - al menos 2 contactos de confianza
+3. Un death report necesita mínimo 2 confirmaciones para pasar a revisión.
+4. En el MVP, toda liberación final requiere aprobación admin.
+5. Cada destinatario solo ve los items asignados a él.
+6. Los tokens de acceso deben expirar.
+7. Toda acción importante debe dejar audit log.
+8. El usuario debe poder guardar items en borrador.
+9. El dashboard debe mostrar progreso/completitud del legado.
+
+========================
+8. ENDPOINTS / API
+========================
+
+Quiero route handlers o API routes para:
+
+Auth:
+- POST /api/auth/register
+- POST /api/auth/login
+- POST /api/auth/logout
+
+Profile:
+- GET /api/profile
+- PUT /api/profile
+
+Legacy:
+- GET /api/legacy-items
+- POST /api/legacy-items
+- GET /api/legacy-items/:id
+- PUT /api/legacy-items/:id
+- DELETE /api/legacy-items/:id
+
+Media:
+- POST /api/media/sign-upload
+- POST /api/media/confirm-upload
+
+Recipients:
+- GET /api/recipients
+- POST /api/recipients
+- PUT /api/recipients/:id
+- DELETE /api/recipients/:id
+
+Trusted contacts:
+- GET /api/trusted-contacts
+- POST /api/trusted-contacts
+- PUT /api/trusted-contacts/:id
+- DELETE /api/trusted-contacts/:id
+- POST /api/trusted-contacts/:id/send-invite
+
+Funeral:
+- GET /api/funeral-preferences
+- PUT /api/funeral-preferences
+
+Activation:
+- GET /api/activation-settings
+- PUT /api/activation-settings
+- POST /api/death-reports
+- POST /api/death-reports/:id/confirm
+
+Preview:
+- GET /api/preview/:recipientId
+
+Recipient access:
+- GET /api/recipient-access/:token
+- POST /api/recipient-access/:token/validate
+
+Admin:
+- GET /api/admin/death-reports
+- GET /api/admin/death-reports/:id
+- POST /api/admin/death-reports/:id/approve-release
+- POST /api/admin/death-reports/:id/reject-release
+
+========================
+9. HOME PAGE
+========================
+
+Construye una Home premium con estas secciones:
+
+1. Header
+- logo
+- Inicio
+- Mi legado
+- Cómo funciona
+- Ingresar
+- botón principal “Crear mi legado”
+
+2. Hero
+Título:
+“Tu historia no termina contigo”
+
+Subtítulo:
+“Deja mensajes, recuerdos y decisiones para las personas que más quieres.”
+
+Botones:
+- Crear mi legado
+- Ver ejemplo
+
+3. Feature cards
+- Video final
+- Cartas personales
+- Recuerdos
+- Playlist / audios
+- Información importante
+- Mi despedida
+
+4. Cómo funciona
+- Creas tu legado
+- Defines a quién va
+- Se entrega cuando se confirma
+
+5. Sección emocional
+Mostrar una vista ejemplo de cómo una familia recibiría el legado
+
+6. CTA final
+“Empieza hoy a construir tu legado”
+
+7. Footer
+- Cómo funciona
+- Seguridad
+- Privacidad
+- Contacto
+
+========================
+10. DASHBOARD
+========================
+
+El dashboard del usuario debe tener cards con:
+- cantidad de items creados
+- cantidad de destinatarios
+- cantidad de contactos de confianza
+- estado del legado
+- porcentaje de completitud
+
+También debe tener alertas como:
+- te falta asignar destinatarios
+- te faltan contactos de confianza
+- tu legado está listo para activarse
+
+========================
+11. FORMULARIOS CLAVE
+========================
+
+A. Crear legacy item:
+- tipo
+- título
+- descripción
+- contenido texto
+- archivo si aplica
+- destinatarios
+- guardar borrador
+- publicar
+
+B. Crear destinatario
+- nombre
+- email
+- teléfono
+- relación
+
+C. Crear contacto de confianza
+- nombre
+- email
+- teléfono
+- relación
+
+D. Mi despedida
+- tipo de sepelio
+- ceremonia
+- música
+- vestimenta
+- invitados
+- notas
+
+========================
+12. CLOUDINARY
+========================
+
+Implementa integración con Cloudinary para:
+- subir videos
+- subir audios
+- subir fotos
+- subir documentos
+
+Quiero una estrategia segura:
+- el frontend pide firma o autorización
+- el archivo se sube a Cloudinary
+- luego se guarda metadata en la base de datos
+
+Guardar:
+- public_id
+- secure_url
+- resource_type
+- format
+- bytes
+- duration si aplica
+- width y height si aplica
+
+========================
+13. SEGURIDAD
+========================
+
+Quiero buenas prácticas razonables:
+- validación de inputs con Zod
+- protección de rutas privadas
+- tokens seguros para acceso de destinatarios
+- expiración de tokens
+- sanitizar inputs donde aplique
+- no exponer secretos en frontend
+- middlewares o guards para proteger admin
+
+========================
+14. UX / PRODUCTO
+========================
+
+Importante:
+- no quiero algo genérico
+- quiero UX clara, humana y premium
+- empty states bien hechos
+- loading states
+- toasts o feedback visual
+- mensajes de error claros
+- confirmaciones elegantes
+- responsive desde el inicio
+
+========================
+15. ESTRUCTURA DE CÓDIGO
+========================
+
+Quiero una estructura limpia del proyecto, por ejemplo:
+
+/app
+/components
+/lib
+/server
+/prisma
+/types
+
+Separar:
+- UI
+- lógica
+- acceso a datos
+- validaciones
+- helpers
+
+========================
+16. LO QUE QUIERO COMO RESULTADO
+========================
+
+Quiero que generes:
+
+1. La estructura completa del proyecto
+2. El código base funcional
+3. Prisma schema
+4. Migraciones iniciales o instrucciones para migrar
+5. Seed opcional con datos demo
+6. Componentes UI principales
+7. Páginas principales
+8. APIs principales
+9. Integración con Cloudinary
+10. README claro con:
+   - variables de entorno
+   - cómo correr localmente
+   - cómo conectar Neon
+   - cómo conectar Cloudinary
+   - cómo desplegar en Render
+
+========================
+17. VARIABLES DE ENTORNO
+========================
+
+Considera algo así:
+
+DATABASE_URL=
+DIRECT_URL=
+NEXTAUTH_SECRET=
+NEXTAUTH_URL=
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+Si usas otro sistema de auth, agrega las variables necesarias.
+
+========================
+18. IMPORTANTE
+========================
+
+- No sobreingenierizar
+- No meter features fuera del MVP
+- No inventar integraciones innecesarias
+- Priorizar que compile y funcione
+- Usar componentes reutilizables
+- Entregar código listo para continuar iterando
+
+========================
+19. ORDEN DE TRABAJO
+========================
+
+Quiero que avances en este orden:
+
+1. Crear estructura base del proyecto
+2. Definir Prisma schema
+3. Implementar auth
+4. Implementar dashboard
+5. Implementar CRUD de recipients y trusted contacts
+6. Implementar CRUD de legacy items
+7. Implementar uploads con Cloudinary
+8. Implementar funeral preferences
+9. Implementar activation + death reports
+10. Implementar admin release flow
+11. Implementar portal de destinatarios
+12. Ajustar diseño final
+13. Crear README
+
+========================
+20. FORMA DE ENTREGA
+========================
+
+Quiero que me entregues:
+- primero la estructura del proyecto
+- luego el schema
+- luego el código por módulos
+- y al final una lista de pasos para probarlo
+
+Si hace falta simplificar algo, simplifícalo sin romper el concepto del producto.

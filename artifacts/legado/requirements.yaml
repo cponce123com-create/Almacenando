@@ -1,0 +1,20 @@
+packages:
+  "framer-motion": "For elegant page transitions and micro-interactions"
+  "react-hook-form": "For robust form state management"
+  "@hookform/resolvers": "For Zod schema validation integration"
+  "zod": "For strict schema validation on the frontend"
+  "date-fns": "For formatting dates in a human-readable way"
+  "clsx": "For conditional class names"
+  "tailwind-merge": "For merging tailwind classes"
+
+images:
+  - path: "artifacts/legado/public/images/hero-bg.png"
+    description: "A soft, warm, elegant abstract background with light lavender and soft violet tones, evoking a sense of peace, memory, and security. Very subtle light leaks, premium modern aesthetic."
+    aspect_ratio: "16:9"
+  - path: "artifacts/legado/public/images/auth-bg.png"
+    description: "A serene, comforting abstract gradient in soft lavender and warm peach tones, suitable for a login screen background."
+    aspect_ratio: "3:4"
+
+notes:
+  - Using generated Orval hooks from @workspace/api-client-react but injecting Authorization header manually via request options since customFetch might not handle localStorage tokens automatically.
+  - Auth is handled via manual fetch calls to the defined OpenAPI endpoints.
