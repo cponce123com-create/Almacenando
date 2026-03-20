@@ -14,7 +14,7 @@ import {
   legacyItemRecipientsTable,
   activationSettingsTable,
 } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, count } from "drizzle-orm";
 import { hashPassword, comparePassword, signAdminToken, requireAdmin } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { randomBytes } from "crypto";
@@ -63,6 +63,42 @@ router.post("/setup", async (req, res) => {
   const id = generateId();
   await db.insert(adminsTable).values({ id, name: name || "Admin", email, passwordHash, role: "admin" });
   res.status(201).json({ message: "Admin created" });
+});
+
+// List all registered users with stats
+router.get("/users", requireAdmin, async (req, res) => {
+  const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
+  const result = await Promise.all(users.map(async (u) => {
+    const profiles = await db.select().from(profilesTable).where(eq(profilesTable.userId, u.id)).limit(1);
+    const [itemsRow] = await db.select({ c: count() }).from(legacyItemsTable).where(eq(legacyItemsTable.userId, u.id));
+    const [recipientsRow] = await db.select({ c: count() }).from(recipientsTable).where(eq(recipientsTable.userId, u.id));
+    const [trustedRow] = await db.select({ c: count() }).from(trustedContactsTable).where(eq(trustedContactsTable.userId, u.id));
+    const deathReports = await db.select().from(deathReportsTable).where(eq(deathReportsTable.userId, u.id)).limit(1);
+    return {
+      id: u.id,
+      email: u.email,
+      fullName: profiles[0]?.fullName ?? null,
+      status: u.status,
+      legacyItemsCount: itemsRow?.c ?? 0,
+      recipientsCount: recipientsRow?.c ?? 0,
+      trustedContactsCount: trustedRow?.c ?? 0,
+      deathReportStatus: deathReports[0]?.status ?? null,
+      createdAt: u.createdAt.toISOString(),
+    };
+  }));
+  res.json(result);
+});
+
+// Suspend a user
+router.post("/users/:id/suspend", requireAdmin, async (req, res) => {
+  await db.update(usersTable).set({ status: "suspended" }).where(eq(usersTable.id, req.params.id));
+  res.json({ message: "User suspended" });
+});
+
+// Reactivate a user
+router.post("/users/:id/activate", requireAdmin, async (req, res) => {
+  await db.update(usersTable).set({ status: "active" }).where(eq(usersTable.id, req.params.id));
+  res.json({ message: "User activated" });
 });
 
 router.get("/death-reports", requireAdmin, async (req, res) => {
