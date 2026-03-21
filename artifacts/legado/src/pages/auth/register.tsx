@@ -10,7 +10,6 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
-import { DniInput } from "@/components/ui/dni-input";
 
 const registerSchema = z.object({
   fullName: z.string().min(2, "El nombre completo es requerido"),
@@ -26,7 +25,6 @@ export default function Register() {
   const { register } = useAuth();
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
-  const [dni, setDni] = useState("");
 
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
@@ -77,21 +75,11 @@ export default function Register() {
         </div>
 
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-          <DniInput
-            value={dni}
-            onChange={setDni}
-            onResolved={(data) => {
-              form.setValue("fullName", data.fullName);
-            }}
-            label="Tu DNI peruano"
-            required
-          />
-
           <div className="space-y-2">
             <Label htmlFor="fullName">Nombre Completo</Label>
             <Input 
               id="fullName" 
-              placeholder="Se completa con el DNI"
+              placeholder="Juan Pérez"
               className="rounded-xl h-12 bg-white/50 dark:bg-black/50"
               {...form.register("fullName")}
             />

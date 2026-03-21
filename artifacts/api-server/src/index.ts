@@ -27,4 +27,9 @@ app.listen(port, async () => {
   } else {
     console.warn("⚠️  Sin configuración de IA — el generador de testamentos no funcionará");
   }
+  if (!process.env.RENIEC_API_TOKEN) {
+    console.warn("⚠️  RENIEC_API_TOKEN no configurado — verificación de DNI deshabilitada");
+  } else {
+    console.log("✓ RENIEC_API_TOKEN configurado");
+  }
 });

@@ -113,40 +113,64 @@ router.put("/:id", requireAuth, async (req, res) => {
   res.json(toContact(updated[0]!));
 });
 
-// POST /verify-dni — consulta RENIEC por DNI (sin auth: también lo usa la página pública)
+// POST /verify-dni — consulta RENIEC por DNI (sin requireAuth: también la usa la página pública)
 router.post("/verify-dni", async (req, res) => {
   const { dni } = req.body;
-  if (!dni || !/^\d{8}$/.test(String(dni).trim())) {
-    res.status(400).json({ error: "DNI debe tener exactamente 8 dígitos numéricos" });
+
+  console.log("[RENIEC] verificando DNI:", req.body.dni, "token presente:", !!process.env.RENIEC_API_TOKEN);
+
+  if (!dni || dni.replace(/\D/g, "").length !== 8) {
+    res.status(400).json({ error: "El DNI debe tener exactamente 8 dígitos" });
     return;
   }
 
   const token = process.env.RENIEC_API_TOKEN;
   if (!token) {
-    res.status(503).json({ error: "Servicio RENIEC no configurado. Contacta al administrador." });
+    res.status(503).json({ error: "Verificación de DNI no disponible" });
     return;
   }
 
   try {
     const response = await fetch(
       `https://api.decolecta.com/v1/reniec/dni?numero=${String(dni).trim()}`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+      }
     );
 
-    if (!response.ok) {
+    if (response.status === 404) {
       res.status(404).json({ error: "DNI no encontrado en RENIEC" });
       return;
     }
 
-    const data: any = await response.json();
-    const firstName: string = data.nombres ?? data.nombre ?? "";
-    const firstLastName: string = data.apellidoPaterno ?? data.apellido_paterno ?? "";
-    const secondLastName: string = data.apellidoMaterno ?? data.apellido_materno ?? "";
-    const fullName = [firstName, firstLastName, secondLastName].filter(Boolean).join(" ");
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error("[RENIEC] error response:", response.status, errBody);
+      res.status(500).json({ error: "Error al consultar RENIEC" });
+      return;
+    }
 
-    res.json({ fullName, firstName, firstLastName, secondLastName });
-  } catch {
-    res.status(503).json({ error: "Error de conexión con RENIEC. Intenta de nuevo." });
+    const data: any = await response.json();
+
+    const firstName: string = data.first_name ?? data.nombres ?? data.nombre ?? "";
+    const firstLastName: string = data.first_last_name ?? data.apellidoPaterno ?? data.apellido_paterno ?? "";
+    const secondLastName: string = data.second_last_name ?? data.apellidoMaterno ?? data.apellido_materno ?? "";
+    const fullName: string = data.full_name ?? [firstName, firstLastName, secondLastName].filter(Boolean).join(" ");
+
+    res.json({
+      valid: true,
+      fullName,
+      firstName,
+      firstLastName,
+      secondLastName,
+      documentNumber: data.document_number ?? dni,
+    });
+  } catch (err) {
+    console.error("[RENIEC]", err);
+    res.status(500).json({ error: "Error interno al verificar DNI" });
   }
 });
 
