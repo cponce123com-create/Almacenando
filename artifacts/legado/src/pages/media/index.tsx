@@ -61,14 +61,12 @@ function PhotoSlot({
   if (item) {
     return (
       <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-100 group">
-        {item.mediaUrl ? (
-          <div className="w-full h-full bg-gradient-to-br from-violet-100 to-violet-200 flex items-center justify-center">
-            <div className="text-center">
-              <ImageIcon className="w-8 h-8 text-violet-400 mx-auto" />
-              <p className="text-xs text-violet-500 mt-1 px-1 truncate max-w-[80px]">{item.title}</p>
-            </div>
+        <div className="w-full h-full bg-gradient-to-br from-violet-100 to-violet-200 flex items-center justify-center">
+          <div className="text-center">
+            <ImageIcon className="w-8 h-8 text-violet-400 mx-auto" />
+            <p className="text-xs text-violet-500 mt-1 px-1 truncate max-w-[80px]">{item.title}</p>
           </div>
-        ) : null}
+        </div>
         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <button
             onClick={() => onDelete(item.id)}
@@ -85,16 +83,7 @@ function PhotoSlot({
   }
 
   return (
-    <button
-      onClick={() => inputRef.current?.click()}
-      disabled={uploading}
-      className="aspect-square rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-400 bg-gray-50 hover:bg-violet-50 transition-all flex items-center justify-center text-gray-400 hover:text-violet-500"
-    >
-      {uploading ? (
-        <Loader2 className="w-6 h-6 animate-spin" />
-      ) : (
-        <Plus className="w-8 h-8" />
-      )}
+    <div className="aspect-square">
       <input
         ref={inputRef}
         type="file"
@@ -106,7 +95,18 @@ function PhotoSlot({
           e.target.value = "";
         }}
       />
-    </button>
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        className="w-full h-full rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-400 bg-gray-50 hover:bg-violet-50 transition-all flex items-center justify-center text-gray-400 hover:text-violet-500"
+      >
+        {uploading ? (
+          <Loader2 className="w-6 h-6 animate-spin" />
+        ) : (
+          <Plus className="w-8 h-8" />
+        )}
+      </button>
+    </div>
   );
 }
 

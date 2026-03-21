@@ -22,11 +22,11 @@ router.post("/", requireAuth, upload.single("file"), async (req, res) => {
       return;
     }
 
-    const originalMimeType = (req.body?.originalMimeType as string) || req.file.mimetype;
-    const resourceType = getCloudinaryResourceType(originalMimeType);
-
+    // Always upload as "raw" — files are AES-256 encrypted and Cloudinary
+    // cannot parse them as images/video. The original mime type is stored
+    // in the legacy item record so the client knows what it is.
     const result = await uploadToCloudinary(req.file.buffer, {
-      resource_type: resourceType,
+      resource_type: "raw",
       folder: "legado",
     });
 
