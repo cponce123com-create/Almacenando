@@ -19,11 +19,14 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Music,
+  ExternalLink,
 } from "lucide-react";
 
 const MAX_PHOTOS = 5;
 const MAX_DOCS = 3;
 const MAX_VIDEO_SECONDS = 120;
+const SPOTIFY_KEY = "legado_spotify_url";
 
 type LegacyItem = {
   id: string;
@@ -258,8 +261,21 @@ export default function MediaPage() {
   const [docUploading, setDocUploading] = useState(false);
   const [showRecorder, setShowRecorder] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [spotifyUrl, setSpotifyUrl] = useState(() => localStorage.getItem(SPOTIFY_KEY) || "");
+  const [spotifyInput, setSpotifyInput] = useState(() => localStorage.getItem(SPOTIFY_KEY) || "");
   const videoFileRef = useRef<HTMLInputElement>(null);
   const docFileRef = useRef<HTMLInputElement>(null);
+
+  const saveSpotify = () => {
+    const url = spotifyInput.trim();
+    if (url && !url.includes("spotify.com") && !url.includes("open.spotify")) {
+      toast({ title: "URL de Spotify inválida", variant: "destructive" });
+      return;
+    }
+    localStorage.setItem(SPOTIFY_KEY, url);
+    setSpotifyUrl(url);
+    toast({ title: url ? "Spotify vinculado" : "Spotify desvinculado" });
+  };
 
   const { data: items = [], isLoading } = useQuery<LegacyItem[]>({
     queryKey: ["media-items"],
@@ -506,6 +522,58 @@ export default function MediaPage() {
           <input ref={docFileRef} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleDocUpload(f); e.target.value = ""; }} />
           <EncryptionBadge />
+        </section>
+
+        {/* SPOTIFY */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Music className="w-5 h-5 text-green-500" />
+            <h2 className="font-semibold text-gray-800">Música — Vincular Spotify</h2>
+          </div>
+
+          {spotifyUrl ? (
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-100">
+              <div className="w-10 h-10 rounded-lg bg-green-500 flex items-center justify-center shrink-0">
+                <Music className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">Spotify vinculado</p>
+                <a
+                  href={spotifyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-green-600 hover:underline flex items-center gap-1 truncate"
+                >
+                  <ExternalLink className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{spotifyUrl}</span>
+                </a>
+              </div>
+              <button
+                onClick={() => { setSpotifyInput(""); localStorage.removeItem(SPOTIFY_KEY); setSpotifyUrl(""); }}
+                className="text-gray-400 hover:text-red-500 p-1 shrink-0"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={spotifyInput}
+                  onChange={(e) => setSpotifyInput(e.target.value)}
+                  placeholder="https://open.spotify.com/playlist/..."
+                  className="flex-1 h-11 px-3 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-green-400"
+                />
+                <Button onClick={saveSpotify} className="bg-green-600 hover:bg-green-700 text-white rounded-xl h-11 px-4">
+                  Vincular
+                </Button>
+              </div>
+              <p className="text-xs text-gray-400">
+                Pega el enlace de una playlist, álbum o canción de Spotify para que suene en tu ceremonia.
+              </p>
+            </div>
+          )}
         </section>
       </div>
     </AppLayout>

@@ -11,7 +11,8 @@ import {
   CheckCircle2,
   Circle,
   ArrowRight,
-  Loader2
+  Loader2,
+  HeartHandshake,
 } from "lucide-react";
 
 export default function Dashboard() {
@@ -100,6 +101,24 @@ export default function Dashboard() {
             href="/trusted-contacts"
           />
         </div>
+
+        {/* Death Reporting Section */}
+        <Link href="/report-death">
+          <Card className="border border-rose-100 bg-rose-50/50 hover:shadow-md hover:border-rose-200 transition-all cursor-pointer group">
+            <CardContent className="p-6 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                <HeartHandshake className="w-6 h-6 text-rose-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-serif text-lg font-semibold text-gray-900">Reportar el Fallecimiento de Alguien</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  ¿Eres contacto de confianza de alguien? Reporta su partida usando tu DNI para iniciar el proceso de apertura del legado.
+                </p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-rose-400 group-hover:text-rose-600 transition-colors shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
       </motion.div>
     </AppLayout>
   );

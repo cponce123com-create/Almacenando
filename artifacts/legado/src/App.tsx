@@ -20,6 +20,7 @@ import AccessPortal from "@/pages/access/portal";
 import MediaPage from "@/pages/media/index";
 import ProfilePage from "@/pages/profile/index";
 
+import ReportDeath from "@/pages/report-death/index";
 import AdminLogin from "@/pages/admin/login";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminReportDetail from "@/pages/admin/report-detail";
@@ -106,6 +107,8 @@ function Router() {
       <Route path="/activation"><ProtectedRoute component={ActivationSettings} /></Route>
       <Route path="/media"><ProtectedRoute component={MediaPage} /></Route>
       <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
+
+      <Route path="/report-death" component={ReportDeath} />
 
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>

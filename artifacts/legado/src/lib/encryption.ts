@@ -12,8 +12,17 @@ export function clearEncryptionKey(): void {
   sessionStorage.removeItem(ENC_KEY_STORAGE);
 }
 
-async function importKey(base64Key: string): Promise<CryptoKey> {
-  const keyBytes = Uint8Array.from(atob(base64Key), (c) => c.charCodeAt(0));
+async function importKey(keyStr: string): Promise<CryptoKey> {
+  let keyBytes: Uint8Array;
+  if (/^[0-9a-fA-F]{64}$/.test(keyStr)) {
+    const hex = keyStr;
+    keyBytes = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      keyBytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    }
+  } else {
+    keyBytes = Uint8Array.from(atob(keyStr), (c) => c.charCodeAt(0));
+  }
   return crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, [
     "encrypt",
     "decrypt",

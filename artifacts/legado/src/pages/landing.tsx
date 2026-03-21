@@ -303,6 +303,8 @@ export default function Landing() {
           <Link href="#" className="hover:text-gray-600 transition-colors">Política de privacidad</Link>
           <span>›</span>
           <Link href="#" className="hover:text-gray-600 transition-colors">Contacto</Link>
+          <span>›</span>
+          <Link href="/report-death" className="hover:text-rose-600 text-rose-400 transition-colors font-medium">Reportar un fallecimiento</Link>
         </div>
       </footer>
       

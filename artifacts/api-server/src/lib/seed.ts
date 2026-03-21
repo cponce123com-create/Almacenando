@@ -24,7 +24,7 @@ export async function seedAdminIfNeeded() {
     logger.info({ email: adminEmail }, "Seeding initial admin and user accounts");
 
     const passwordHash = await hashPassword(adminPassword);
-    const encryptionKey = randomBytes(32).toString("hex");
+    const encryptionKey = randomBytes(32).toString("base64");
 
     await db.insert(usersTable).values({
       id: generateId(),

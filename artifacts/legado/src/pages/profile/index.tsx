@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useAuth, getAuthToken } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, User, Save, BadgeCheck } from "lucide-react";
+import { Loader2, User, Save, BadgeCheck, Camera, Upload } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type Profile = {
@@ -18,6 +18,7 @@ type Profile = {
   city?: string;
   introMessage?: string;
   dni?: string;
+  avatarUrl?: string;
 };
 
 async function fetchProfile(token: string): Promise<Profile> {
@@ -41,8 +42,10 @@ export default function ProfilePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const token = getAuthToken() || "";
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState<Profile>({ fullName: "" });
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   const { data: profile, isLoading } = useQuery<Profile>({
     queryKey: ["profile"],
@@ -68,6 +71,34 @@ export default function ProfilePage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleAvatarUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Solo se permiten imágenes", variant: "destructive" });
+      return;
+    }
+    setAvatarUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      if (!res.ok) throw new Error("Error al subir la imagen");
+      const { url } = await res.json();
+      const updated = { ...form, avatarUrl: url };
+      setForm(updated);
+      await saveProfile(token, updated);
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      toast({ title: "Foto de perfil actualizada" });
+    } catch {
+      toast({ title: "Error al subir la foto", variant: "destructive" });
+    } finally {
+      setAvatarUploading(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.fullName.trim()) {
@@ -76,6 +107,10 @@ export default function ProfilePage() {
     }
     mutation.mutate(form);
   };
+
+  const initials = form.fullName
+    ? form.fullName.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()
+    : "?";
 
   if (isLoading) {
     return (
@@ -90,18 +125,60 @@ export default function ProfilePage() {
   return (
     <AppLayout>
       <div className="max-w-xl mx-auto space-y-6">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-violet-100 flex items-center justify-center">
-            <User className="w-6 h-6 text-violet-600" />
+        <div>
+          <h1 className="font-serif text-2xl text-gray-900">Mi Perfil</h1>
+          <p className="text-sm text-gray-500">Datos personales de tu cuenta</p>
+        </div>
+
+        {/* Avatar */}
+        <div className="flex items-center gap-5">
+          <div className="relative group">
+            <div className="w-20 h-20 rounded-full overflow-hidden bg-violet-100 flex items-center justify-center">
+              {form.avatarUrl ? (
+                <img src={form.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-2xl font-bold text-violet-600">{initials}</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarUploading}
+              className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+            >
+              {avatarUploading ? (
+                <Loader2 className="w-5 h-5 text-white animate-spin" />
+              ) : (
+                <Camera className="w-5 h-5 text-white" />
+              )}
+            </button>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleAvatarUpload(f);
+                e.target.value = "";
+              }}
+            />
           </div>
           <div>
-            <h1 className="font-serif text-2xl text-gray-900">Mi Perfil</h1>
-            <p className="text-sm text-gray-500">Datos personales de tu cuenta</p>
+            <p className="text-sm font-medium text-gray-800">Foto de perfil</p>
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={avatarUploading}
+              className="text-xs text-violet-600 hover:underline flex items-center gap-1 mt-0.5"
+            >
+              <Upload className="w-3 h-3" />
+              {form.avatarUrl ? "Cambiar foto" : "Subir foto"}
+            </button>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Nombre completo */}
           <div className="space-y-1.5">
             <Label htmlFor="fullName">Nombre completo <span className="text-red-500">*</span></Label>
             <Input
@@ -112,7 +189,6 @@ export default function ProfilePage() {
             />
           </div>
 
-          {/* Nombre para mostrar */}
           <div className="space-y-1.5">
             <Label htmlFor="displayName">Cómo te llaman (apodo)</Label>
             <Input
@@ -123,11 +199,10 @@ export default function ProfilePage() {
             />
           </div>
 
-          {/* DNI */}
           <div className="space-y-1.5">
             <Label htmlFor="dni" className="flex items-center gap-1.5">
               <BadgeCheck className="w-4 h-4 text-violet-500" />
-              Número de DNI / Documento de identidad
+              Número de DNI / Documento de identidad <span className="text-red-500">*</span>
             </Label>
             <Input
               id="dni"
@@ -137,11 +212,10 @@ export default function ProfilePage() {
               className="uppercase tracking-widest"
             />
             <p className="text-xs text-gray-400">
-              Este número permite que tus seres queridos verifiquen si dejaste un legado, sin revelar ningún contenido.
+              Tu DNI es la clave que permite verificar tu legado y es usada para el proceso de activación.
             </p>
           </div>
 
-          {/* Fecha de nacimiento */}
           <div className="space-y-1.5">
             <Label htmlFor="birthDate">Fecha de nacimiento</Label>
             <Input
@@ -152,7 +226,6 @@ export default function ProfilePage() {
             />
           </div>
 
-          {/* País y ciudad */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="country">País</Label>
@@ -174,7 +247,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Mensaje de introducción */}
           <div className="space-y-1.5">
             <Label htmlFor="introMessage">Mensaje de introducción</Label>
             <Textarea

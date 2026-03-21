@@ -14,6 +14,7 @@ const toContact = (c: typeof trustedContactsTable.$inferSelect) => ({
   email: c.email,
   phone: c.phone,
   relationship: c.relationship,
+  dni: c.dni,
   inviteStatus: c.inviteStatus,
   isConfirmed: c.isConfirmed,
   createdAt: c.createdAt.toISOString(),
@@ -28,10 +29,10 @@ router.get("/", requireAuth, async (req, res) => {
 
 router.post("/", requireAuth, async (req, res) => {
   const userId = (req as typeof req & { userId: string }).userId;
-  const { fullName, email, phone, relationship } = req.body;
+  const { fullName, email, phone, relationship, dni } = req.body;
 
-  if (!fullName || !email || !relationship) {
-    res.status(400).json({ error: "fullName, email, and relationship are required" });
+  if (!fullName || !email || !relationship || !dni) {
+    res.status(400).json({ error: "fullName, email, relationship, and dni are required" });
     return;
   }
 
@@ -43,6 +44,7 @@ router.post("/", requireAuth, async (req, res) => {
     email,
     phone,
     relationship,
+    dni: dni.toString().toUpperCase(),
     inviteStatus: "pending",
     isConfirmed: false,
   });
@@ -57,12 +59,13 @@ router.put("/:id", requireAuth, async (req, res) => {
     res.status(404).json({ error: "Trusted contact not found" });
     return;
   }
-  const { fullName, email, phone, relationship } = req.body;
+  const { fullName, email, phone, relationship, dni } = req.body;
   await db.update(trustedContactsTable).set({
     fullName: fullName ?? existing[0]!.fullName,
     email: email ?? existing[0]!.email,
     phone: phone !== undefined ? phone : existing[0]!.phone,
     relationship: relationship ?? existing[0]!.relationship,
+    dni: dni !== undefined ? dni.toString().toUpperCase() : existing[0]!.dni,
     updatedAt: new Date(),
   }).where(eq(trustedContactsTable.id, req.params.id));
   const updated = await db.select().from(trustedContactsTable).where(eq(trustedContactsTable.id, req.params.id)).limit(1);
