@@ -298,13 +298,13 @@ export default function Landing() {
         <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-400">
           <Link href="#como-funciona" className="hover:text-gray-600 transition-colors">Cómo funciona</Link>
           <span>›</span>
-          <Link href="#" className="hover:text-gray-600 transition-colors">Preguntas frecuentes</Link>
+          <Link href="/faq" className="hover:text-gray-600 transition-colors">Preguntas frecuentes</Link>
           <span>›</span>
           <Link href="/privacy" className="hover:text-gray-600 transition-colors">Política de privacidad</Link>
           <span>›</span>
           <Link href="/terms" className="hover:text-gray-600 transition-colors">Términos de servicio</Link>
           <span>›</span>
-          <Link href="#" className="hover:text-gray-600 transition-colors">Contacto</Link>
+          <Link href="/faq#contacto" className="hover:text-gray-600 transition-colors">Contacto</Link>
           <span>›</span>
           <Link href="/report-death" className="hover:text-rose-600 text-rose-400 transition-colors font-medium">Reportar un fallecimiento</Link>
         </div>

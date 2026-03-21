@@ -14,7 +14,10 @@ import { motion } from "framer-motion";
 const registerSchema = z.object({
   fullName: z.string().min(2, "El nombre completo es requerido"),
   email: z.string().email("Correo electrónico inválido"),
-  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
+  password: z.string()
+    .min(8, "La contraseña debe tener al menos 8 caracteres")
+    .regex(/[A-Z]/, "Debe contener al menos una letra mayúscula")
+    .regex(/[0-9]/, "Debe contener al menos un número"),
 });
 
 export default function Register() {
@@ -108,6 +111,11 @@ export default function Register() {
               className="rounded-xl h-12 bg-white/50 dark:bg-black/50"
               {...form.register("password")}
             />
+            <ul className="text-xs text-muted-foreground space-y-0.5 pl-1">
+              <li>• Mínimo 8 caracteres</li>
+              <li>• Al menos una letra mayúscula (A–Z)</li>
+              <li>• Al menos un número (0–9)</li>
+            </ul>
             {form.formState.errors.password && (
               <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
             )}

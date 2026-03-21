@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getEncryptionKey } from "@/lib/encryption";
 import { encryptFile } from "@/lib/encryption";
 import { getAuthToken } from "@/hooks/use-auth";
+import { useFuneralPrefs, useMutateFuneralPrefs } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,7 +27,6 @@ import {
 const MAX_PHOTOS = 5;
 const MAX_DOCS = 3;
 const MAX_VIDEO_SECONDS = 120;
-const SPOTIFY_KEY = "legado_spotify_url";
 
 type LegacyItem = {
   id: string;
@@ -266,8 +266,10 @@ export default function MediaPage() {
   const [docUploading, setDocUploading] = useState(false);
   const [showRecorder, setShowRecorder] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
-  const [spotifyUrl, setSpotifyUrl] = useState(() => localStorage.getItem(SPOTIFY_KEY) || "");
-  const [spotifyInput, setSpotifyInput] = useState(() => localStorage.getItem(SPOTIFY_KEY) || "");
+  const { data: funeralPrefs } = useFuneralPrefs();
+  const funeralMutation = useMutateFuneralPrefs();
+  const spotifyUrl = (funeralPrefs as any)?.spotifyPlaylistUrl || "";
+  const [spotifyInput, setSpotifyInput] = useState("");
   const videoFileRef = useRef<HTMLInputElement>(null);
   const docFileRef = useRef<HTMLInputElement>(null);
 
@@ -277,9 +279,18 @@ export default function MediaPage() {
       toast({ title: "URL de Spotify inválida", variant: "destructive" });
       return;
     }
-    localStorage.setItem(SPOTIFY_KEY, url);
-    setSpotifyUrl(url);
-    toast({ title: url ? "Spotify vinculado" : "Spotify desvinculado" });
+    funeralMutation.mutate({ spotifyPlaylistUrl: url } as any, {
+      onSuccess: () => {
+        setSpotifyInput("");
+        toast({ title: url ? "Spotify vinculado" : "Spotify desvinculado" });
+      },
+    });
+  };
+
+  const removeSpotify = () => {
+    funeralMutation.mutate({ spotifyPlaylistUrl: "" } as any, {
+      onSuccess: () => toast({ title: "Spotify desvinculado" }),
+    });
   };
 
   const { data: items = [], isLoading } = useQuery<LegacyItem[]>({
@@ -554,7 +565,7 @@ export default function MediaPage() {
                 </a>
               </div>
               <button
-                onClick={() => { setSpotifyInput(""); localStorage.removeItem(SPOTIFY_KEY); setSpotifyUrl(""); }}
+                onClick={removeSpotify}
                 className="text-gray-400 hover:text-red-500 p-1 shrink-0"
               >
                 <Trash2 className="w-4 h-4" />

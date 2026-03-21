@@ -98,8 +98,8 @@ export default function FuneralPreferences() {
       });
     }
   }, [
-    prefs?.burialType, prefs?.ceremonyType, prefs?.musicNotes, prefs?.dressCode,
-    prefs?.guestNotes, prefs?.locationNotes, prefs?.additionalNotes,
+    prefs?.burialType, prefs?.ceremonyType, (prefs as any)?.spotifyPlaylistUrl,
+    prefs?.musicNotes, prefs?.dressCode, prefs?.guestNotes, prefs?.locationNotes, prefs?.additionalNotes,
   ]);
 
   const spotifyUrl = form.watch("spotifyPlaylistUrl");

@@ -1,15 +1,54 @@
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
-function createTransport() {
+function getResend(): Resend | null {
+  const key = process.env.RESEND_API_KEY;
+  return key ? new Resend(key) : null;
+}
+
+function getGmailTransport(): nodemailer.Transporter | null {
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASS;
-
   if (!user || !pass) return null;
+  return nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
+}
 
-  return nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
+async function sendEmail({
+  to,
+  subject,
+  html,
+  text,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+}): Promise<void> {
+  const resend = getResend();
+  if (resend) {
+    await resend.emails.send({
+      from: "Legado <noreply@legadoapp.com>",
+      to,
+      subject,
+      html,
+      text,
+    });
+    return;
+  }
+
+  const transport = getGmailTransport();
+  if (transport) {
+    await transport.sendMail({
+      from: `"Legado" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html,
+      text,
+    });
+    return;
+  }
+
+  console.warn("[email] No email provider configured — skipping send");
 }
 
 export async function sendDeathReportEmail({
@@ -27,14 +66,6 @@ export async function sendDeathReportEmail({
   reporterDni: string;
   confirmUrl: string;
 }): Promise<void> {
-  const transporter = createTransport();
-  if (!transporter) {
-    console.warn("[email] EMAIL_USER / EMAIL_PASS not set — skipping email send");
-    return;
-  }
-
-  const from = `"Legado" <${process.env.EMAIL_USER}>`;
-
   const maskedDni = reporterDni.slice(0, 4) + "****" + reporterDni.slice(-1);
 
   const text = `
@@ -60,7 +91,7 @@ Si tú no eres ${toName} o recibes este correo por error, por favor ignóralo o 
   const html = `
 <div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
   <div style="text-align: center; margin-bottom: 32px;">
-    <h1 style="font-size: 24px; color: #7C3AED; margin: 0;">✦ Legado</h1>
+    <h1 style="font-size: 24px; color: #9d174d; margin: 0;">✦ Legado</h1>
   </div>
 
   <p style="font-size: 15px; line-height: 1.6;">Hola <strong>${toName}</strong>,</p>
@@ -75,7 +106,7 @@ Si tú no eres ${toName} o recibes este correo por error, por favor ignóralo o 
 
   <div style="text-align: center; margin: 32px 0;">
     <a href="${confirmUrl}"
-       style="background: #7C3AED; color: white; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600; display: inline-block;">
+       style="background: #9d174d; color: white; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600; display: inline-block;">
       Confirmar reporte
     </a>
   </div>
@@ -95,12 +126,11 @@ Si tú no eres ${toName} o recibes este correo por error, por favor ignóralo o 
 </div>
 `.trim();
 
-  await transporter.sendMail({
-    from,
+  await sendEmail({
     to: toEmail,
     subject: `Confirmación requerida: Reporte de fallecimiento de ${deceasedName}`,
-    text,
     html,
+    text,
   });
 }
 
@@ -117,14 +147,6 @@ export async function sendAccessLinkEmail({
   relationship: string;
   accessUrl: string;
 }): Promise<void> {
-  const transporter = createTransport();
-  if (!transporter) {
-    console.warn("[email] EMAIL_USER / EMAIL_PASS not set — skipping access link email");
-    return;
-  }
-
-  const from = `"Legado" <${process.env.EMAIL_USER}>`;
-
   const text = `
 Hola ${toName},
 
@@ -144,16 +166,16 @@ Con cariño,
   const html = `
 <div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
   <div style="text-align: center; margin-bottom: 32px;">
-    <h1 style="font-size: 24px; color: #7C3AED; margin: 0;">✦ Legado</h1>
+    <h1 style="font-size: 24px; color: #9d174d; margin: 0;">✦ Legado</h1>
   </div>
 
   <p style="font-size: 15px; line-height: 1.6;">Hola <strong>${toName}</strong>,</p>
 
-  <div style="background: linear-gradient(135deg, #EDE9FE, #F5F3FF); border-radius: 16px; padding: 24px; margin: 24px 0; text-align: center;">
-    <p style="font-size: 18px; font-weight: 600; color: #5B21B6; margin: 0 0 8px;">
+  <div style="background: linear-gradient(135deg, #fdf2f8, #fce7f3); border-radius: 16px; padding: 24px; margin: 24px 0; text-align: center;">
+    <p style="font-size: 18px; font-weight: 600; color: #9d174d; margin: 0 0 8px;">
       ${deceasedName} dejó un legado para ti
     </p>
-    <p style="font-size: 14px; color: #7C3AED; margin: 0;">
+    <p style="font-size: 14px; color: #be185d; margin: 0;">
       Un mensaje preparado con amor, esperando por ti
     </p>
   </div>
@@ -164,7 +186,7 @@ Con cariño,
 
   <div style="text-align: center; margin: 36px 0;">
     <a href="${accessUrl}"
-       style="background: #7C3AED; color: white; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-size: 16px; font-weight: 600; display: inline-block; letter-spacing: 0.3px;">
+       style="background: #9d174d; color: white; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-size: 16px; font-weight: 600; display: inline-block; letter-spacing: 0.3px;">
       Ver mi legado
     </a>
   </div>
@@ -178,12 +200,11 @@ Con cariño,
 </div>
 `.trim();
 
-  await transporter.sendMail({
-    from,
+  await sendEmail({
     to: toEmail,
     subject: `${deceasedName} dejó un legado para ti`,
-    text,
     html,
+    text,
   });
 }
 
@@ -198,11 +219,6 @@ export async function sendEncryptionKeyEmail({
   ownerName: string;
   encryptionKey: string;
 }): Promise<void> {
-  const transporter = createTransport();
-  if (!transporter) return;
-
-  const from = `"Legado" <${process.env.EMAIL_USER}>`;
-
   const text = `
 Hola ${toName},
 
@@ -220,10 +236,10 @@ El equipo de Legado
 `;
 
   const html = `
-  <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; background: #faf9ff; border-radius: 16px;">
+  <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; background: #fdf2f8; border-radius: 16px;">
     <div style="text-align: center; margin-bottom: 28px;">
       <p style="font-size: 32px; margin: 0;">🔑</p>
-      <h2 style="color: #6D28D9; font-size: 22px; margin: 8px 0 0;">Clave de acceso al legado</h2>
+      <h2 style="color: #9d174d; font-size: 22px; margin: 8px 0 0;">Clave de acceso al legado</h2>
     </div>
     <p style="font-size: 15px; line-height: 1.6; color: #374151;">Hola <strong>${toName}</strong>,</p>
     <p style="font-size: 15px; line-height: 1.6; color: #374151;">
@@ -241,12 +257,11 @@ El equipo de Legado
   </div>
   `;
 
-  await transporter.sendMail({
-    from,
+  await sendEmail({
     to: toEmail,
     subject: `${ownerName} compartió contigo su clave de legado`,
-    text,
     html,
+    text,
   });
 }
 
@@ -261,11 +276,6 @@ export async function sendTrustedContactInviteEmail({
   ownerName: string;
   relationship: string;
 }): Promise<void> {
-  const transporter = createTransport();
-  if (!transporter) return;
-
-  const from = `"Legado" <${process.env.EMAIL_USER}>`;
-
   const text = `
 Hola ${toName},
 
@@ -282,16 +292,16 @@ Con cariño,
   const html = `
 <div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
   <div style="text-align: center; margin-bottom: 32px;">
-    <h1 style="font-size: 24px; color: #7C3AED; margin: 0;">✦ Legado</h1>
+    <h1 style="font-size: 24px; color: #9d174d; margin: 0;">✦ Legado</h1>
   </div>
 
   <p style="font-size: 15px; line-height: 1.6;">Hola <strong>${toName}</strong>,</p>
 
-  <div style="background: linear-gradient(135deg, #EDE9FE, #F5F3FF); border-radius: 16px; padding: 24px; margin: 24px 0;">
-    <p style="font-size: 16px; font-weight: 600; color: #5B21B6; margin: 0 0 8px;">
+  <div style="background: linear-gradient(135deg, #fdf2f8, #fce7f3); border-radius: 16px; padding: 24px; margin: 24px 0;">
+    <p style="font-size: 16px; font-weight: 600; color: #9d174d; margin: 0 0 8px;">
       ${ownerName} confía en ti
     </p>
-    <p style="font-size: 14px; color: #7C3AED; margin: 0;">
+    <p style="font-size: 14px; color: #be185d; margin: 0;">
       Has sido designado/a como su contacto de confianza en Legado
     </p>
   </div>
@@ -302,7 +312,7 @@ Con cariño,
     entregado a sus seres queridos según sus deseos.
   </p>
 
-  <div style="background: #F9FAFB; border-radius: 12px; padding: 16px; margin: 24px 0; border-left: 4px solid #7C3AED;">
+  <div style="background: #F9FAFB; border-radius: 12px; padding: 16px; margin: 24px 0; border-left: 4px solid #9d174d;">
     <p style="margin: 0; font-size: 14px; color: #6B7280; line-height: 1.6;">
       <strong>No necesitas hacer nada por ahora.</strong> Cuando llegue el momento, recibirás 
       un correo con un enlace personal y seguro para confirmar.
@@ -316,11 +326,10 @@ Con cariño,
 </div>
 `.trim();
 
-  await transporter.sendMail({
-    from,
+  await sendEmail({
     to: toEmail,
     subject: `${ownerName} te ha designado como contacto de confianza en Legado`,
-    text,
     html,
+    text,
   });
 }

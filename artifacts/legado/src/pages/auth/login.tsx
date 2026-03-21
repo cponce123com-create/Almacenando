@@ -88,7 +88,7 @@ export default function Login() {
 
     // Only admin
     if (hasAdmin && adminToken) {
-      localStorage.setItem(ADMIN_TOKEN_KEY, adminToken);
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken);
       setLocation("/admin");
     }
   }
@@ -101,7 +101,7 @@ export default function Login() {
 
   function enterAsAdmin() {
     if (!roleChoice?.adminToken) return;
-    localStorage.setItem(ADMIN_TOKEN_KEY, roleChoice.adminToken);
+    sessionStorage.setItem(ADMIN_TOKEN_KEY, roleChoice.adminToken);
     setLocation("/admin");
   }
 

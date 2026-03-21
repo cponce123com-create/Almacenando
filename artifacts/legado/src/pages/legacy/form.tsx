@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useRoute } from "wouter";
 import { useLegacyItem, useCreateLegacy, useUpdateLegacy, useItemRecipients, useSetItemRecipients } from "@/hooks/use-legacy";
@@ -917,7 +918,7 @@ export default function LegacyForm() {
                   lineHeight: "1.8",
                 }}
                 dangerouslySetInnerHTML={{
-                  __html: convertMarkdownToHtml(generatedDocument || form.getValues("contentText") || ""),
+                  __html: DOMPurify.sanitize(convertMarkdownToHtml(generatedDocument || form.getValues("contentText") || "")),
                 }}
               />
             </div>
