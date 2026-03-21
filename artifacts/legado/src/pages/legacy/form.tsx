@@ -613,16 +613,17 @@ export default function LegacyForm() {
                         </Button>
                       </div>
 
-                      <button
+                      <Button
                         type="button"
-                        className="w-full h-12 rounded-xl font-semibold text-white bg-fuchsia-700 hover:bg-fuchsia-800 flex items-center justify-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         onClick={handleGenerateWill}
-                        disabled={beneficiaries.length === 0 || isGenerating}
+                        disabled={isGenerating}
+                        className="w-full h-12 rounded-xl font-semibold text-white gap-2 shadow-md"
+                        style={{ backgroundColor: "#9d174d", borderColor: "#9d174d" }}
                       >
                         {isGenerating
-                          ? <><Loader2 className="w-5 h-5 animate-spin text-white" /> Redactando tu documento...</>
-                          : <><Sparkles className="w-5 h-5 text-white" /> Generar mis últimos deseos con IA</>}
-                      </button>
+                          ? <><Loader2 className="w-5 h-5 animate-spin" /> Redactando tu documento...</>
+                          : <><Sparkles className="w-5 h-5" /> Generar mis últimos deseos con IA</>}
+                      </Button>
 
                       <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
                         <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
