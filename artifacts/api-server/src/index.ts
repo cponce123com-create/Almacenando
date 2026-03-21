@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { seedAdminIfNeeded, backfillContactTokens } from "./lib/seed.js";
 import { deliverPendingCapsules } from "./routes/time-capsules.js";
+import { getEmailProviderStatus } from "./lib/email.js";
 
 const rawPort = process.env["PORT"];
 
@@ -32,6 +33,12 @@ app.listen(port, async () => {
     console.warn("⚠️  RENIEC_API_TOKEN no configurado — verificación de DNI deshabilitada");
   } else {
     console.log("✓ RENIEC_API_TOKEN configurado");
+  }
+  const emailProvider = getEmailProviderStatus();
+  if (emailProvider === "resend") {
+    console.log("✓ Email: Resend configurado");
+  } else {
+    console.warn("⚠️  Email: RESEND_API_KEY no configurado — los emails NO se enviarán");
   }
   scheduleCapsuleDelivery();
 });

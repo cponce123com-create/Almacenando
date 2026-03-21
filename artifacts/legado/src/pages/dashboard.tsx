@@ -1,5 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useDashboard } from "@/hooks/use-settings";
+import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { motion } from "framer-motion";
@@ -35,6 +36,7 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
+      <OnboardingWizard />
       <motion.div 
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}

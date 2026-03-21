@@ -1,4 +1,3 @@
-import nodemailer from "nodemailer";
 import { Resend } from "resend";
 
 function getResend(): Resend | null {
@@ -6,11 +5,9 @@ function getResend(): Resend | null {
   return key ? new Resend(key) : null;
 }
 
-function getGmailTransport(): nodemailer.Transporter | null {
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASS;
-  if (!user || !pass) return null;
-  return nodemailer.createTransport({ service: "gmail", auth: { user, pass } });
+export function getEmailProviderStatus(): "resend" | "none" {
+  if (process.env.RESEND_API_KEY) return "resend";
+  return "none";
 }
 
 async function sendEmail({
@@ -26,8 +23,9 @@ async function sendEmail({
 }): Promise<void> {
   const resend = getResend();
   if (resend) {
+    const fromEmail = process.env.RESEND_FROM_EMAIL ?? "Legado <noreply@legadoapp.com>";
     await resend.emails.send({
-      from: "Legado <noreply@legadoapp.com>",
+      from: fromEmail,
       to,
       subject,
       html,
@@ -36,19 +34,7 @@ async function sendEmail({
     return;
   }
 
-  const transport = getGmailTransport();
-  if (transport) {
-    await transport.sendMail({
-      from: `"Legado" <${process.env.EMAIL_USER}>`,
-      to,
-      subject,
-      html,
-      text,
-    });
-    return;
-  }
-
-  console.warn("[email] No email provider configured — skipping send");
+  console.warn("[email] RESEND_API_KEY no configurado — email no enviado");
 }
 
 export async function sendDeathReportEmail({
