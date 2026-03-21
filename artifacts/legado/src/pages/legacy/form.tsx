@@ -11,7 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, Save, UploadCloud, FileCheck2, X, FileVideo, FileAudio, Image, FileText, Lock, Sparkles, Plus, Trash2, AlertCircle } from "lucide-react";
+import { Loader2, ArrowLeft, Save, UploadCloud, FileCheck2, X, FileVideo, FileAudio, Image, FileText, Lock, Sparkles, Plus, Trash2, AlertCircle, Eye, FileDown } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { Link, useLocation } from "wouter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -276,7 +279,9 @@ export default function LegacyForm() {
   type Beneficiary = { name: string; relationship: string; bequest: string };
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [newBenef, setNewBenef] = useState<Beneficiary>({ name: "", relationship: "", bequest: "" });
-  const [aiLoading, setAiLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedDocument, setGeneratedDocument] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
 
   const handleAddBeneficiary = () => {
     if (!newBenef.name.trim() || !newBenef.bequest.trim()) return;
@@ -285,23 +290,98 @@ export default function LegacyForm() {
   };
 
   const handleGenerateWill = async () => {
-    if (beneficiaries.length === 0) return;
-    setAiLoading(true);
+    if (beneficiaries.length === 0) {
+      toast({ title: "Agrega al menos un beneficiario", variant: "destructive" });
+      return;
+    }
+    setIsGenerating(true);
     try {
-      const res = await fetch("/api/ai/generate-will", {
+      const response = await fetch("/api/ai/generate-will", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionStorage.getItem("legado_token") || localStorage.getItem("legado_token")}`,
+        },
         body: JSON.stringify({ beneficiaries }),
       });
-      const data = await res.json();
-      if (res.ok && data.document) {
-        form.setValue("contentText", data.document);
+      const data = await response.json();
+      if (!response.ok) {
+        toast({ title: "Error al generar", description: data.error || "Intenta de nuevo", variant: "destructive" });
+        return;
       }
-    } catch {
-      // silently fail
+      const text = data.document || "";
+      setGeneratedDocument(text);
+      form.setValue("contentText", text);
+      toast({ title: "¡Documento generado!", description: "Puedes editarlo antes de guardar." });
+    } catch (err) {
+      console.error("[generate-will]", err);
+      toast({ title: "Error de conexión", variant: "destructive" });
     } finally {
-      setAiLoading(false);
+      setIsGenerating(false);
     }
+  };
+
+  const exportToPDF = () => {
+    const parchmentUrl = `${window.location.origin}${import.meta.env.BASE_URL}parchment.png`;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>Últimas Voluntades</title>
+<style>
+  @media print { body { margin: 0; } .no-print { display: none; } }
+  body {
+    font-family: 'Georgia', serif;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #3b2000;
+    background: #fff;
+    margin: 0;
+    padding: 0;
+  }
+  .page {
+    width: 100%;
+    min-height: 100vh;
+    background-image: url('${parchmentUrl}');
+    background-size: cover;
+    background-position: center;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0;
+  }
+  .content {
+    max-width: 620px;
+    margin: 60px auto;
+    padding: 40px 50px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .print-btn {
+    display: block;
+    margin: 20px auto;
+    padding: 10px 30px;
+    background: #7c2d12;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="no-print" style="text-align:center;padding:16px;background:#fef3c7;">
+  <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+</div>
+<div class="page">
+  <div class="content">${(generatedDocument || form.getValues("contentText") || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+</div>
+</body>
+</html>`);
+    printWindow.document.close();
   };
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -324,6 +404,9 @@ export default function LegacyForm() {
         contentText: item.contentText || "",
         status: item.status,
       });
+      if (item.contentText) {
+        setGeneratedDocument(item.contentText);
+      }
       if (item.mediaUrl) {
         setMediaData({
           url: item.mediaUrl,
@@ -530,16 +613,16 @@ export default function LegacyForm() {
                         </Button>
                       </div>
 
-                      <Button
+                      <button
                         type="button"
-                        className="w-full bg-violet-600 hover:bg-violet-700 text-white rounded-xl gap-2"
+                        className="w-full h-12 rounded-xl font-semibold text-white bg-fuchsia-700 hover:bg-fuchsia-800 flex items-center justify-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         onClick={handleGenerateWill}
-                        disabled={beneficiaries.length === 0 || aiLoading}
+                        disabled={beneficiaries.length === 0 || isGenerating}
                       >
-                        {aiLoading
-                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Generando con IA...</>
-                          : <><Sparkles className="w-4 h-4" /> Generar testamento con IA</>}
-                      </Button>
+                        {isGenerating
+                          ? <><Loader2 className="w-5 h-5 animate-spin text-white" /> Redactando tu documento...</>
+                          : <><Sparkles className="w-5 h-5 text-white" /> Generar mis últimos deseos con IA</>}
+                      </button>
 
                       <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
                         <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
@@ -551,13 +634,39 @@ export default function LegacyForm() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Contenido del testamento</Label>
+                    <Label className="text-gray-800 font-semibold">Contenido del testamento</Label>
                     <Textarea
-                      className="min-h-[200px] rounded-xl resize-y"
-                      placeholder="Escribe o genera el contenido de tu nota funeraria o testamento personal…"
-                      {...form.register("contentText")}
+                      className="min-h-[280px] rounded-xl resize-y text-gray-900 font-mono text-sm leading-relaxed"
+                      placeholder="Escribe tu testamento aquí, o usa el Constructor con IA arriba para generarlo automáticamente…"
+                      value={generatedDocument}
+                      onChange={(e) => {
+                        setGeneratedDocument(e.target.value);
+                        form.setValue("contentText", e.target.value);
+                      }}
                     />
                   </div>
+
+                  {generatedDocument && generatedDocument.trim().length > 0 && (
+                    <div className="flex flex-col sm:flex-row gap-3 mt-2">
+                      <Button
+                        type="button"
+                        onClick={() => setShowPreview(true)}
+                        variant="outline"
+                        className="flex items-center gap-2 border-amber-700 text-amber-800 hover:bg-amber-50 rounded-xl px-6 h-11"
+                      >
+                        <Eye className="w-4 h-4" />
+                        Vista previa
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={exportToPDF}
+                        className="flex items-center gap-2 bg-amber-800 hover:bg-amber-900 text-white rounded-xl px-6 h-11"
+                      >
+                        <FileDown className="w-4 h-4" />
+                        Descargar como PDF
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -615,6 +724,46 @@ export default function LegacyForm() {
           </div>
         </form>
       </div>
+
+      {/* Preview Dialog */}
+      <Dialog open={showPreview} onOpenChange={setShowPreview}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
+          <DialogHeader className="px-6 py-4 border-b border-amber-200 bg-amber-50 shrink-0">
+            <DialogTitle className="text-amber-900 font-serif text-lg flex items-center gap-2">
+              <Eye className="w-5 h-5" /> Vista previa del documento
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto relative">
+            <div
+              className="min-h-[500px] p-10"
+              style={{
+                backgroundImage: `url('${import.meta.env.BASE_URL}parchment.png')`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
+            >
+              <div
+                className="max-w-xl mx-auto font-serif text-sm leading-relaxed whitespace-pre-wrap"
+                style={{ color: "#3b2000" }}
+              >
+                {generatedDocument || form.getValues("contentText") || ""}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="px-6 py-3 border-t border-amber-200 bg-amber-50 shrink-0">
+            <Button
+              type="button"
+              onClick={exportToPDF}
+              className="bg-amber-800 hover:bg-amber-900 text-white rounded-xl gap-2"
+            >
+              <FileDown className="w-4 h-4" /> Abrir para imprimir / PDF
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setShowPreview(false)} className="rounded-xl">
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }
