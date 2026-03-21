@@ -1,0 +1,21 @@
+HALLAZGOS MEDIOS — CALIDAD Y ROBUSTEZ
+MEDIO
+Sin manejo de errores global en Express — errores no capturados exponen stack traces
+Ninguna ruta tiene try/catch. En Express 5 los errores async se propagan automáticamente, pero sin un error handler global (app.use((err, req, res, next) =>) los errores de DB devuelven 500 con detalles internos al cliente.
+Fix: Agregar un error handler global en app.ts que loguee el error y devuelva un 500 genérico sin exponer detalles.
+MEDIO
+Sesión en memoria — se pierden al reiniciar el servidor
+express-session usa almacenamiento en memoria por defecto. En producción con múltiples instancias o reinicios, todos los usuarios pierden su sesión. No es seguro ni escalable.
+Fix: Usar connect-pg-simple o connect-redis para persistir sesiones. La DB ya es PostgreSQL, así que connect-pg-simple es la opción más simple.
+MEDIO
+auditLogsTable definida en el schema pero nunca se usa
+La tabla audit_logs existe en el schema de Drizzle pero ningún endpoint escribe en ella. Para un producto de esta naturaleza (decisiones irreversibles sobre legados), el audit log es fundamental.
+Fix: Registrar al menos: liberación de legado, aprobación/rechazo admin, creación de death-reports, acceso de destinatarios con token.
+MEDIO
+Token de acceso de destinatario usado solo una vez no se invalida
+usedAt se actualiza pero el token sigue siendo válido mientras no expire (1 año). Si el link es interceptado o reenviado, cualquier persona puede ver el contenido del legado repetidamente.
+Fix: Decidir si los tokens son single-use (invalidar tras primer uso) o multi-use con sesión propia para el destinatario. Documentar la decisión de diseño explícitamente.
+MEDIO
+N+1 queries en múltiples endpoints
+enrichDeathReport en admin hace una query por cada confirmación para obtener el trusted contact. enrichItem hace queries individuales. Con muchos registros esto degrada el rendimiento significativamente.
+Fix: Usar JOINs o cargar IDs en batch con inArray y mapear en memoria.

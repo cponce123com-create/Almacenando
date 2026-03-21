@@ -7,3 +7,4 @@ export * from "./funeral-preferences";
 export * from "./activation-settings";
 export * from "./death-reports";
 export * from "./admins";
+export * from "./audit-logs";

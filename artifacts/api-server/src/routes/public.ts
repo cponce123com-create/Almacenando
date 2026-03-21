@@ -17,6 +17,7 @@ import { generateId } from "../lib/id.js";
 import { randomBytes } from "crypto";
 import { sendDeathReportEmail, sendAccessLinkEmail } from "../lib/email.js";
 import { deathReportLimiter, lookupLimiter } from "../lib/rate-limit.js";
+import { writeAuditLog } from "../lib/audit.js";
 
 function getAppUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
@@ -202,6 +203,14 @@ router.post("/report-death/submit", deathReportLimiter, async (req, res) => {
     });
   }
 
+  writeAuditLog({
+    action: "death_report_submitted",
+    userId: deceasedUserId,
+    actorId: contactId,
+    actorType: "trusted_contact",
+    metadata: { reportId },
+  }).catch(() => {});
+
   res.json({
     success: true,
     reportId,
@@ -349,6 +358,14 @@ router.post("/report-death/confirm/:reportId", async (req, res) => {
     comments: comments?.trim() || null,
   });
 
+  writeAuditLog({
+    action: "death_report_confirmed",
+    userId: report.userId,
+    actorId: confirmer.id,
+    actorType: "trusted_contact",
+    metadata: { reportId },
+  }).catch(() => {});
+
   // Check if ALL trusted contacts for this user have now confirmed
   const allContacts = await db
     .select()
@@ -416,23 +433,19 @@ router.post("/report-death/confirm/:reportId", async (req, res) => {
 
       const appUrl = getAppUrl();
 
+      // Batch-load all recipients — no N+1
+      const recipientRows = uniqueRecipientIds.length > 0
+        ? await db.select().from(recipientsTable).where(inArray(recipientsTable.id, uniqueRecipientIds))
+        : [];
+
       // Generate access token + send email for each recipient
-      for (const recipientId of uniqueRecipientIds) {
-        const recipientRows = await db
-          .select()
-          .from(recipientsTable)
-          .where(eq(recipientsTable.id, recipientId))
-          .limit(1);
-
-        if (recipientRows.length === 0) continue;
-        const recipient = recipientRows[0]!;
-
+      for (const recipient of recipientRows) {
         const token = randomBytes(32).toString("hex");
         const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
         await db.insert(recipientAccessTokensTable).values({
           id: generateId(),
-          recipientId,
+          recipientId: recipient.id,
           releaseEventId: releaseId,
           token,
           expiresAt,
@@ -440,7 +453,7 @@ router.post("/report-death/confirm/:reportId", async (req, res) => {
 
         const accessUrl = `${appUrl}/access/${token}`;
 
-        await sendAccessLinkEmail({
+        sendAccessLinkEmail({
           toEmail: recipient.email,
           toName: recipient.fullName,
           deceasedName,
@@ -454,6 +467,13 @@ router.post("/report-death/confirm/:reportId", async (req, res) => {
         .set({ status: "released", updatedAt: new Date() })
         .where(eq(activationSettingsTable.userId, report.userId))
         .catch(() => {});
+
+      writeAuditLog({
+        action: "legacy_released_auto",
+        userId: report.userId,
+        actorType: "system",
+        metadata: { reportId, confirmerContactId: confirmer.id },
+      }).catch(() => {});
 
       res.json({
         success: true,

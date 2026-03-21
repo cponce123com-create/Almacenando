@@ -10,6 +10,7 @@ import {
   funeralPreferencesTable,
 } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
+import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
 
@@ -74,10 +75,22 @@ router.get("/:token", async (req, res) => {
     db.select().from(funeralPreferencesTable).where(eq(funeralPreferencesTable.userId, recipient.userId)).limit(1),
   ]);
 
+  // DESIGN DECISION: Tokens are intentionally multi-use (not single-use).
+  // Recipients are bereaved family members who may want to re-visit messages
+  // from their loved one multiple times. The security boundary is the 1-year
+  // expiration date. `usedAt` records first access for audit purposes only.
   await db
     .update(recipientAccessTokensTable)
-    .set({ usedAt: new Date() })
+    .set({ usedAt: tokenRecord.usedAt ?? new Date() })
     .where(eq(recipientAccessTokensTable.token, req.params.token));
+
+  writeAuditLog({
+    action: "recipient_accessed_portal",
+    userId: recipient.userId,
+    actorId: tokenRecord.recipientId,
+    actorType: "recipient",
+    metadata: { tokenId: tokenRecord.id, releaseEventId: tokenRecord.releaseEventId },
+  }).catch(() => {});
 
   const fp = funeralPrefs[0];
 

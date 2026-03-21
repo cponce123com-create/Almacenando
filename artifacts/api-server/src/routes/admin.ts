@@ -20,6 +20,7 @@ import { generateId } from "../lib/id.js";
 import { randomBytes } from "crypto";
 import { sendAccessLinkEmail } from "../lib/email.js";
 import { authLoginLimiter } from "../lib/rate-limit.js";
+import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
 
@@ -67,28 +68,46 @@ router.post("/setup", async (req, res) => {
   res.status(201).json({ message: "Admin created" });
 });
 
-// List all registered users with stats
+// List all registered users with stats — batched queries, no N+1
 router.get("/users", requireAdmin, async (req, res) => {
   const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
-  const result = await Promise.all(users.map(async (u) => {
-    const profiles = await db.select().from(profilesTable).where(eq(profilesTable.userId, u.id)).limit(1);
-    const [itemsRow] = await db.select({ c: count() }).from(legacyItemsTable).where(eq(legacyItemsTable.userId, u.id));
-    const [recipientsRow] = await db.select({ c: count() }).from(recipientsTable).where(eq(recipientsTable.userId, u.id));
-    const [trustedRow] = await db.select({ c: count() }).from(trustedContactsTable).where(eq(trustedContactsTable.userId, u.id));
-    const deathReports = await db.select().from(deathReportsTable).where(eq(deathReportsTable.userId, u.id)).limit(1);
-    return {
-      id: u.id,
-      email: u.email,
-      fullName: profiles[0]?.fullName ?? null,
-      status: u.status,
-      legacyItemsCount: itemsRow?.c ?? 0,
-      recipientsCount: recipientsRow?.c ?? 0,
-      trustedContactsCount: trustedRow?.c ?? 0,
-      deathReportStatus: deathReports[0]?.status ?? null,
-      createdAt: u.createdAt.toISOString(),
-    };
-  }));
-  res.json(result);
+  if (users.length === 0) { res.json([]); return; }
+
+  const userIds = users.map((u) => u.id);
+
+  const [profiles, legacyItemCounts, recipientCounts, trustedCounts, deathReports] = await Promise.all([
+    db.select({ userId: profilesTable.userId, fullName: profilesTable.fullName })
+      .from(profilesTable).where(inArray(profilesTable.userId, userIds)),
+    db.select({ userId: legacyItemsTable.userId, c: count() })
+      .from(legacyItemsTable).where(inArray(legacyItemsTable.userId, userIds))
+      .groupBy(legacyItemsTable.userId),
+    db.select({ userId: recipientsTable.userId, c: count() })
+      .from(recipientsTable).where(inArray(recipientsTable.userId, userIds))
+      .groupBy(recipientsTable.userId),
+    db.select({ userId: trustedContactsTable.userId, c: count() })
+      .from(trustedContactsTable).where(inArray(trustedContactsTable.userId, userIds))
+      .groupBy(trustedContactsTable.userId),
+    db.select({ userId: deathReportsTable.userId, status: deathReportsTable.status })
+      .from(deathReportsTable).where(inArray(deathReportsTable.userId, userIds)),
+  ]);
+
+  const profileMap = new Map(profiles.map((p) => [p.userId, p.fullName]));
+  const itemsMap = new Map(legacyItemCounts.map((r) => [r.userId, r.c]));
+  const recipMap = new Map(recipientCounts.map((r) => [r.userId, r.c]));
+  const trustedMap = new Map(trustedCounts.map((r) => [r.userId, r.c]));
+  const reportMap = new Map(deathReports.map((r) => [r.userId, r.status]));
+
+  res.json(users.map((u) => ({
+    id: u.id,
+    email: u.email,
+    fullName: profileMap.get(u.id) ?? null,
+    status: u.status,
+    legacyItemsCount: itemsMap.get(u.id) ?? 0,
+    recipientsCount: recipMap.get(u.id) ?? 0,
+    trustedContactsCount: trustedMap.get(u.id) ?? 0,
+    deathReportStatus: reportMap.get(u.id) ?? null,
+    createdAt: u.createdAt.toISOString(),
+  })));
 });
 
 // Suspend a user
@@ -103,25 +122,40 @@ router.post("/users/:id/activate", requireAdmin, async (req, res) => {
   res.json({ message: "User activated" });
 });
 
+// List death reports — batched queries, no N+1
 router.get("/death-reports", requireAdmin, async (req, res) => {
   const reports = await db.select().from(deathReportsTable);
-  const result = await Promise.all(reports.map(async (r) => {
-    const users = await db.select().from(usersTable).where(eq(usersTable.id, r.userId)).limit(1);
-    const profiles = await db.select().from(profilesTable).where(eq(profilesTable.userId, r.userId)).limit(1);
-    const confirmations = await db.select().from(deathConfirmationsTable).where(eq(deathConfirmationsTable.deathReportId, r.id));
-    return {
-      id: r.id,
-      userId: r.userId,
-      userEmail: users[0]?.email ?? "unknown",
-      userName: profiles[0]?.fullName ?? null,
-      status: r.status,
-      confirmationsCount: confirmations.length,
-      createdAt: r.createdAt.toISOString(),
-    };
-  }));
-  res.json(result);
+  if (reports.length === 0) { res.json([]); return; }
+
+  const reportIds = reports.map((r) => r.id);
+  const userIds = [...new Set(reports.map((r) => r.userId))];
+
+  const [users, profiles, confirmationCounts] = await Promise.all([
+    db.select({ id: usersTable.id, email: usersTable.email })
+      .from(usersTable).where(inArray(usersTable.id, userIds)),
+    db.select({ userId: profilesTable.userId, fullName: profilesTable.fullName })
+      .from(profilesTable).where(inArray(profilesTable.userId, userIds)),
+    db.select({ deathReportId: deathConfirmationsTable.deathReportId, c: count() })
+      .from(deathConfirmationsTable).where(inArray(deathConfirmationsTable.deathReportId, reportIds))
+      .groupBy(deathConfirmationsTable.deathReportId),
+  ]);
+
+  const userMap = new Map(users.map((u) => [u.id, u.email]));
+  const profileMap = new Map(profiles.map((p) => [p.userId, p.fullName]));
+  const confMap = new Map(confirmationCounts.map((c) => [c.deathReportId, c.c]));
+
+  res.json(reports.map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    userEmail: userMap.get(r.userId) ?? "unknown",
+    userName: profileMap.get(r.userId) ?? null,
+    status: r.status,
+    confirmationsCount: confMap.get(r.id) ?? 0,
+    createdAt: r.createdAt.toISOString(),
+  })));
 });
 
+// Get single death report — batched queries, no N+1 on confirmations
 router.get("/death-reports/:id", requireAdmin, async (req, res) => {
   const reports = await db.select().from(deathReportsTable).where(eq(deathReportsTable.id, req.params.id)).limit(1);
   if (reports.length === 0) {
@@ -129,19 +163,20 @@ router.get("/death-reports/:id", requireAdmin, async (req, res) => {
     return;
   }
   const r = reports[0]!;
-  const users = await db.select().from(usersTable).where(eq(usersTable.id, r.userId)).limit(1);
-  const profiles = await db.select().from(profilesTable).where(eq(profilesTable.userId, r.userId)).limit(1);
-  const confirmations = await db.select().from(deathConfirmationsTable).where(eq(deathConfirmationsTable.deathReportId, r.id));
-  const enrichedConfirmations = await Promise.all(confirmations.map(async (c) => {
-    const contacts = await db.select().from(trustedContactsTable).where(eq(trustedContactsTable.id, c.trustedContactId)).limit(1);
-    return {
-      id: c.id,
-      trustedContactName: contacts[0]?.fullName ?? "Unknown",
-      decision: c.decision,
-      comments: c.comments,
-      confirmedAt: c.confirmedAt.toISOString(),
-    };
-  }));
+
+  const [users, profiles, confirmations] = await Promise.all([
+    db.select({ email: usersTable.email }).from(usersTable).where(eq(usersTable.id, r.userId)).limit(1),
+    db.select({ fullName: profilesTable.fullName }).from(profilesTable).where(eq(profilesTable.userId, r.userId)).limit(1),
+    db.select().from(deathConfirmationsTable).where(eq(deathConfirmationsTable.deathReportId, r.id)),
+  ]);
+
+  // Batch-load trusted contacts for all confirmations in one query
+  const contactIds = confirmations.map((c) => c.trustedContactId);
+  const contactRows = contactIds.length > 0
+    ? await db.select({ id: trustedContactsTable.id, fullName: trustedContactsTable.fullName })
+        .from(trustedContactsTable).where(inArray(trustedContactsTable.id, contactIds))
+    : [];
+  const contactMap = new Map(contactRows.map((c) => [c.id, c.fullName]));
 
   res.json({
     id: r.id,
@@ -150,7 +185,13 @@ router.get("/death-reports/:id", requireAdmin, async (req, res) => {
     userName: profiles[0]?.fullName ?? null,
     notes: r.notes,
     status: r.status,
-    confirmations: enrichedConfirmations,
+    confirmations: confirmations.map((c) => ({
+      id: c.id,
+      trustedContactName: contactMap.get(c.trustedContactId) ?? "Unknown",
+      decision: c.decision,
+      comments: c.comments,
+      confirmedAt: c.confirmedAt.toISOString(),
+    })),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   });
@@ -234,23 +275,24 @@ router.post("/death-reports/:id/approve", requireAdmin, async (req, res) => {
   const appUrl = process.env.APP_URL?.replace(/\/$/, "")
     ?? (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "https://legadoapp.replit.app");
 
-  for (const recipientId of uniqueRecipientIds) {
-    const recipientRows = await db.select().from(recipientsTable).where(eq(recipientsTable.id, recipientId)).limit(1);
-    if (recipientRows.length === 0) continue;
-    const recipient = recipientRows[0]!;
+  // Batch-load all recipients — no N+1
+  const allRecipients = uniqueRecipientIds.length > 0
+    ? await db.select().from(recipientsTable).where(inArray(recipientsTable.id, uniqueRecipientIds))
+    : [];
 
+  for (const recipient of allRecipients) {
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     await db.insert(recipientAccessTokensTable).values({
       id: generateId(),
-      recipientId,
+      recipientId: recipient.id,
       releaseEventId: releaseId,
       token,
       expiresAt,
     });
 
     const accessUrl = `${appUrl}/access/${token}`;
-    await sendAccessLinkEmail({
+    sendAccessLinkEmail({
       toEmail: recipient.email,
       toName: recipient.fullName,
       deceasedName,
@@ -261,16 +303,35 @@ router.post("/death-reports/:id/approve", requireAdmin, async (req, res) => {
 
   await db.update(activationSettingsTable).set({ status: "released", updatedAt: new Date() }).where(eq(activationSettingsTable.userId, report.userId));
 
+  writeAuditLog({
+    action: "legacy_released_admin",
+    userId: report.userId,
+    actorId: adminId,
+    actorType: "admin",
+    metadata: { reportId: req.params.id, force: !!force },
+  }).catch(() => {});
+
   res.json({ message: "Legado liberado. Los destinatarios han recibido sus enlaces de acceso." });
 });
 
 router.post("/death-reports/:id/reject", requireAdmin, async (req, res) => {
+  const adminId = (req as typeof req & { adminId: string }).adminId;
   const reports = await db.select().from(deathReportsTable).where(eq(deathReportsTable.id, req.params.id)).limit(1);
   if (reports.length === 0) {
     res.status(404).json({ error: "Report not found" });
     return;
   }
+  const { reason } = req.body;
   await db.update(deathReportsTable).set({ status: "rejected", updatedAt: new Date() }).where(eq(deathReportsTable.id, req.params.id));
+
+  writeAuditLog({
+    action: "legacy_rejected_admin",
+    userId: reports[0]!.userId,
+    actorId: adminId,
+    actorType: "admin",
+    metadata: { reportId: req.params.id, reason: reason ?? null },
+  }).catch(() => {});
+
   res.json({ message: "Release rejected" });
 });
 
