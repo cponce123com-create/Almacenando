@@ -1,0 +1,215 @@
+Necesito mejorar el Constructor de Testamento para que recoja todos los datos necesarios antes de generar el documento, de modo que no queden campos en blanco en el resultado.
+CONTEXTO: El documento generado actualmente tiene espacios vacíos como nombre completo, DNI, estado civil, domicilio, ciudad, fecha, y el nombre del albacea. Necesito que el formulario pida todos esos datos antes de llamar a la IA.
+CAMBIO 1 — Agregar formulario de datos del testador
+En artifacts/legado/src/pages/legacy/form.tsx, dentro de la sección del Constructor de Testamento (cuando type === "funeral_note"), agregar un primer bloque titulado "Tus datos personales" con estos campos antes de la sección de beneficiarios:
+tsx<div className="space-y-4 mb-6">
+  <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+    <User className="w-4 h-4 text-fuchsia-600" />
+    Datos del testador
+  </h3>
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-1">
+      <Label className="text-gray-700 text-sm">Nombre completo *</Label>
+      <Input
+        value={testatorData.fullName}
+        onChange={(e) => setTestatorData(p => ({ ...p, fullName: e.target.value }))}
+        placeholder="Ej: Juan Carlos Pérez López"
+        className="rounded-xl h-11 text-gray-900"
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-gray-700 text-sm">DNI *</Label>
+      <Input
+        value={testatorData.dni}
+        onChange={(e) => setTestatorData(p => ({ ...p, dni: e.target.value }))}
+        placeholder="Ej: 12345678"
+        className="rounded-xl h-11 text-gray-900"
+        maxLength={12}
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-gray-700 text-sm">Estado civil *</Label>
+      <select
+        value={testatorData.civilStatus}
+        onChange={(e) => setTestatorData(p => ({ ...p, civilStatus: e.target.value }))}
+        className="w-full rounded-xl h-11 border border-gray-200 px-3 text-gray-900 bg-white"
+      >
+        <option value="">Seleccionar...</option>
+        <option value="soltero/a">Soltero/a</option>
+        <option value="casado/a">Casado/a</option>
+        <option value="divorciado/a">Divorciado/a</option>
+        <option value="viudo/a">Viudo/a</option>
+        <option value="conviviente">Conviviente</option>
+      </select>
+    </div>
+    <div className="space-y-1">
+      <Label className="text-gray-700 text-sm">Ciudad *</Label>
+      <Input
+        value={testatorData.city}
+        onChange={(e) => setTestatorData(p => ({ ...p, city: e.target.value }))}
+        placeholder="Ej: Lima"
+        className="rounded-xl h-11 text-gray-900"
+      />
+    </div>
+    <div className="space-y-1 md:col-span-2">
+      <Label className="text-gray-700 text-sm">Domicilio completo *</Label>
+      <Input
+        value={testatorData.address}
+        onChange={(e) => setTestatorData(p => ({ ...p, address: e.target.value }))}
+        placeholder="Ej: Av. Los Pinos 234, Miraflores, Lima"
+        className="rounded-xl h-11 text-gray-900"
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-gray-700 text-sm">Nombre del albacea (opcional)</Label>
+      <Input
+        value={testatorData.executor}
+        onChange={(e) => setTestatorData(p => ({ ...p, executor: e.target.value }))}
+        placeholder="Persona de confianza para ejecutar el testamento"
+        className="rounded-xl h-11 text-gray-900"
+      />
+    </div>
+    <div className="space-y-1">
+      <Label className="text-gray-700 text-sm">¿Tienes testamento anterior?</Label>
+      <select
+        value={testatorData.hasPreviousWill}
+        onChange={(e) => setTestatorData(p => ({ ...p, hasPreviousWill: e.target.value }))}
+        className="w-full rounded-xl h-11 border border-gray-200 px-3 text-gray-900 bg-white"
+      >
+        <option value="no">No tengo testamento anterior</option>
+        <option value="si">Sí tengo y quiero revocarlo</option>
+      </select>
+    </div>
+  </div>
+</div>
+Agregar el estado para estos datos al inicio del componente:
+typescriptconst [testatorData, setTestatorData] = useState({
+  fullName: "",
+  dni: "",
+  civilStatus: "",
+  city: "",
+  address: "",
+  executor: "",
+  hasPreviousWill: "no",
+});
+Importar User desde lucide-react si no está importado.
+
+CAMBIO 2 — Pasar los datos del testador al prompt de la IA
+En la función handleGenerateWill, modificar el body del fetch para incluir también testatorData:
+typescriptbody: JSON.stringify({ beneficiaries, testatorData }),
+Agregar validación antes de llamar a la IA:
+typescriptif (!testatorData.fullName || !testatorData.dni || !testatorData.city || !testatorData.address) {
+  toast({ 
+    title: "Completa tus datos personales", 
+    description: "Nombre, DNI, ciudad y domicilio son obligatorios para generar el documento.",
+    variant: "destructive" 
+  });
+  return;
+}
+
+CAMBIO 3 — Actualizar el endpoint de la IA para usar los datos del testador
+Archivo: artifacts/api-server/src/routes/ai.ts
+Modificar el endpoint para recibir y usar testatorData en el prompt:
+typescriptrouter.post("/generate-will", requireAuth, async (req, res) => {
+  const { beneficiaries, testatorData } = req.body;
+
+  if (!beneficiaries || !Array.isArray(beneficiaries) || beneficiaries.length === 0) {
+    res.status(400).json({ error: "Se requiere al menos un beneficiario" });
+    return;
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    res.status(503).json({ error: "El servicio de IA no está configurado" });
+    return;
+  }
+
+  const beneficiariesText = beneficiaries
+    .map((b: any) => `- ${b.relationship} llamado/a ${b.name}: ${b.bequest}`)
+    .join("\n");
+
+  const today = new Date().toLocaleDateString("es-PE", { 
+    day: "numeric", month: "long", year: "numeric" 
+  });
+
+  const albaceaClause = testatorData?.executor
+    ? `El albacea designado es ${testatorData.executor}.`
+    : "El albacea será designado en el instrumento notarial definitivo.";
+
+  const previousWillClause = testatorData?.hasPreviousWill === "si"
+    ? "El testador declara expresamente que revoca cualquier testamento anterior."
+    : "El testador declara no haber otorgado testamento anterior.";
+
+  const prompt = `Eres un asistente legal especializado en derecho sucesorio peruano.
+Redacta un documento formal de "Últimas Voluntades" en español para Perú con los siguientes datos REALES del testador. NO dejes ningún campo en blanco — usa exactamente los datos proporcionados.
+
+DATOS DEL TESTADOR:
+- Nombre completo: ${testatorData?.fullName || "No proporcionado"}
+- DNI: ${testatorData?.dni || "No proporcionado"}
+- Estado civil: ${testatorData?.civilStatus || "No especificado"}
+- Ciudad: ${testatorData?.city || "No proporcionada"}
+- Domicilio: ${testatorData?.address || "No proporcionado"}
+- Fecha: ${today}
+- ${albaceaClause}
+- ${previousWillClause}
+
+BENEFICIARIOS Y BIENES:
+${beneficiariesText}
+
+INSTRUCCIONES ESTRICTAS:
+1. Usar EXACTAMENTE los datos del testador proporcionados arriba — NO dejar espacios en blanco ni guiones para completar después
+2. Formato de testamento informal pero legalmente orientado al sistema jurídico peruano
+3. Incluir encabezado formal con los datos reales ya completados
+4. Mencionar que es documento orientativo y debe formalizarse ante notario público
+5. Incluir una sección por cada beneficiario con el bien o activo que se le destina, usando su nombre real
+6. Incluir cláusulas estándar del derecho sucesorio peruano: legítima, libre disposición, albacea
+7. Cerrar con espacio para firma y fecha
+8. Lenguaje formal pero comprensible
+9. Entre 800 y 1200 palabras
+10. Al final incluir una sección de firma con el nombre real del testador ya escrito
+
+Redacta el documento completo ahora:`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      res.status(500).json({ error: "Error al generar el documento", detail: error });
+      return;
+    }
+
+    const data = await response.json();
+    const document = data.content?.[0]?.text || "";
+    res.json({ document });
+  } catch (err: any) {
+    console.error("[ai/generate-will]", err);
+    res.status(500).json({ error: "Error interno al generar el documento" });
+  }
+});
+
+CAMBIO 4 — Precargar datos del perfil del usuario automáticamente
+En form.tsx, usar el hook useGetMe para precargar el nombre del usuario en testatorData.fullName automáticamente cuando se carga el componente:
+typescriptconst { data: currentUser } = useGetMe({ query: { retry: false } });
+
+useEffect(() => {
+  if (currentUser?.profile?.fullName && !testatorData.fullName) {
+    setTestatorData(p => ({ 
+      ...p, 
+      fullName: currentUser.profile.fullName 
+    }));
+  }
+}, [currentUser]);
+Así el usuario ya ve su nombre precargado y solo necesita completar DNI, domicilio y los demás campos.

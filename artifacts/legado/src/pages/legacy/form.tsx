@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, Save, UploadCloud, FileCheck2, X, FileVideo, FileAudio, Image, FileText, Lock, Sparkles, Plus, Trash2, AlertCircle, Eye, FileDown } from "lucide-react";
+import { Loader2, ArrowLeft, Save, UploadCloud, FileCheck2, X, FileVideo, FileAudio, Image, FileText, Lock, Sparkles, Plus, Trash2, AlertCircle, Eye, FileDown, User } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { getAuthToken, getAuthHeaders } from "@/hooks/use-auth";
 import { getEncryptionKey, encryptFile } from "@/lib/encryption";
+import { useProfile } from "@/hooks/use-settings";
 
 const formSchema = z.object({
   type: z.enum(["video", "letter", "audio", "photo", "document", "funeral_note"]),
@@ -276,6 +277,25 @@ export default function LegacyForm() {
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [mediaData, setMediaData] = useState<MediaData | null>(null);
 
+  const { data: profileData } = useProfile();
+
+  const [testatorData, setTestatorData] = useState({
+    fullName: "",
+    dni: "",
+    civilStatus: "",
+    city: "",
+    address: "",
+    executor: "",
+    hasPreviousWill: "no",
+  });
+
+  useEffect(() => {
+    const name = (profileData as any)?.fullName || (profileData as any)?.data?.fullName;
+    if (name && !testatorData.fullName) {
+      setTestatorData((p) => ({ ...p, fullName: name }));
+    }
+  }, [profileData]);
+
   type Beneficiary = { name: string; relationship: string; bequest: string };
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [newBenef, setNewBenef] = useState<Beneficiary>({ name: "", relationship: "", bequest: "" });
@@ -290,6 +310,14 @@ export default function LegacyForm() {
   };
 
   const handleGenerateWill = async () => {
+    if (!testatorData.fullName || !testatorData.dni || !testatorData.city || !testatorData.address) {
+      toast({
+        title: "Completa tus datos personales",
+        description: "Nombre, DNI, ciudad y domicilio son obligatorios para generar el documento.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (beneficiaries.length === 0) {
       toast({ title: "Agrega al menos un beneficiario", variant: "destructive" });
       return;
@@ -302,7 +330,7 @@ export default function LegacyForm() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionStorage.getItem("legado_token") || localStorage.getItem("legado_token")}`,
         },
-        body: JSON.stringify({ beneficiaries }),
+        body: JSON.stringify({ beneficiaries, testatorData }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -552,10 +580,92 @@ export default function LegacyForm() {
                       <Sparkles className="w-4 h-4 text-violet-500" />
                       <span className="font-semibold text-violet-900 text-sm">Constructor de testamento con IA</span>
                     </div>
-                    <div className="p-4 space-y-3">
+                    <div className="p-4 space-y-4">
                       <p className="text-xs text-gray-500 leading-relaxed">
-                        Añade a tus beneficiarios y qué les dejarás. La IA redactará el documento en lenguaje formal y personal.
+                        Completa tus datos y añade a tus beneficiarios. La IA redactará el documento sin dejar campos en blanco.
                       </p>
+
+                      {/* Testator data */}
+                      <div className="space-y-3 bg-gray-50 rounded-xl p-4 border border-gray-100">
+                        <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                          <User className="w-4 h-4 text-fuchsia-600" />
+                          Datos del testador
+                        </h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-gray-700 text-xs">Nombre completo *</Label>
+                            <Input
+                              value={testatorData.fullName}
+                              onChange={(e) => setTestatorData((p) => ({ ...p, fullName: e.target.value }))}
+                              placeholder="Ej: Juan Carlos Pérez López"
+                              className="rounded-xl h-10 text-gray-900 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-gray-700 text-xs">DNI *</Label>
+                            <Input
+                              value={testatorData.dni}
+                              onChange={(e) => setTestatorData((p) => ({ ...p, dni: e.target.value }))}
+                              placeholder="Ej: 12345678"
+                              className="rounded-xl h-10 text-gray-900 text-sm"
+                              maxLength={12}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-gray-700 text-xs">Estado civil *</Label>
+                            <select
+                              value={testatorData.civilStatus}
+                              onChange={(e) => setTestatorData((p) => ({ ...p, civilStatus: e.target.value }))}
+                              className="w-full rounded-xl h-10 border border-gray-200 px-3 text-gray-900 bg-white text-sm"
+                            >
+                              <option value="">Seleccionar...</option>
+                              <option value="soltero/a">Soltero/a</option>
+                              <option value="casado/a">Casado/a</option>
+                              <option value="divorciado/a">Divorciado/a</option>
+                              <option value="viudo/a">Viudo/a</option>
+                              <option value="conviviente">Conviviente</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-gray-700 text-xs">Ciudad *</Label>
+                            <Input
+                              value={testatorData.city}
+                              onChange={(e) => setTestatorData((p) => ({ ...p, city: e.target.value }))}
+                              placeholder="Ej: Lima"
+                              className="rounded-xl h-10 text-gray-900 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1 sm:col-span-2">
+                            <Label className="text-gray-700 text-xs">Domicilio completo *</Label>
+                            <Input
+                              value={testatorData.address}
+                              onChange={(e) => setTestatorData((p) => ({ ...p, address: e.target.value }))}
+                              placeholder="Ej: Av. Los Pinos 234, Miraflores, Lima"
+                              className="rounded-xl h-10 text-gray-900 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-gray-700 text-xs">Nombre del albacea (opcional)</Label>
+                            <Input
+                              value={testatorData.executor}
+                              onChange={(e) => setTestatorData((p) => ({ ...p, executor: e.target.value }))}
+                              placeholder="Persona de confianza"
+                              className="rounded-xl h-10 text-gray-900 text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-gray-700 text-xs">¿Tienes testamento anterior?</Label>
+                            <select
+                              value={testatorData.hasPreviousWill}
+                              onChange={(e) => setTestatorData((p) => ({ ...p, hasPreviousWill: e.target.value }))}
+                              className="w-full rounded-xl h-10 border border-gray-200 px-3 text-gray-900 bg-white text-sm"
+                            >
+                              <option value="no">No tengo testamento anterior</option>
+                              <option value="si">Sí tengo y quiero revocarlo</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
 
                       {/* Beneficiary list */}
                       {beneficiaries.length > 0 && (

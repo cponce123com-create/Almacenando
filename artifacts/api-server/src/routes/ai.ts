@@ -4,7 +4,7 @@ import { requireAuth } from "../lib/auth.js";
 const router = Router();
 
 router.post("/generate-will", requireAuth, async (req, res) => {
-  const { beneficiaries } = req.body;
+  const { beneficiaries, testatorData } = req.body;
 
   if (!beneficiaries || !Array.isArray(beneficiaries) || beneficiaries.length === 0) {
     res.status(400).json({ error: "Se requiere al menos un beneficiario." });
@@ -19,28 +19,51 @@ router.post("/generate-will", requireAuth, async (req, res) => {
     return;
   }
 
-  const beneficiaryList = beneficiaries
-    .map((b: { relationship: string; name: string; bequest: string }, i: number) =>
-      `${i + 1}. ${b.relationship} ${b.name}: "${b.bequest}"`
+  const beneficiariesText = beneficiaries
+    .map((b: { relationship: string; name: string; bequest: string }) =>
+      `- ${b.relationship} llamado/a ${b.name}: ${b.bequest}`
     )
     .join("\n");
 
-  const prompt = `Eres un asistente legal especializado en derecho sucesorio peruano. 
-Redacta un documento formal de "Últimas Voluntades" en español para Perú, 
-basándote en la siguiente información proporcionada por el testador:
+  const today = new Date().toLocaleDateString("es-PE", {
+    day: "numeric", month: "long", year: "numeric",
+  });
 
-Beneficiarios y bienes:
-${beneficiaryList}
+  const albaceaClause = testatorData?.executor
+    ? `El albacea designado es ${testatorData.executor}.`
+    : "El albacea será designado en el instrumento notarial definitivo.";
 
-El documento debe:
-1. Tener el formato de un testamento informal pero legalmente orientado al sistema jurídico peruano
-2. Incluir encabezado formal con espacio para nombre completo, DNI, domicilio y fecha
-3. Mencionar que es un documento de carácter orientativo y que debe ser formalizado ante notario público
-4. Incluir una sección por cada beneficiario con el bien o activo que se le destina
-5. Incluir cláusulas estándar del derecho sucesorio peruano: legítima, libre disposición, albacea
-6. Cerrar con espacio para firma y fecha
-7. Usar lenguaje formal pero comprensible
-8. Tener entre 800 y 1200 palabras
+  const previousWillClause = testatorData?.hasPreviousWill === "si"
+    ? "El testador declara expresamente que revoca cualquier testamento anterior."
+    : "El testador declara no haber otorgado testamento anterior.";
+
+  const prompt = `Eres un asistente legal especializado en derecho sucesorio peruano.
+Redacta un documento formal de "Últimas Voluntades" en español para Perú con los siguientes datos REALES del testador. NO dejes ningún campo en blanco — usa exactamente los datos proporcionados.
+
+DATOS DEL TESTADOR:
+- Nombre completo: ${testatorData?.fullName || "No proporcionado"}
+- DNI: ${testatorData?.dni || "No proporcionado"}
+- Estado civil: ${testatorData?.civilStatus || "No especificado"}
+- Ciudad: ${testatorData?.city || "No proporcionada"}
+- Domicilio: ${testatorData?.address || "No proporcionado"}
+- Fecha: ${today}
+- ${albaceaClause}
+- ${previousWillClause}
+
+BENEFICIARIOS Y BIENES:
+${beneficiariesText}
+
+INSTRUCCIONES ESTRICTAS:
+1. Usar EXACTAMENTE los datos del testador proporcionados arriba — NO dejar espacios en blanco ni guiones para completar después
+2. Formato de testamento informal pero legalmente orientado al sistema jurídico peruano
+3. Incluir encabezado formal con los datos reales ya completados
+4. Mencionar que es documento orientativo y debe formalizarse ante notario público
+5. Incluir una sección por cada beneficiario con el bien o activo que se le destina, usando su nombre real
+6. Incluir cláusulas estándar del derecho sucesorio peruano: legítima, libre disposición, albacea
+7. Cerrar con espacio para firma y fecha
+8. Lenguaje formal pero comprensible
+9. Entre 800 y 1200 palabras
+10. Al final incluir una sección de firma con el nombre real del testador ya escrito
 
 Redacta el documento completo ahora:`;
 
