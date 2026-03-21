@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { legacyItemsTable, legacyItemRecipientsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { legacyItemsTable, legacyItemRecipientsTable, recipientsTable } from "@workspace/db";
+import { eq, and, inArray } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 
@@ -130,6 +130,25 @@ router.put("/:id/recipients", requireAuth, async (req, res) => {
     res.status(400).json({ error: "recipientIds must be an array" });
     return;
   }
+
+  if (recipientIds.length > 0) {
+    const ownedRecipients = await db
+      .select({ id: recipientsTable.id })
+      .from(recipientsTable)
+      .where(
+        and(
+          inArray(recipientsTable.id, recipientIds),
+          eq(recipientsTable.userId, userId)
+        )
+      );
+    const ownedIds = new Set(ownedRecipients.map((r) => r.id));
+    const unauthorized = recipientIds.filter((id: string) => !ownedIds.has(id));
+    if (unauthorized.length > 0) {
+      res.status(403).json({ error: "Uno o más destinatarios no pertenecen a tu cuenta" });
+      return;
+    }
+  }
+
   await db.delete(legacyItemRecipientsTable).where(eq(legacyItemRecipientsTable.legacyItemId, req.params.id));
   if (recipientIds.length > 0) {
     await db.insert(legacyItemRecipientsTable).values(recipientIds.map((rId: string) => ({

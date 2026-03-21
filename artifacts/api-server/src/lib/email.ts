@@ -249,3 +249,78 @@ El equipo de Legado
     html,
   });
 }
+
+export async function sendTrustedContactInviteEmail({
+  toEmail,
+  toName,
+  ownerName,
+  relationship,
+}: {
+  toEmail: string;
+  toName: string;
+  ownerName: string;
+  relationship: string;
+}): Promise<void> {
+  const transporter = createTransport();
+  if (!transporter) return;
+
+  const from = `"Legado" <${process.env.EMAIL_USER}>`;
+
+  const text = `
+Hola ${toName},
+
+${ownerName} te ha designado como contacto de confianza en Legado, la plataforma de legado digital.
+
+Como contacto de confianza (${relationship}), tendrás un papel importante: si ocurre algo con ${ownerName}, se te solicitará que confirmes el acontecimiento para que su legado digital pueda ser entregado a sus seres queridos.
+
+No necesitas hacer nada por ahora. Cuando llegue el momento, recibirás un correo con un enlace personal para confirmar.
+
+Con cariño,
+— Equipo de Legado
+`.trim();
+
+  const html = `
+<div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="font-size: 24px; color: #7C3AED; margin: 0;">✦ Legado</h1>
+  </div>
+
+  <p style="font-size: 15px; line-height: 1.6;">Hola <strong>${toName}</strong>,</p>
+
+  <div style="background: linear-gradient(135deg, #EDE9FE, #F5F3FF); border-radius: 16px; padding: 24px; margin: 24px 0;">
+    <p style="font-size: 16px; font-weight: 600; color: #5B21B6; margin: 0 0 8px;">
+      ${ownerName} confía en ti
+    </p>
+    <p style="font-size: 14px; color: #7C3AED; margin: 0;">
+      Has sido designado/a como su contacto de confianza en Legado
+    </p>
+  </div>
+
+  <p style="font-size: 15px; line-height: 1.6; color: #374151;">
+    Como <strong>${relationship}</strong> de ${ownerName}, tendrás un papel especial: si ocurre algo, 
+    se te pedirá que confirmes el acontecimiento para que su legado digital pueda ser 
+    entregado a sus seres queridos según sus deseos.
+  </p>
+
+  <div style="background: #F9FAFB; border-radius: 12px; padding: 16px; margin: 24px 0; border-left: 4px solid #7C3AED;">
+    <p style="margin: 0; font-size: 14px; color: #6B7280; line-height: 1.6;">
+      <strong>No necesitas hacer nada por ahora.</strong> Cuando llegue el momento, recibirás 
+      un correo con un enlace personal y seguro para confirmar.
+    </p>
+  </div>
+
+  <p style="font-size: 13px; color: #6B7280; margin-top: 32px;">
+    Si no conoces a ${ownerName} o recibes este correo por error, puedes ignorarlo.
+  </p>
+  <p style="font-size: 13px; color: #6B7280;">— Equipo de Legado</p>
+</div>
+`.trim();
+
+  await transporter.sendMail({
+    from,
+    to: toEmail,
+    subject: `${ownerName} te ha designado como contacto de confianza en Legado`,
+    text,
+    html,
+  });
+}

@@ -6,6 +6,7 @@ import { hashPassword, comparePassword, signToken, verifyToken, requireAuth } fr
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import crypto from "crypto";
+import { authLoginLimiter } from "../lib/rate-limit.js";
 
 const router = Router();
 
@@ -65,7 +66,7 @@ router.post("/register", async (req, res) => {
   });
 });
 
-router.post("/login", async (req, res) => {
+router.post("/login", authLoginLimiter, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Validation error" });

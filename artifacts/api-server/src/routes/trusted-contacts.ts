@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { trustedContactsTable } from "@workspace/db";
+import { trustedContactsTable, profilesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { randomBytes } from "crypto";
+import { sendTrustedContactInviteEmail } from "../lib/email.js";
 
 const router = Router();
 
@@ -53,6 +54,22 @@ router.post("/", requireAuth, async (req, res) => {
   });
   const items = await db.select().from(trustedContactsTable).where(eq(trustedContactsTable.id, id)).limit(1);
   res.status(201).json(toContact(items[0]!));
+
+  // Send invite email in background — don't await to avoid delaying the response
+  db.select({ fullName: profilesTable.fullName })
+    .from(profilesTable)
+    .where(eq(profilesTable.userId, userId))
+    .limit(1)
+    .then(([profile]) => {
+      const ownerName = profile?.fullName ?? "Tu contacto de Legado";
+      sendTrustedContactInviteEmail({
+        toEmail: email,
+        toName: fullName,
+        ownerName,
+        relationship,
+      }).catch((err) => console.error("[invite-email] Failed to send to", email, err));
+    })
+    .catch(() => {});
 });
 
 router.put("/:id", requireAuth, async (req, res) => {

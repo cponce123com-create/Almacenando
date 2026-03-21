@@ -1,5 +1,6 @@
 import { useRoute, Link, useLocation } from "wouter";
 import { useAdminReport, useApproveRelease, useRejectRelease, useDeleteReport } from "@/hooks/use-admin";
+import { getAdminAuthHeaders } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,10 +41,33 @@ export default function AdminReportDetail() {
     }
   };
 
+  const doApprove = async (force = false) => {
+    const headers = getAdminAuthHeaders() as Record<string, string>;
+    const res = await fetch(`/api/admin/death-reports/${id}/approve`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(force ? { force: true } : {}),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 422 && (data as any).canForce) {
+        const confirmed = confirm(
+          `⚠️ ${(data as any).error}\n\n¿Deseas aprobar de todas formas como administrador?`
+        );
+        if (confirmed) {
+          await doApprove(true);
+        }
+        return;
+      }
+      throw new Error((data as any).error || "Error al aprobar");
+    }
+    approveMutation.reset();
+  };
+
   const handleApprove = async () => {
     if (confirm("¿Aprobar y liberar el legado? Se enviarán los enlaces de acceso a los destinatarios de forma inmediata e irreversible.")) {
       try {
-        await approveMutation.mutateAsync({ id });
+        await doApprove(false);
         toast({ title: "Legado liberado", description: "Los destinatarios han recibido sus enlaces de acceso." });
         setLocation("/admin");
       } catch (e: any) {

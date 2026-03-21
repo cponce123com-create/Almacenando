@@ -16,6 +16,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { randomBytes } from "crypto";
 import { sendDeathReportEmail, sendAccessLinkEmail } from "../lib/email.js";
+import { deathReportLimiter, lookupLimiter } from "../lib/rate-limit.js";
 
 function getAppUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
@@ -56,7 +57,7 @@ router.get("/legacy-check", async (req, res) => {
 
 // Look up trusted contacts for a deceased person by their DNI
 // Returns only names — no personal data — so anyone can use this
-router.post("/report-death/lookup", async (req, res) => {
+router.post("/report-death/lookup", lookupLimiter, async (req, res) => {
   const { deceasedDni } = req.body;
 
   if (!deceasedDni || typeof deceasedDni !== "string") {
@@ -93,7 +94,7 @@ router.post("/report-death/lookup", async (req, res) => {
 });
 
 // Validate reporter DNI against trusted contacts
-router.post("/report-death/validate", async (req, res) => {
+router.post("/report-death/validate", lookupLimiter, async (req, res) => {
   const { deceasedUserId, reporterDni } = req.body;
 
   if (!deceasedUserId || !reporterDni) {
@@ -135,7 +136,7 @@ router.post("/report-death/validate", async (req, res) => {
 });
 
 // Submit a death report by a trusted contact identified by DNI
-router.post("/report-death/submit", async (req, res) => {
+router.post("/report-death/submit", deathReportLimiter, async (req, res) => {
   const { contactId, deceasedUserId, deceasedName, reporterDni, notes } = req.body;
 
   if (!contactId || !deceasedUserId) {

@@ -19,10 +19,11 @@ import { hashPassword, comparePassword, signAdminToken, requireAdmin } from "../
 import { generateId } from "../lib/id.js";
 import { randomBytes } from "crypto";
 import { sendAccessLinkEmail } from "../lib/email.js";
+import { authLoginLimiter } from "../lib/rate-limit.js";
 
 const router = Router();
 
-router.post("/login", async (req, res) => {
+router.post("/login", authLoginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     res.status(400).json({ error: "Email and password are required" });
@@ -157,6 +158,8 @@ router.get("/death-reports/:id", requireAdmin, async (req, res) => {
 
 router.post("/death-reports/:id/approve", requireAdmin, async (req, res) => {
   const adminId = (req as typeof req & { adminId: string }).adminId;
+  const { force } = req.body;
+
   const reports = await db.select().from(deathReportsTable).where(eq(deathReportsTable.id, req.params.id)).limit(1);
   if (reports.length === 0) {
     res.status(404).json({ error: "Report not found" });
@@ -171,6 +174,32 @@ router.post("/death-reports/:id/approve", requireAdmin, async (req, res) => {
   if (report.status === "rejected") {
     res.status(409).json({ error: "Este reporte fue rechazado y no puede liberarse." });
     return;
+  }
+
+  // Verify minimum confirmations unless admin explicitly overrides with force:true
+  if (!force) {
+    const confirmations = await db
+      .select()
+      .from(deathConfirmationsTable)
+      .where(eq(deathConfirmationsTable.deathReportId, req.params.id));
+    const confirmedCount = confirmations.filter((c) => c.decision === "confirmed").length;
+
+    const settings = await db
+      .select()
+      .from(activationSettingsTable)
+      .where(eq(activationSettingsTable.userId, report.userId))
+      .limit(1);
+    const minConfirmations = settings[0]?.minConfirmations ?? 2;
+
+    if (confirmedCount < minConfirmations) {
+      res.status(422).json({
+        error: `Este reporte solo tiene ${confirmedCount} de ${minConfirmations} confirmaciones requeridas. Usa force:true para aprobar de todas formas.`,
+        confirmedCount,
+        required: minConfirmations,
+        canForce: true,
+      });
+      return;
+    }
   }
 
   await db.update(deathReportsTable).set({ status: "released", updatedAt: new Date() }).where(eq(deathReportsTable.id, req.params.id));
