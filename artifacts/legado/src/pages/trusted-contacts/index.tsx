@@ -539,7 +539,8 @@ export default function TrustedContacts() {
               <Button
                 onClick={handleSendEmail}
                 disabled={sendingEmail || selectedContactIds.length === 0 || !encKey}
-                className="w-full rounded-xl h-11 bg-violet-600 hover:bg-violet-700 text-white"
+                className="w-full rounded-xl h-11"
+                style={{ backgroundColor: "#9d174d", color: "white" }}
               >
                 {sendingEmail ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -617,7 +618,8 @@ export default function TrustedContacts() {
               <Button
                 onClick={handleSaveQuestion}
                 disabled={savingQuestion || !secretQuestion || !secretAnswer || !encKey}
-                className="w-full rounded-xl h-11 bg-violet-600 hover:bg-violet-700 text-white"
+                className="w-full rounded-xl h-11"
+                style={{ backgroundColor: "#9d174d", color: "white" }}
               >
                 {savingQuestion ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

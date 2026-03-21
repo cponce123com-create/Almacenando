@@ -61,9 +61,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
             className={cn(
               "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
               isActive
-                ? "bg-primary/10 text-primary font-medium shadow-sm"
+                ? "font-medium shadow-sm"
                 : "text-muted-foreground hover:bg-secondary hover:text-foreground"
             )}
+            style={isActive ? { backgroundColor: "rgba(157,23,77,0.1)", color: "#9d174d" } : undefined}
           >
             <item.icon className="w-5 h-5 shrink-0" />
             {item.name}
@@ -148,9 +149,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     className={cn(
                       "flex items-center gap-3 px-4 py-3 rounded-xl transition-all",
                       isActive
-                        ? "bg-primary/10 text-primary font-medium"
+                        ? "font-medium"
                         : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                     )}
+                    style={isActive ? { backgroundColor: "rgba(157,23,77,0.1)", color: "#9d174d" } : undefined}
                   >
                     <item.icon className="w-5 h-5 shrink-0" />
                     {item.name}

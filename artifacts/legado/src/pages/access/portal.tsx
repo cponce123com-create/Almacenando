@@ -187,7 +187,8 @@ function MediaDecryptor({
       <Button
         onClick={handleDecrypt}
         disabled={decrypting}
-        className="gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white"
+        className="gap-2 rounded-xl"
+        style={{ backgroundColor: "#9d174d", color: "white" }}
       >
         {decrypting ? (
           <Loader2 className="w-4 h-4 animate-spin" />
@@ -507,7 +508,7 @@ export default function AccessPortal() {
                         {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    <Button onClick={handleUnlockKey} className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-2 shrink-0">
+                    <Button onClick={handleUnlockKey} className="rounded-xl gap-2 shrink-0" style={{ backgroundColor: "#9d174d", color: "white" }}>
                       <Unlock className="w-4 h-4" />
                       Activar
                     </Button>
@@ -539,7 +540,8 @@ export default function AccessPortal() {
                       <Button
                         onClick={handleUnlockQuestion}
                         disabled={unlockingQuestion || !secretAnswer}
-                        className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white shrink-0"
+                        className="rounded-xl shrink-0"
+                        style={{ backgroundColor: "#9d174d", color: "white" }}
                       >
                         {unlockingQuestion ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
                       </Button>

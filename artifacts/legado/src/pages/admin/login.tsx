@@ -105,7 +105,8 @@ export default function AdminLogin() {
 
           <Button
             type="submit"
-            className="w-full h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-medium"
+            className="w-full h-11 rounded-xl font-medium"
+            style={{ backgroundColor: "#9d174d", color: "white" }}
             disabled={isPending}
           >
             {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Entrar al panel"}

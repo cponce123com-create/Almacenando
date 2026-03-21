@@ -228,7 +228,7 @@ export default function ActivationSettings() {
                 </p>
               </div>
               <div className="flex justify-end pt-2">
-                <Button type="submit" className="rounded-xl h-11 px-6 bg-violet-600 hover:bg-violet-700 text-white" disabled={updateMutation.isPending}>
+                <Button type="submit" className="rounded-xl h-11 px-6" style={{ backgroundColor: "#9d174d", color: "white" }} disabled={updateMutation.isPending}>
                   {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Guardar configuración"}
                 </Button>
               </div>

@@ -445,7 +445,7 @@ export default function MediaPage() {
             <div className="space-y-3">
               <video src={URL.createObjectURL(recordedBlob)} controls className="w-full rounded-xl aspect-video bg-black" />
               <div className="flex gap-2">
-                <Button onClick={() => handleVideoUpload(recordedBlob)} className="flex-1 bg-violet-600 hover:bg-violet-700 text-white">
+                <Button onClick={() => handleVideoUpload(recordedBlob)} className="flex-1" style={{ backgroundColor: "#9d174d", color: "white" }}>
                   <Upload className="w-4 h-4 mr-2" /> Guardar este video
                 </Button>
                 <Button variant="outline" onClick={() => { setRecordedBlob(null); setShowRecorder(true); }}>

@@ -364,7 +364,8 @@ export default function AdminReportDetail() {
                   Rechazar reporte
                 </Button>
                 <Button
-                  className="gap-2 bg-violet-600 hover:bg-violet-700 text-white flex-1 sm:flex-none"
+                  className="gap-2 flex-1 sm:flex-none"
+                  style={{ backgroundColor: "#9d174d", color: "white" }}
                   onClick={() => setShowApproveDialog(true)}
                   disabled={isApproving || isRejecting}
                 >

@@ -304,7 +304,8 @@ export default function FuneralPreferences() {
 
           <Button
             type="submit"
-            className="w-full bg-violet-600 hover:bg-violet-700 text-white h-11 rounded-xl"
+            className="w-full h-11 rounded-xl"
+            style={{ backgroundColor: "#9d174d", color: "white" }}
             disabled={updateMutation.isPending}
           >
             {updateMutation.isPending ? (
