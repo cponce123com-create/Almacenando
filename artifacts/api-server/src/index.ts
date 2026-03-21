@@ -20,4 +20,9 @@ app.listen(port, async () => {
   logger.info({ port }, "Server listening");
   await seedAdminIfNeeded();
   await backfillContactTokens();
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.warn("⚠️  ANTHROPIC_API_KEY no configurada — el generador de testamentos no funcionará");
+  } else {
+    console.log("✓ ANTHROPIC_API_KEY configurada");
+  }
 });

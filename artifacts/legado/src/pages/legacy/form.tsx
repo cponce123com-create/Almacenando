@@ -288,15 +288,14 @@ export default function LegacyForm() {
     if (beneficiaries.length === 0) return;
     setAiLoading(true);
     try {
-      const token = getAuthToken();
       const res = await fetch("/api/ai/generate-will", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ beneficiaries }),
       });
       const data = await res.json();
-      if (res.ok && data.text) {
-        form.setValue("contentText", data.text);
+      if (res.ok && data.document) {
+        form.setValue("contentText", data.document);
       }
     } catch {
       // silently fail

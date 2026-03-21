@@ -1,0 +1,132 @@
+Necesito que corrijas dos problemas visuales y funcionales urgentes. Lee cada archivo antes de modificarlo.
+PROBLEMA 1 — Botón "Generar testamento con IA" no funciona
+Busca en artifacts/legado/src/pages/legacy/form.tsx el botón que genera el testamento.
+Verificar y corregir todos estos puntos:
+
+Que existe artifacts/api-server/src/routes/ai.ts con el endpoint POST /generate-will. Si no existe crearlo:
+
+typescriptimport { Router } from "express";
+import { requireAuth } from "../lib/auth.js";
+
+const router = Router();
+
+router.post("/generate-will", requireAuth, async (req, res) => {
+  const { beneficiaries } = req.body;
+
+  if (!beneficiaries || !Array.isArray(beneficiaries) || beneficiaries.length === 0) {
+    res.status(400).json({ error: "Se requiere al menos un beneficiario" });
+    return;
+  }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    res.status(503).json({ error: "El servicio de IA no está configurado en el servidor" });
+    return;
+  }
+
+  const beneficiariesText = beneficiaries
+    .map((b: any) => `- ${b.relationship} (${b.name}): ${b.bequest}`)
+    .join("\n");
+
+  const prompt = `Eres un asistente legal especializado en derecho sucesorio peruano. Redacta un documento formal de "Últimas Voluntades" en español para Perú, basándote en la siguiente información:
+
+Beneficiarios y bienes:
+${beneficiariesText}
+
+El documento debe:
+1. Tener formato de testamento informal pero legalmente orientado al sistema jurídico peruano
+2. Incluir encabezado formal con espacio para: nombre completo, DNI, domicilio y fecha (dejar en blanco para que el usuario llene)
+3. Mencionar que es un documento orientativo y debe formalizarse ante notario público
+4. Incluir una sección por cada beneficiario con el bien o activo que se le destina
+5. Incluir cláusulas estándar del derecho sucesorio peruano: legítima, libre disposición, albacea
+6. Cerrar con espacio para firma y fecha
+7. Usar lenguaje formal pero comprensible
+8. Tener entre 800 y 1200 palabras
+
+Redacta el documento completo ahora:`;
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4000,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      res.status(500).json({ error: "Error al generar el documento", detail: error });
+      return;
+    }
+
+    const data = await response.json();
+    const document = data.content?.[0]?.text || "";
+    res.json({ document });
+  } catch (err: any) {
+    console.error("[ai/generate-will]", err);
+    res.status(500).json({ error: "Error interno al generar el documento" });
+  }
+});
+
+export default router;
+
+Que en artifacts/api-server/src/routes/index.ts está registrado:
+
+typescriptimport aiRouter from "./ai.js";
+router.use("/ai", aiRouter);
+
+Que el fetch en form.tsx incluye el token de autorización:
+
+typescriptheaders: {
+  "Content-Type": "application/json",
+  "Authorization": `Bearer ${sessionStorage.getItem("legado_token") || localStorage.getItem("legado_token")}`,
+}
+
+Agregar en artifacts/api-server/src/index.ts después del app.listen:
+
+typescriptif (!process.env.ANTHROPIC_API_KEY) {
+  console.warn("⚠️  ANTHROPIC_API_KEY no configurada — el generador de testamentos no funcionará");
+} else {
+  console.log("✓ ANTHROPIC_API_KEY configurada");
+}
+
+Recordarme al final que debo agregar ANTHROPIC_API_KEY en los Secrets de Replit con mi API key de Anthropic obtenida en console.anthropic.com.
+
+
+PROBLEMA 2 — Texto invisible (blanco sobre blanco) en toda la app
+Este es un problema de variables CSS mal definidas. Aplicar estos fixes:
+Fix 1 — Componentes base de inputs:
+Archivo artifacts/legado/src/components/ui/input.tsx: agregar text-gray-900 dark:text-gray-100 a las clases base del <input>.
+Archivo artifacts/legado/src/components/ui/textarea.tsx: agregar text-gray-900 dark:text-gray-100 a las clases base del <textarea>.
+Archivo artifacts/legado/src/components/ui/select.tsx: agregar text-gray-900 dark:text-gray-100 al SelectTrigger y text-gray-900 al SelectContent y cada SelectItem.
+Fix 2 — CSS global:
+Abrir artifacts/legado/src/index.css. Buscar las variables :root y verificar que estas variables tengan valores correctos para modo claro:
+css:root {
+  --foreground: 20 14.3% 4.1%;
+  --card-foreground: 20 14.3% 4.1%;
+  --popover-foreground: 20 14.3% 4.1%;
+  --input: 20 5.9% 90%;
+  --primary-foreground: 60 9.1% 97.8%;
+}
+Si alguna de estas variables hace que el texto sea blanco o invisible en fondos claros, corregirla.
+Fix 3 — Color primario a fuxia/magenta:
+En el mismo index.css, cambiar el color primario a fuxia. Buscar la variable --primary en :root y cambiarla a:
+css--primary: 322 80% 45%;
+Esto da un fuxia/magenta vibrante. Si los colores están definidos en tailwind.config.ts en lugar del CSS, cambiarlos ahí.
+Fix 4 — Texto del Constructor de Testamento:
+En artifacts/legado/src/pages/legacy/form.tsx, en toda la sección del Constructor de Testamento (el bloque que aparece cuando type === "funeral_note"), agregar clases de color explícitas a todos los elementos de texto:
+
+Todos los <label> y <Label>: agregar text-gray-800
+Todos los <p> informativos: agregar text-gray-600
+El título de la sección: agregar text-gray-900
+Los placeholders de los inputs ya se ven pero el texto escrito no — asegurarse de que los Input y Textarea de esa sección tengan className con text-gray-900
+
+Fix 5 — Revisar todos los archivos de páginas:
+Buscar en todos los archivos de artifacts/legado/src/pages/ cualquier texto que use text-white dentro de contenedores con fondo claro (bg-white, bg-background, bg-card, bg-secondary). Cambiar esos text-white a text-gray-800 o text-fuchsia-700 según corresponda.
