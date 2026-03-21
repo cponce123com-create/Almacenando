@@ -21,6 +21,7 @@ import MediaPage from "@/pages/media/index";
 import ProfilePage from "@/pages/profile/index";
 
 import ReportDeath from "@/pages/report-death/index";
+import ConfirmDeath from "@/pages/confirm-death/index";
 import AdminLogin from "@/pages/admin/login";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminReportDetail from "@/pages/admin/report-detail";
@@ -109,6 +110,7 @@ function Router() {
       <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
 
       <Route path="/report-death" component={ReportDeath} />
+      <Route path="/confirm-death/:reportId" component={ConfirmDeath} />
 
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>

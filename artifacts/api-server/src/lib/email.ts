@@ -18,12 +18,14 @@ export async function sendDeathReportEmail({
   reporterName,
   deceasedName,
   reporterDni,
+  confirmUrl,
 }: {
   toEmail: string;
   toName: string;
   reporterName: string;
   deceasedName: string;
   reporterDni: string;
+  confirmUrl: string;
 }): Promise<void> {
   const transporter = createTransport();
   if (!transporter) {
@@ -40,7 +42,10 @@ Hola ${toName},
 
 Te informamos que ${reporterName} ha reportado el fallecimiento de ${deceasedName} en la plataforma Legado.
 
-Como también eres contacto de confianza de ${deceasedName}, necesitamos que ingreses a legado.app y confirmes este reporte con tu propio DNI para que el administrador pueda revisar y, si corresponde, liberar el legado.
+Como también eres contacto de confianza de ${deceasedName}, necesitamos que confirmes este reporte con tu propio DNI para que el administrador pueda revisar y, si corresponde, liberar el legado.
+
+Puedes confirmar el reporte desde este enlace:
+${confirmUrl}
 
 ⚠️ ADVERTENCIA IMPORTANTE:
 El reporte ha sido enviado usando el DNI ${maskedDni}. Si este reporte es falso o fraudulento, el DNI completo del responsable quedará registrado y será BLOQUEADO PERMANENTEMENTE del sistema. Nunca más podrá utilizar el servicio de Legado.
@@ -69,7 +74,7 @@ Si tú no eres ${toName} o recibes este correo por error, por favor ignóralo o 
   </p>
 
   <div style="text-align: center; margin: 32px 0;">
-    <a href="${process.env.APP_URL || "https://legado.app"}/report-death"
+    <a href="${confirmUrl}"
        style="background: #7C3AED; color: white; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600; display: inline-block;">
       Confirmar reporte
     </a>

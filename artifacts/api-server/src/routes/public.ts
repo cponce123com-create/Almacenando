@@ -5,10 +5,17 @@ import {
   legacyItemsTable,
   trustedContactsTable,
   deathReportsTable,
+  deathConfirmationsTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
 import { sendDeathReportEmail } from "../lib/email.js";
+
+function getAppUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  if (process.env.REPLIT_DOMAINS) return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+  return "https://legado.replit.app";
+}
 
 const router = Router();
 
@@ -171,6 +178,8 @@ router.post("/report-death/submit", async (req, res) => {
 
   const emailsToSend = otherContacts.filter((c) => c.id !== contactId && c.email);
 
+  const confirmUrl = `${getAppUrl()}/confirm-death/${reportId}`;
+
   for (const recipient of emailsToSend) {
     sendDeathReportEmail({
       toEmail: recipient.email,
@@ -178,6 +187,7 @@ router.post("/report-death/submit", async (req, res) => {
       reporterName: reporter.fullName,
       deceasedName: deceasedName || "la persona registrada",
       reporterDni: reporterDni || "",
+      confirmUrl,
     }).catch((err) => {
       console.error(`[email] Failed to send to ${recipient.email}:`, err.message);
     });
@@ -186,7 +196,134 @@ router.post("/report-death/submit", async (req, res) => {
   res.json({
     success: true,
     reportId,
+    confirmUrl,
     message: "Reporte registrado. El otro contacto de confianza debe confirmar también.",
+  });
+});
+
+// Get public info about a death report for the confirmation page
+router.get("/report-death/confirm-info/:reportId", async (req, res) => {
+  const { reportId } = req.params;
+
+  const reports = await db
+    .select()
+    .from(deathReportsTable)
+    .where(eq(deathReportsTable.id, reportId))
+    .limit(1);
+
+  if (reports.length === 0) {
+    res.status(404).json({ error: "Reporte no encontrado" });
+    return;
+  }
+
+  const report = reports[0]!;
+
+  const deceased = await db
+    .select({
+      fullName: profilesTable.fullName,
+      avatarUrl: profilesTable.avatarUrl,
+    })
+    .from(profilesTable)
+    .where(eq(profilesTable.userId, report.userId))
+    .limit(1);
+
+  const reporter = await db
+    .select({ fullName: trustedContactsTable.fullName })
+    .from(trustedContactsTable)
+    .where(eq(trustedContactsTable.id, report.reportedByContactId))
+    .limit(1);
+
+  res.json({
+    reportId: report.id,
+    status: report.status,
+    deceasedName: deceased[0]?.fullName ?? "Persona desconocida",
+    deceasedAvatarUrl: deceased[0]?.avatarUrl ?? null,
+    reportedByName: reporter[0]?.fullName ?? "Contacto registrado",
+    createdAt: report.createdAt,
+  });
+});
+
+// Confirm a death report (second trusted contact)
+router.post("/report-death/confirm/:reportId", async (req, res) => {
+  const { reportId } = req.params;
+  const { confirmerDni, comments } = req.body;
+
+  if (!confirmerDni) {
+    res.status(400).json({ error: "Tu DNI es requerido" });
+    return;
+  }
+
+  const reports = await db
+    .select()
+    .from(deathReportsTable)
+    .where(eq(deathReportsTable.id, reportId))
+    .limit(1);
+
+  if (reports.length === 0) {
+    res.status(404).json({ error: "Reporte no encontrado" });
+    return;
+  }
+
+  const report = reports[0]!;
+
+  if (report.status !== "pending") {
+    res.status(409).json({ error: "Este reporte ya fue procesado" });
+    return;
+  }
+
+  // Find the confirmer's trusted contact record
+  const contact = await db
+    .select()
+    .from(trustedContactsTable)
+    .where(
+      and(
+        eq(trustedContactsTable.userId, report.userId),
+        eq(trustedContactsTable.dni, confirmerDni.trim().toUpperCase())
+      )
+    )
+    .limit(1);
+
+  if (contact.length === 0) {
+    res.status(403).json({ error: "Tu DNI no está registrado como contacto de confianza de esta persona" });
+    return;
+  }
+
+  const confirmer = contact[0]!;
+
+  // Don't allow the original reporter to double-confirm
+  if (confirmer.id === report.reportedByContactId) {
+    res.status(400).json({ error: "Ya eres quien inició este reporte. Debe confirmarlo otro contacto de confianza." });
+    return;
+  }
+
+  // Check if already confirmed by this contact
+  const existing = await db
+    .select()
+    .from(deathConfirmationsTable)
+    .where(
+      and(
+        eq(deathConfirmationsTable.deathReportId, reportId),
+        eq(deathConfirmationsTable.trustedContactId, confirmer.id)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    res.status(409).json({ error: "Ya confirmaste este reporte anteriormente" });
+    return;
+  }
+
+  await db.insert(deathConfirmationsTable).values({
+    id: generateId(),
+    deathReportId: reportId,
+    trustedContactId: confirmer.id,
+    decision: "confirmed",
+    comments: comments?.trim() || null,
+  });
+
+  res.json({
+    success: true,
+    message: "Confirmación registrada. El administrador revisará el caso y decidirá si liberar el legado.",
   });
 });
 
