@@ -12,6 +12,7 @@ export const trustedContactsTable = pgTable("trusted_contacts", {
   inviteStatus: text("invite_status").notNull().default("pending"),
   dni: text("dni"),
   isConfirmed: boolean("is_confirmed").notNull().default(false),
+  confirmToken: text("confirm_token"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

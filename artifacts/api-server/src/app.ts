@@ -6,6 +6,23 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+function getAllowedOrigins(): string[] {
+  const origins: string[] = [];
+  if (process.env.APP_URL) origins.push(process.env.APP_URL.replace(/\/$/, ""));
+  if (process.env.REPLIT_DOMAINS) {
+    for (const d of process.env.REPLIT_DOMAINS.split(",")) {
+      origins.push(`https://${d.trim()}`);
+    }
+  }
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    origins.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+  }
+  if (process.env.NODE_ENV !== "production") {
+    origins.push("http://localhost:3000", "http://localhost:5173", "http://localhost:19854");
+  }
+  return origins;
+}
+
 app.use(
   pinoHttp({
     logger,
@@ -25,7 +42,16 @@ app.use(
     },
   }),
 );
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    const allowed = getAllowedOrigins();
+    if (allowed.includes(origin)) return callback(null, true);
+    logger.warn({ origin }, "CORS blocked request from unauthorized origin");
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

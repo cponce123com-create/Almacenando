@@ -176,7 +176,7 @@ router.post("/report-death/submit", async (req, res) => {
     });
   }
 
-  // Send email to all other trusted contacts
+  // Send email to all other trusted contacts (each gets their personal token URL)
   const otherContacts = await db
     .select()
     .from(trustedContactsTable)
@@ -184,9 +184,11 @@ router.post("/report-death/submit", async (req, res) => {
 
   const emailsToSend = otherContacts.filter((c) => c.id !== contactId && c.email);
 
-  const confirmUrl = `${getAppUrl()}/confirm-death/${reportId}`;
+  const appUrl = getAppUrl();
 
   for (const recipient of emailsToSend) {
+    const tokenParam = recipient.confirmToken ? `?token=${recipient.confirmToken}` : "";
+    const confirmUrl = `${appUrl}/confirm-death/${reportId}${tokenParam}`;
     sendDeathReportEmail({
       toEmail: recipient.email,
       toName: recipient.fullName,
@@ -252,10 +254,10 @@ router.get("/report-death/confirm-info/:reportId", async (req, res) => {
 // Confirm a death report (second trusted contact)
 router.post("/report-death/confirm/:reportId", async (req, res) => {
   const { reportId } = req.params;
-  const { confirmerDni, comments } = req.body;
+  const { confirmToken, confirmerDni, comments } = req.body;
 
-  if (!confirmerDni) {
-    res.status(400).json({ error: "Tu DNI es requerido" });
+  if (!confirmToken && !confirmerDni) {
+    res.status(400).json({ error: "Se requiere el token de confirmación del email o tu DNI" });
     return;
   }
 
@@ -277,24 +279,43 @@ router.post("/report-death/confirm/:reportId", async (req, res) => {
     return;
   }
 
-  // Find the confirmer's trusted contact record
-  const contact = await db
-    .select()
-    .from(trustedContactsTable)
-    .where(
-      and(
-        eq(trustedContactsTable.userId, report.userId),
-        eq(trustedContactsTable.dni, confirmerDni.trim().toUpperCase())
-      )
-    )
-    .limit(1);
+  // Primary auth: token from email link (secure) — fallback to DNI for contacts without token
+  let contact: typeof trustedContactsTable.$inferSelect | undefined;
 
-  if (contact.length === 0) {
-    res.status(403).json({ error: "Tu DNI no está registrado como contacto de confianza de esta persona" });
+  if (confirmToken) {
+    const byToken = await db
+      .select()
+      .from(trustedContactsTable)
+      .where(
+        and(
+          eq(trustedContactsTable.userId, report.userId),
+          eq(trustedContactsTable.confirmToken, confirmToken)
+        )
+      )
+      .limit(1);
+    contact = byToken[0];
+  }
+
+  if (!contact && confirmerDni) {
+    const byDni = await db
+      .select()
+      .from(trustedContactsTable)
+      .where(
+        and(
+          eq(trustedContactsTable.userId, report.userId),
+          eq(trustedContactsTable.dni, confirmerDni.trim().toUpperCase())
+        )
+      )
+      .limit(1);
+    contact = byDni[0];
+  }
+
+  if (!contact) {
+    res.status(403).json({ error: "Token inválido o DNI no registrado como contacto de confianza" });
     return;
   }
 
-  const confirmer = contact[0]!;
+  const confirmer = contact;
 
   // Don't allow the original reporter to double-confirm
   if (confirmer.id === report.reportedByContactId) {

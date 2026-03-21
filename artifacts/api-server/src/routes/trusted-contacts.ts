@@ -4,6 +4,7 @@ import { trustedContactsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
+import { randomBytes } from "crypto";
 
 const router = Router();
 
@@ -37,6 +38,7 @@ router.post("/", requireAuth, async (req, res) => {
   }
 
   const id = generateId();
+  const confirmToken = randomBytes(32).toString("hex");
   await db.insert(trustedContactsTable).values({
     id,
     userId,
@@ -47,6 +49,7 @@ router.post("/", requireAuth, async (req, res) => {
     dni: dni.toString().toUpperCase(),
     inviteStatus: "pending",
     isConfirmed: false,
+    confirmToken,
   });
   const items = await db.select().from(trustedContactsTable).where(eq(trustedContactsTable.id, id)).limit(1);
   res.status(201).json(toContact(items[0]!));

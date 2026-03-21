@@ -35,6 +35,9 @@ export default function ConfirmDeath() {
   const reportId = params?.reportId ?? "";
   const { toast } = useToast();
 
+  // Token from the email link — used as primary auth for confirmation
+  const confirmToken = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("token") ?? undefined;
+
   const [step, setStep] = useState<Step>("info");
   const [confirmerDni, setConfirmerDni] = useState("");
   const [comments, setComments] = useState("");
@@ -56,7 +59,7 @@ export default function ConfirmDeath() {
   });
 
   const handleConfirm = async () => {
-    if (!confirmerDni.trim()) { setError("Ingresa tu DNI"); return; }
+    if (!confirmToken && !confirmerDni.trim()) { setError("Ingresa tu DNI"); return; }
     setError("");
     setLoading(true);
     try {
@@ -64,7 +67,8 @@ export default function ConfirmDeath() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          confirmerDni: confirmerDni.trim().toUpperCase(),
+          confirmToken: confirmToken || undefined,
+          confirmerDni: confirmerDni.trim().toUpperCase() || undefined,
           comments: comments.trim() || undefined,
         }),
       });
@@ -182,11 +186,17 @@ export default function ConfirmDeath() {
 
                   <Button
                     className="w-full h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-base flex items-center gap-2"
-                    onClick={() => setStep("dni")}
+                    onClick={() => confirmToken ? handleConfirm() : setStep("dni")}
+                    disabled={loading}
                   >
-                    <Heart className="w-4 h-4" />
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Heart className="w-4 h-4" />}
                     Confirmar fallecimiento
                   </Button>
+                  {confirmToken && (
+                    <p className="text-xs text-center text-violet-500 mt-2">
+                      ✓ Accediste con tu enlace personal — no necesitas ingresar tu DNI
+                    </p>
+                  )}
 
                   <Link href="/">
                     <Button variant="ghost" className="w-full rounded-xl text-gray-500">

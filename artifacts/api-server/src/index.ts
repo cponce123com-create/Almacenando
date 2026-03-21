@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedAdminIfNeeded } from "./lib/seed.js";
+import { seedAdminIfNeeded, backfillContactTokens } from "./lib/seed.js";
 
 const rawPort = process.env["PORT"];
 
@@ -19,4 +19,5 @@ if (Number.isNaN(port) || port <= 0) {
 app.listen(port, async () => {
   logger.info({ port }, "Server listening");
   await seedAdminIfNeeded();
+  await backfillContactTokens();
 });
