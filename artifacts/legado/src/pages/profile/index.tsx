@@ -261,7 +261,8 @@ export default function ProfilePage() {
           <Button
             type="submit"
             disabled={mutation.isPending}
-            className="w-full bg-violet-600 hover:bg-violet-700 text-white"
+            className="w-full text-white"
+            style={{ backgroundColor: "#9d174d" }}
           >
             {mutation.isPending ? (
               <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Guardando…</>

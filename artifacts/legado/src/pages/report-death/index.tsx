@@ -49,6 +49,10 @@ type ValidateResult = {
   otherContacts: { id: string; fullName: string }[];
 };
 
+const PRIMARY = "#9d174d";
+const PRIMARY_BG = "rgba(157,23,77,0.08)";
+const PRIMARY_BORDER = "rgba(157,23,77,0.2)";
+
 export default function ReportDeath() {
   const { toast } = useToast();
 
@@ -63,7 +67,6 @@ export default function ReportDeath() {
   const [certFile, setCertFile] = useState<File | null>(null);
   const [certPersonFile, setCertPersonFile] = useState<File | null>(null);
 
-  // Step 1: look up deceased by DNI → show trusted contacts
   const handleLookup = async () => {
     if (!deceasedDni.trim()) { setError("Ingresa el DNI del fallecido"); return; }
     setError("");
@@ -85,7 +88,6 @@ export default function ReportDeath() {
     }
   };
 
-  // Step 2b: validate reporter DNI
   const handleValidate = async () => {
     if (!reporterDni.trim()) { setError("Ingresa tu DNI"); return; }
     if (!lookupResult) return;
@@ -111,7 +113,6 @@ export default function ReportDeath() {
     }
   };
 
-  // Step 3: submit report
   const handleSubmit = async () => {
     if (!validateResult || !lookupResult) return;
     setLoading(true);
@@ -147,10 +148,10 @@ export default function ReportDeath() {
   const resetError = () => setError("");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-rose-50 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(135deg, #fdf2f8 0%, #ffffff 50%, #fdf2f8 100%)" }}>
       <div className="w-full max-w-md">
         <div className="mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-violet-600 transition-colors">
+          <Link href="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors">
             <ArrowLeft className="w-4 h-4" /> Volver al inicio
           </Link>
         </div>
@@ -165,8 +166,8 @@ export default function ReportDeath() {
               className="bg-white rounded-2xl shadow-xl p-8"
             >
               <div className="flex flex-col items-center mb-7">
-                <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center mb-3">
-                  <Heart className="w-7 h-7 text-violet-600" />
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: PRIMARY_BG }}>
+                  <Heart className="w-7 h-7" style={{ color: PRIMARY }} />
                 </div>
                 <h1 className="text-xl font-serif font-bold text-gray-900 text-center">Reportar Fallecimiento</h1>
                 <p className="text-sm text-gray-500 text-center mt-1.5 leading-relaxed">
@@ -200,7 +201,8 @@ export default function ReportDeath() {
                 <Button
                   onClick={handleLookup}
                   disabled={loading || !deceasedDni.trim()}
-                  className="w-full h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-base"
+                  className="w-full h-12 rounded-xl text-base text-white"
+                  style={{ backgroundColor: PRIMARY }}
                 >
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Buscar"}
                 </Button>
@@ -216,8 +218,8 @@ export default function ReportDeath() {
               className="bg-white rounded-2xl shadow-xl p-8"
             >
               <div className="flex flex-col items-center mb-6">
-                <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center mb-3">
-                  <Users className="w-7 h-7 text-violet-600" />
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3" style={{ backgroundColor: PRIMARY_BG }}>
+                  <Users className="w-7 h-7" style={{ color: PRIMARY }} />
                 </div>
                 <h2 className="text-xl font-serif font-bold text-gray-900 text-center">
                   Contactos de confianza
@@ -233,9 +235,13 @@ export default function ReportDeath() {
 
               <div className="space-y-2 mb-7">
                 {lookupResult.trustedContacts.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3 p-3.5 rounded-xl bg-violet-50 border border-violet-100">
-                    <div className="w-9 h-9 rounded-full bg-violet-200 flex items-center justify-center shrink-0">
-                      <UserCircle2 className="w-5 h-5 text-violet-600" />
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-3 p-3.5 rounded-xl"
+                    style={{ backgroundColor: PRIMARY_BG, border: `1px solid ${PRIMARY_BORDER}` }}
+                  >
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: "rgba(157,23,77,0.15)" }}>
+                      <UserCircle2 className="w-5 h-5" style={{ color: PRIMARY }} />
                     </div>
                     <span className="font-medium text-gray-800">{c.fullName}</span>
                   </div>
@@ -255,7 +261,8 @@ export default function ReportDeath() {
                   Atrás
                 </Button>
                 <Button
-                  className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-2"
+                  className="flex-1 rounded-xl text-white flex items-center gap-2"
+                  style={{ backgroundColor: PRIMARY }}
                   onClick={() => { setStep("reporter_dni"); resetError(); }}
                 >
                   <FileText className="w-4 h-4" />
@@ -296,7 +303,7 @@ export default function ReportDeath() {
               <div className="space-y-5">
                 <div className="space-y-1.5">
                   <Label className="flex items-center gap-1.5 text-sm font-medium">
-                    <BadgeCheck className="w-4 h-4 text-violet-500" />
+                    <BadgeCheck className="w-4 h-4 text-gray-400" />
                     Tu DNI (contacto de confianza)
                   </Label>
                   <Input
@@ -327,7 +334,8 @@ export default function ReportDeath() {
                   <Button
                     onClick={handleValidate}
                     disabled={loading || !reporterDni.trim()}
-                    className="flex-1 h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white"
+                    className="flex-1 h-12 rounded-xl text-white"
+                    style={{ backgroundColor: PRIMARY }}
                   >
                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verificar"}
                   </Button>
@@ -352,14 +360,14 @@ export default function ReportDeath() {
                 </h2>
               </div>
 
-              <div className="bg-violet-50 rounded-xl p-4 mb-5 space-y-2">
+              <div className="rounded-xl p-4 mb-5 space-y-2" style={{ backgroundColor: PRIMARY_BG }}>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Persona fallecida:</span>
                   <span className="font-semibold text-gray-900">{lookupResult.deceasedName}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Reportado por:</span>
-                  <span className="font-semibold text-violet-700">{validateResult.contactName}</span>
+                  <span className="font-semibold" style={{ color: PRIMARY }}>{validateResult.contactName}</span>
                 </div>
               </div>
 
@@ -386,9 +394,9 @@ export default function ReportDeath() {
               </div>
 
               <div className="space-y-3 mb-5">
-                <div className="bg-violet-50 border border-violet-100 rounded-xl p-3">
-                  <p className="text-xs text-violet-700 font-medium mb-1">📎 Documentación fotográfica (opcional)</p>
-                  <p className="text-xs text-violet-600 leading-relaxed">
+                <div className="rounded-xl p-3" style={{ backgroundColor: PRIMARY_BG, border: `1px solid ${PRIMARY_BORDER}` }}>
+                  <p className="text-xs font-medium mb-1" style={{ color: PRIMARY }}>📎 Documentación fotográfica (opcional)</p>
+                  <p className="text-xs leading-relaxed" style={{ color: "#7c1d45" }}>
                     Adjuntar fotos agiliza significativamente la revisión y aprobación del legado.
                   </p>
                 </div>
@@ -407,7 +415,7 @@ export default function ReportDeath() {
                     />
                     <label
                       htmlFor="cert-file"
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-300 bg-gray-50 hover:bg-violet-50 cursor-pointer transition-all text-sm text-gray-500 hover:text-violet-600"
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 cursor-pointer transition-all text-sm text-gray-500"
                     >
                       {certFile ? (
                         <span className="text-green-700 font-medium flex items-center gap-1">
@@ -439,7 +447,7 @@ export default function ReportDeath() {
                     />
                     <label
                       htmlFor="cert-person-file"
-                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-300 bg-gray-50 hover:bg-violet-50 cursor-pointer transition-all text-sm text-gray-500 hover:text-violet-600"
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 cursor-pointer transition-all text-sm text-gray-500"
                     >
                       {certPersonFile ? (
                         <span className="text-green-700 font-medium flex items-center gap-1">
@@ -470,7 +478,8 @@ export default function ReportDeath() {
                   Atrás
                 </Button>
                 <Button
-                  className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-700 text-white"
+                  className="flex-1 rounded-xl text-white"
+                  style={{ backgroundColor: PRIMARY }}
                   onClick={handleSubmit}
                   disabled={loading}
                 >
@@ -498,7 +507,7 @@ export default function ReportDeath() {
                 Una vez ambos contactos confirmen, el administrador revisará el caso y decidirá si se libera el legado.
               </p>
               <Link href="/">
-                <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-8">
+                <Button className="rounded-xl text-white px-8" style={{ backgroundColor: PRIMARY }}>
                   Volver al inicio
                 </Button>
               </Link>

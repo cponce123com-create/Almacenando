@@ -377,14 +377,13 @@ export default function Recipients() {
                 <button
                   type="button"
                   onClick={() => form.setValue("accessType", "all")}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
-                    accessType === "all"
-                      ? "border-violet-500 bg-violet-50"
-                      : "border-border hover:border-violet-300 bg-background"
-                  }`}
+                  className="p-4 rounded-xl border-2 text-left transition-all"
+                  style={accessType === "all"
+                    ? { borderColor: "#9d174d", backgroundColor: "rgba(157,23,77,0.06)" }
+                    : undefined}
                 >
-                  <Globe className={`w-5 h-5 mb-2 ${accessType === "all" ? "text-violet-600" : "text-muted-foreground"}`} />
-                  <p className={`font-semibold text-sm ${accessType === "all" ? "text-violet-800" : "text-foreground"}`}>
+                  <Globe className="w-5 h-5 mb-2" style={{ color: accessType === "all" ? "#9d174d" : undefined }} />
+                  <p className="font-semibold text-sm" style={{ color: accessType === "all" ? "#6b1035" : undefined }}>
                     Todo el legado
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
@@ -395,14 +394,13 @@ export default function Recipients() {
                 <button
                   type="button"
                   onClick={() => form.setValue("accessType", "specific")}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
-                    accessType === "specific"
-                      ? "border-amber-500 bg-amber-50"
-                      : "border-border hover:border-amber-300 bg-background"
-                  }`}
+                  className="p-4 rounded-xl border-2 text-left transition-all"
+                  style={accessType === "specific"
+                    ? { borderColor: "#d97706", backgroundColor: "#fffbeb" }
+                    : undefined}
                 >
-                  <FileText className={`w-5 h-5 mb-2 ${accessType === "specific" ? "text-amber-600" : "text-muted-foreground"}`} />
-                  <p className={`font-semibold text-sm ${accessType === "specific" ? "text-amber-800" : "text-foreground"}`}>
+                  <FileText className="w-5 h-5 mb-2" style={{ color: accessType === "specific" ? "#d97706" : undefined }} />
+                  <p className="font-semibold text-sm" style={{ color: accessType === "specific" ? "#92400e" : undefined }}>
                     Contenido específico
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
@@ -451,9 +449,8 @@ export default function Recipients() {
                                 return (
                                   <label
                                     key={item.id}
-                                    className={`flex items-center gap-3 p-3 cursor-pointer transition-colors hover:bg-muted/50 ${
-                                      isSelected ? "bg-violet-50/60" : "bg-background"
-                                    }`}
+                                    className="flex items-center gap-3 p-3 cursor-pointer transition-colors hover:bg-muted/50"
+                                    style={isSelected ? { backgroundColor: "rgba(157,23,77,0.05)" } : undefined}
                                   >
                                     <Checkbox
                                       checked={isSelected}
@@ -469,7 +466,7 @@ export default function Recipients() {
                                         {TYPE_LABELS[item.type] ?? item.type}
                                       </p>
                                     </div>
-                                    {isSelected && <ChevronRight className="w-4 h-4 text-violet-500 shrink-0" />}
+                                    {isSelected && <ChevronRight className="w-4 h-4 shrink-0" style={{ color: "#9d174d" }} />}
                                   </label>
                                 );
                               })}

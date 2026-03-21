@@ -7,6 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+const PRIMARY = "#9d174d";
+const PRIMARY_BG = "rgba(157,23,77,0.08)";
+const PRIMARY_BORDER = "rgba(157,23,77,0.2)";
+
 type ContactInfo = {
   contactId: string;
   contactName: string;
@@ -91,28 +95,26 @@ export default function ConfirmContact() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 to-lavender-50 flex items-center justify-center px-4 py-16">
+    <div className="min-h-screen flex items-center justify-center px-4 py-16" style={{ background: "linear-gradient(135deg, #fdf2f8 0%, #f5f0ff 100%)" }}>
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-violet-700 font-serif text-2xl font-bold">
-            <Heart className="w-6 h-6 fill-current text-rose-400" />
+          <div className="inline-flex items-center gap-2 font-serif text-2xl font-bold" style={{ color: PRIMARY }}>
+            <Heart className="w-6 h-6 fill-current" style={{ color: PRIMARY }} />
             Legado
           </div>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-lg shadow-violet-100 border border-violet-100 overflow-hidden">
-          {/* Header */}
-          <div className="bg-gradient-to-br from-violet-700 to-violet-900 px-8 py-8 text-white text-center">
-            <Shield className="w-10 h-10 mx-auto mb-3 text-violet-200" />
+        <div className="bg-white rounded-3xl shadow-lg overflow-hidden" style={{ border: `1px solid ${PRIMARY_BORDER}` }}>
+          <div className="px-8 py-8 text-white text-center" style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, #6b1035 100%)` }}>
+            <Shield className="w-10 h-10 mx-auto mb-3 text-white/60" />
             <h1 className="font-serif text-2xl font-bold mb-1">Confirmación de confianza</h1>
-            <p className="text-violet-200 text-sm">Eres un contacto de confianza en Legado</p>
+            <p className="text-sm text-white/70">Eres un contacto de confianza en Legado</p>
           </div>
 
           <div className="px-8 py-8">
             {isLoading && (
               <div className="flex flex-col items-center gap-3 py-8 text-zinc-400">
-                <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
+                <Loader2 className="w-8 h-8 animate-spin" style={{ color: PRIMARY }} />
                 <p className="text-sm">Verificando tu enlace…</p>
               </div>
             )}
@@ -145,9 +147,9 @@ export default function ConfirmContact() {
 
             {info && !result && (
               <div className="space-y-6">
-                <div className="bg-violet-50 rounded-2xl p-5 text-center border border-violet-100">
-                  <p className="text-sm text-violet-600 mb-1">Contacto de confianza de</p>
-                  <p className="font-serif text-xl font-bold text-violet-900">{info.ownerName}</p>
+                <div className="rounded-2xl p-5 text-center" style={{ backgroundColor: PRIMARY_BG, border: `1px solid ${PRIMARY_BORDER}` }}>
+                  <p className="text-sm mb-1" style={{ color: PRIMARY }}>Contacto de confianza de</p>
+                  <p className="font-serif text-xl font-bold" style={{ color: "#4a0d26" }}>{info.ownerName}</p>
                   {info.pendingReportId && (
                     <div className="mt-3 inline-flex items-center gap-1.5 bg-amber-100 text-amber-700 rounded-full px-3 py-1 text-xs font-medium">
                       <AlertCircle className="w-3.5 h-3.5" />
@@ -174,7 +176,8 @@ export default function ConfirmContact() {
                     <Button
                       onClick={handleConfirm}
                       disabled={submitting}
-                      className="w-full bg-violet-700 hover:bg-violet-800 text-white rounded-xl h-12 font-semibold"
+                      className="w-full rounded-xl h-12 font-semibold text-white"
+                      style={{ backgroundColor: PRIMARY }}
                     >
                       {submitting ? (
                         <><Loader2 className="w-4 h-4 animate-spin mr-2" />Confirmando…</>
@@ -191,7 +194,8 @@ export default function ConfirmContact() {
                     <Button
                       onClick={handleReport}
                       disabled={submitting}
-                      className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-xl h-12 font-semibold"
+                      className="w-full rounded-xl h-12 font-semibold text-white"
+                      style={{ backgroundColor: PRIMARY }}
                     >
                       {submitting ? (
                         <><Loader2 className="w-4 h-4 animate-spin mr-2" />Enviando…</>

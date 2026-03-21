@@ -30,12 +30,14 @@ type ReportInfo = {
 
 type Step = "info" | "dni" | "done" | "released";
 
+const PRIMARY = "#9d174d";
+const PRIMARY_BG = "rgba(157,23,77,0.08)";
+
 export default function ConfirmDeath() {
   const [, params] = useRoute("/confirm-death/:reportId");
   const reportId = params?.reportId ?? "";
   const { toast } = useToast();
 
-  // Token from the email link — used as primary auth for confirmation
   const confirmToken = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("token") ?? undefined;
 
   const [step, setStep] = useState<Step>("info");
@@ -88,23 +90,21 @@ export default function ConfirmDeath() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-rose-50 flex items-center justify-center p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: "linear-gradient(135deg, #fdf2f8 0%, #ffffff 50%, #fdf2f8 100%)" }}>
       <div className="w-full max-w-md">
         <div className="mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-violet-600 transition-colors">
+          <Link href="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors">
             <ArrowLeft className="w-4 h-4" /> Volver al inicio
           </Link>
         </div>
 
-        {/* Loading state */}
         {infoLoading && (
           <div className="bg-white rounded-2xl shadow-xl p-12 flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
+            <Loader2 className="w-8 h-8 animate-spin" style={{ color: PRIMARY }} />
             <p className="text-sm text-gray-500">Cargando información del reporte…</p>
           </div>
         )}
 
-        {/* Error loading report */}
         {!infoLoading && (infoError || !info) && (
           <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
             <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
@@ -113,14 +113,13 @@ export default function ConfirmDeath() {
               {(infoError as Error)?.message || "Este enlace de confirmación no es válido o ya expiró."}
             </p>
             <Link href="/">
-              <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white">
+              <Button className="rounded-xl text-white" style={{ backgroundColor: PRIMARY }}>
                 Volver al inicio
               </Button>
             </Link>
           </div>
         )}
 
-        {/* Report already processed */}
         {!infoLoading && info && info.status !== "pending" && step !== "done" && (
           <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
             <CheckCircle2 className="w-12 h-12 text-green-400 mx-auto mb-4" />
@@ -129,46 +128,39 @@ export default function ConfirmDeath() {
               Este reporte ya fue confirmado y está siendo revisado por el administrador.
             </p>
             <Link href="/">
-              <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white">
+              <Button className="rounded-xl text-white" style={{ backgroundColor: PRIMARY }}>
                 Volver al inicio
               </Button>
             </Link>
           </div>
         )}
 
-        {/* Main flow */}
         {!infoLoading && info && info.status === "pending" && (
           <AnimatePresence mode="wait">
 
-            {/* STEP 1 — Mostrar info del fallecido y pedir DNI */}
             {step === "info" && (
               <motion.div
                 key="info"
                 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
                 className="bg-white rounded-2xl shadow-xl overflow-hidden"
               >
-                {/* Foto y nombre del fallecido */}
-                <div className="bg-gradient-to-br from-violet-600 to-violet-800 p-8 flex flex-col items-center text-white">
-                  <div className="w-24 h-24 rounded-full overflow-hidden mb-4 ring-4 ring-white/30 bg-violet-500 flex items-center justify-center">
+                <div className="p-8 flex flex-col items-center text-white" style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, #6b1035 100%)` }}>
+                  <div className="w-24 h-24 rounded-full overflow-hidden mb-4 flex items-center justify-center" style={{ border: "4px solid rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.15)" }}>
                     {info.deceasedAvatarUrl ? (
-                      <img
-                        src={info.deceasedAvatarUrl}
-                        alt={info.deceasedName}
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={info.deceasedAvatarUrl} alt={info.deceasedName} className="w-full h-full object-cover" />
                     ) : (
                       <UserCircle2 className="w-14 h-14 text-white/60" />
                     )}
                   </div>
                   <h1 className="text-2xl font-serif font-bold text-center">{info.deceasedName}</h1>
-                  <p className="text-violet-200 text-sm mt-1 text-center">
+                  <p className="text-sm mt-1 text-center text-white/70">
                     Reporte de fallecimiento pendiente de confirmación
                   </p>
                 </div>
 
                 <div className="p-8 space-y-5">
-                  <div className="bg-violet-50 rounded-xl p-4 text-sm">
-                    <p className="text-violet-700">
+                  <div className="rounded-xl p-4 text-sm" style={{ backgroundColor: PRIMARY_BG }}>
+                    <p style={{ color: PRIMARY }}>
                       <span className="font-semibold">{info.reportedByName}</span> ha reportado el fallecimiento
                       de <span className="font-semibold">{info.deceasedName}</span> y necesita tu confirmación
                       como contacto de confianza.
@@ -185,15 +177,16 @@ export default function ConfirmDeath() {
                   </div>
 
                   <Button
-                    className="w-full h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-base flex items-center gap-2"
+                    className="w-full h-12 rounded-xl text-white text-base flex items-center gap-2"
+                    style={{ backgroundColor: PRIMARY }}
                     onClick={() => confirmToken ? handleConfirm() : setStep("dni")}
                     disabled={loading}
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Heart className="w-4 h-4" />}
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Heart className="w-4 h-4 fill-current" />}
                     Confirmar fallecimiento
                   </Button>
                   {confirmToken && (
-                    <p className="text-xs text-center text-violet-500 mt-2">
+                    <p className="text-xs text-center mt-2" style={{ color: PRIMARY }}>
                       ✓ Accediste con tu enlace personal — no necesitas ingresar tu DNI
                     </p>
                   )}
@@ -207,7 +200,6 @@ export default function ConfirmDeath() {
               </motion.div>
             )}
 
-            {/* STEP 2 — Ingresar DNI del confirmante */}
             {step === "dni" && (
               <motion.div
                 key="dni"
@@ -230,7 +222,7 @@ export default function ConfirmDeath() {
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <Label className="flex items-center gap-1.5 text-sm font-medium">
-                      <BadgeCheck className="w-4 h-4 text-violet-500" />
+                      <BadgeCheck className="w-4 h-4 text-gray-400" />
                       Tu DNI
                     </Label>
                     <Input
@@ -267,7 +259,8 @@ export default function ConfirmDeath() {
                     <Button
                       onClick={handleConfirm}
                       disabled={loading || !confirmerDni.trim()}
-                      className="flex-1 h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white"
+                      className="flex-1 h-12 rounded-xl text-white"
+                      style={{ backgroundColor: PRIMARY }}
                     >
                       {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Confirmar"}
                     </Button>
@@ -276,7 +269,6 @@ export default function ConfirmDeath() {
               </motion.div>
             )}
 
-            {/* DONE — esperando al otro contacto */}
             {step === "done" && (
               <motion.div
                 key="done"
@@ -293,38 +285,37 @@ export default function ConfirmDeath() {
                   y sus seres queridos recibirán un enlace de acceso.
                 </p>
                 <Link href="/">
-                  <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-8">
+                  <Button className="rounded-xl text-white px-8" style={{ backgroundColor: PRIMARY }}>
                     Volver al inicio
                   </Button>
                 </Link>
               </motion.div>
             )}
 
-            {/* RELEASED — todos confirmaron, legado liberado */}
             {step === "released" && (
               <motion.div
                 key="released"
                 initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
                 className="bg-white rounded-2xl shadow-xl overflow-hidden text-center"
               >
-                <div className="bg-gradient-to-br from-violet-600 to-violet-800 p-8 flex flex-col items-center text-white">
-                  <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4">
+                <div className="p-8 flex flex-col items-center text-white" style={{ background: `linear-gradient(135deg, ${PRIMARY} 0%, #6b1035 100%)` }}>
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4" style={{ backgroundColor: "rgba(255,255,255,0.2)" }}>
                     <Unlock className="w-8 h-8 text-white" />
                   </div>
                   <h2 className="text-2xl font-serif font-bold mb-2">Legado liberado</h2>
-                  <p className="text-violet-200 text-sm">Todos los contactos han confirmado</p>
+                  <p className="text-sm text-white/70">Todos los contactos han confirmado</p>
                 </div>
                 <div className="p-8">
                   <p className="text-sm text-gray-600 mb-4 leading-relaxed">
                     Todos los contactos de confianza han confirmado el fallecimiento de{" "}
                     <strong className="text-gray-900">{info.deceasedName}</strong>.
                   </p>
-                  <div className="bg-violet-50 rounded-xl p-4 mb-7 text-sm text-violet-700 leading-relaxed">
+                  <div className="rounded-xl p-4 mb-7 text-sm leading-relaxed" style={{ backgroundColor: PRIMARY_BG, color: PRIMARY }}>
                     Los destinatarios designados ya han recibido sus enlaces de acceso personales
                     por correo electrónico para ver el legado.
                   </div>
                   <Link href="/">
-                    <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-8">
+                    <Button className="rounded-xl text-white px-8" style={{ backgroundColor: PRIMARY }}>
                       Volver al inicio
                     </Button>
                   </Link>

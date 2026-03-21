@@ -110,7 +110,7 @@ export default function Landing() {
           className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-gray-100 p-6"
         >
           <div className="flex items-center gap-2 mb-1">
-            <Search className="w-5 h-5 text-violet-500" />
+            <Search className="w-5 h-5" style={{ color: "#9d174d" }} />
             <h2 className="font-semibold text-gray-900 text-base">¿Alguien dejó un legado?</h2>
           </div>
           <p className="text-sm text-gray-500 mb-4">
@@ -127,7 +127,8 @@ export default function Landing() {
             <Button
               type="submit"
               disabled={dniLoading || dniQuery.trim().length < 3}
-              className="bg-violet-600 hover:bg-violet-700 text-white shrink-0"
+              className="shrink-0 text-white"
+              style={{ backgroundColor: "#9d174d" }}
             >
               {dniLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             </Button>
@@ -172,11 +173,11 @@ export default function Landing() {
       <section className="relative z-20 px-4 max-w-7xl mx-auto w-full">
         <div className="flex flex-row overflow-x-auto pb-4 gap-4 snap-x hide-scrollbar md:justify-center">
           {[
-            { icon: Play, title: "Video final", desc: "Graba un mensaje", bg: "bg-indigo-100", color: "text-indigo-600" },
-            { icon: Mail, title: "Cartas personales", desc: "Tus mensajes privados", bg: "bg-amber-100", color: "text-amber-600" },
-            { icon: ImageIcon, title: "Recuerdos", desc: "Fotos y audios", bg: "bg-blue-100", color: "text-blue-600" },
-            { icon: Music, title: "Playlist", desc: "Tu música especial", bg: "bg-rose-100", color: "text-rose-600" },
-            { icon: FolderOpen, title: "Info importante", desc: "Documentos y claves", bg: "bg-orange-100", color: "text-orange-600" },
+            { icon: Play, title: "Video final", desc: "Graba un mensaje", bg: "#e0e7ff", color: "#4338ca" },
+            { icon: Mail, title: "Cartas personales", desc: "Tus mensajes privados", bg: "#fef3c7", color: "#d97706" },
+            { icon: ImageIcon, title: "Recuerdos", desc: "Fotos y audios", bg: "#dbeafe", color: "#2563eb" },
+            { icon: Music, title: "Playlist", desc: "Tu música especial", bg: "rgba(157,23,77,0.1)", color: "#9d174d" },
+            { icon: FolderOpen, title: "Info importante", desc: "Documentos y claves", bg: "#ffedd5", color: "#ea580c" },
           ].map((feature, i) => (
             <motion.div 
               key={i}
@@ -185,8 +186,8 @@ export default function Landing() {
               transition={{ duration: 0.5, delay: 0.2 + (i * 0.1) }}
               className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] p-4 flex items-center gap-4 min-w-[240px] snap-center shrink-0"
             >
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${feature.bg}`}>
-                <feature.icon className={`w-6 h-6 ${feature.color}`} />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: feature.bg }}>
+                <feature.icon className="w-6 h-6" style={{ color: feature.color }} />
               </div>
               <div className="flex flex-col">
                 <span className="font-semibold text-gray-900 text-sm md:text-base">{feature.title}</span>
