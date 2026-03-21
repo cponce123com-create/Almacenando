@@ -258,6 +258,20 @@ function FileUploadZone({
   );
 }
 
+function convertMarkdownToHtml(text: string): string {
+  return text
+    .replace(/^# (.+)$/gm, '<h1 style="font-size:20px;font-weight:bold;text-align:center;margin:0 0 8px;letter-spacing:1px;">$1</h1>')
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:15px;font-weight:bold;margin:24px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px;">$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:13px;font-weight:bold;margin:16px 0 6px;">$1</h3>')
+    .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid #999;padding:8px 16px;margin:12px 0;color:#555;font-style:italic;background:#f9f9f9;">$1</blockquote>')
+    .replace(/^\d+\. (.+)$/gm, '<li style="margin:4px 0 4px 24px;list-style:decimal;">$1</li>')
+    .replace(/\n\n/g, '</p><p style="margin:10px 0;">')
+    .replace(/\n/g, '<br/>');
+}
+
 export default function LegacyForm() {
   const [match, params] = useRoute("/legacy/:id");
   const isNew = params?.id === "new";
@@ -349,67 +363,64 @@ export default function LegacyForm() {
     }
   };
 
-  const exportToPDF = () => {
-    const parchmentUrl = `${window.location.origin}${import.meta.env.BASE_URL}parchment.png`;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-    printWindow.document.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<title>Últimas Voluntades</title>
-<style>
-  @media print { body { margin: 0; } .no-print { display: none; } }
-  body {
-    font-family: 'Georgia', serif;
-    font-size: 14px;
-    line-height: 1.8;
-    color: #3b2000;
-    background: #fff;
-    margin: 0;
-    padding: 0;
-  }
-  .page {
-    width: 100%;
-    min-height: 100vh;
-    background-image: url('${parchmentUrl}');
-    background-size: cover;
-    background-position: center;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 0;
-  }
-  .content {
-    max-width: 620px;
-    margin: 60px auto;
-    padding: 40px 50px;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .print-btn {
-    display: block;
-    margin: 20px auto;
-    padding: 10px 30px;
-    background: #7c2d12;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    cursor: pointer;
-  }
-</style>
-</head>
-<body>
-<div class="no-print" style="text-align:center;padding:16px;background:#fef3c7;">
-  <button class="print-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
-</div>
-<div class="page">
-  <div class="content">${(generatedDocument || form.getValues("contentText") || "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
-</div>
-</body>
-</html>`);
-    printWindow.document.close();
+  const exportToPDF = async () => {
+    const { jsPDF } = await import("jspdf");
+    const html2canvas = (await import("html2canvas")).default;
+
+    const container = document.createElement("div");
+    container.style.cssText = `
+      position: fixed;
+      top: -9999px;
+      left: -9999px;
+      width: 794px;
+      padding: 60px 70px;
+      background: #ffffff;
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: #1a1a1a;
+      font-size: 13px;
+      line-height: 1.8;
+      box-sizing: border-box;
+    `;
+
+    const htmlContent = convertMarkdownToHtml(generatedDocument || "");
+    container.innerHTML = `<div style="max-width:654px;margin:0 auto;"><p style="margin:8px 0;">${htmlContent}</p></div>`;
+    document.body.appendChild(container);
+
+    try {
+      const canvas = await html2canvas(container, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        width: 794,
+        windowWidth: 794,
+      });
+
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidthMm = pageWidth;
+      const imgHeightMm = (canvas.height * pageWidth) / canvas.width;
+
+      let heightLeft = imgHeightMm;
+      let position = 0;
+
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidthMm, imgHeightMm);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeightMm;
+        pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, position, imgWidthMm, imgHeightMm);
+        heightLeft -= pageHeight;
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      pdf.save(`mis-ultimos-deseos-${today}.pdf`);
+    } finally {
+      document.body.removeChild(container);
+    }
   };
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -839,35 +850,37 @@ export default function LegacyForm() {
       {/* Preview Dialog */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <DialogHeader className="px-6 py-4 border-b border-amber-200 bg-amber-50 shrink-0">
-            <DialogTitle className="text-amber-900 font-serif text-lg flex items-center gap-2">
+          <DialogHeader className="px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
+            <DialogTitle className="text-gray-800 font-serif text-lg flex items-center gap-2">
               <Eye className="w-5 h-5" /> Vista previa del documento
             </DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto relative">
+          <div className="flex-1 overflow-y-auto">
             <div
-              className="min-h-[500px] p-10"
-              style={{
-                backgroundImage: `url('${import.meta.env.BASE_URL}parchment.png')`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }}
+              className="min-h-[600px] p-10 bg-white"
+              style={{ fontFamily: "Georgia, 'Times New Roman', serif" }}
             >
               <div
-                className="max-w-xl mx-auto font-serif text-sm leading-relaxed whitespace-pre-wrap"
-                style={{ color: "#3b2000" }}
-              >
-                {generatedDocument || form.getValues("contentText") || ""}
-              </div>
+                className="max-w-xl mx-auto"
+                style={{
+                  fontFamily: "Georgia, 'Times New Roman', serif",
+                  color: "#1a1a1a",
+                  lineHeight: "1.8",
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: convertMarkdownToHtml(generatedDocument || form.getValues("contentText") || ""),
+                }}
+              />
             </div>
           </div>
-          <DialogFooter className="px-6 py-3 border-t border-amber-200 bg-amber-50 shrink-0">
+          <DialogFooter className="px-6 py-3 border-t border-gray-200 bg-gray-50 shrink-0">
             <Button
               type="button"
               onClick={exportToPDF}
-              className="bg-amber-800 hover:bg-amber-900 text-white rounded-xl gap-2"
+              className="rounded-xl gap-2 text-white"
+              style={{ backgroundColor: "#9d174d" }}
             >
-              <FileDown className="w-4 h-4" /> Abrir para imprimir / PDF
+              <FileDown className="w-4 h-4" /> Descargar PDF
             </Button>
             <Button type="button" variant="outline" onClick={() => setShowPreview(false)} className="rounded-xl">
               Cerrar
