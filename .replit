@@ -38,3 +38,4 @@ ADMIN_PASSWORD = "Hadrones456%"
 [userenv.shared]
 EMAIL_USER = "cponce123.com@gmail.com"
 EMAIL_PASS = "qfbqaqbbwrmrtbjv"
+APP_URL = "https://legadoapp.replit.app"
