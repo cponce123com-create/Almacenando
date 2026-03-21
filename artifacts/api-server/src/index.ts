@@ -20,9 +20,11 @@ app.listen(port, async () => {
   logger.info({ port }, "Server listening");
   await seedAdminIfNeeded();
   await backfillContactTokens();
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn("⚠️  ANTHROPIC_API_KEY no configurada — el generador de testamentos no funcionará");
-  } else {
+  if (process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL && process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY) {
+    console.log("✓ IA integración Replit activa (Anthropic)");
+  } else if (process.env.ANTHROPIC_API_KEY) {
     console.log("✓ ANTHROPIC_API_KEY configurada");
+  } else {
+    console.warn("⚠️  Sin configuración de IA — el generador de testamentos no funcionará");
   }
 });

@@ -11,8 +11,10 @@ router.post("/generate-will", requireAuth, async (req, res) => {
     return;
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const baseUrl = process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY;
+
+  if (!baseUrl || !apiKey) {
     res.status(503).json({ error: "El servicio de IA no está configurado en este servidor." });
     return;
   }
@@ -43,7 +45,7 @@ El documento debe:
 Redacta el documento completo ahora:`;
 
   try {
-    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const anthropicRes = await fetch(`${baseUrl}/v1/messages`, {
       method: "POST",
       headers: {
         "x-api-key": apiKey,
@@ -51,8 +53,8 @@ Redacta el documento completo ahora:`;
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
-        max_tokens: 4000,
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
         messages: [{ role: "user", content: prompt }],
       }),
     });
