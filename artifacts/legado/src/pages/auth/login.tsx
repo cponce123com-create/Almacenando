@@ -232,10 +232,20 @@ export default function Login() {
               </Button>
             </form>
 
-            <div className="mt-8 text-center text-sm text-muted-foreground">
+            <div className="mt-6 text-center text-sm text-muted-foreground">
               ¿No tienes una cuenta?{" "}
               <Link href="/register" className="text-primary hover:underline font-medium">
                 Regístrate aquí
+              </Link>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-border text-center">
+              <Link
+                href="/admin/login"
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-rose-600 transition-colors"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Acceso de Administrador
               </Link>
             </div>
           </motion.div>
