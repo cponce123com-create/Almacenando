@@ -18,6 +18,7 @@ import { eq, inArray, count } from "drizzle-orm";
 import { hashPassword, comparePassword, signAdminToken, requireAdmin } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { randomBytes } from "crypto";
+import { sendAccessLinkEmail } from "../lib/email.js";
 
 const router = Router();
 
@@ -163,6 +164,15 @@ router.post("/death-reports/:id/approve", requireAdmin, async (req, res) => {
   }
   const report = reports[0]!;
 
+  if (report.status === "released") {
+    res.status(409).json({ error: "Este legado ya fue liberado anteriormente." });
+    return;
+  }
+  if (report.status === "rejected") {
+    res.status(409).json({ error: "Este reporte fue rechazado y no puede liberarse." });
+    return;
+  }
+
   await db.update(deathReportsTable).set({ status: "released", updatedAt: new Date() }).where(eq(deathReportsTable.id, req.params.id));
 
   const releaseId = generateId();
@@ -175,16 +185,31 @@ router.post("/death-reports/:id/approve", requireAdmin, async (req, res) => {
     releasedAt: new Date(),
   });
 
+  // Get deceased name
+  const profiles = await db.select().from(profilesTable).where(eq(profilesTable.userId, report.userId)).limit(1);
+  const deceasedName = profiles[0]?.fullName ?? "Tu ser querido";
+
+  // Gather recipients from items + all direct recipients
   const items = await db.select().from(legacyItemsTable).where(eq(legacyItemsTable.userId, report.userId));
   const itemIds = items.map((i) => i.id);
-  
-  let recipientIds: string[] = [];
+  let uniqueRecipientIds: string[] = [];
   if (itemIds.length > 0) {
     const links = await db.select().from(legacyItemRecipientsTable).where(inArray(legacyItemRecipientsTable.legacyItemId, itemIds));
-    recipientIds = [...new Set(links.map((l) => l.recipientId))];
+    uniqueRecipientIds = [...new Set(links.map((l) => l.recipientId))];
+  }
+  const directRecipients = await db.select().from(recipientsTable).where(eq(recipientsTable.userId, report.userId));
+  for (const r of directRecipients) {
+    if (!uniqueRecipientIds.includes(r.id)) uniqueRecipientIds.push(r.id);
   }
 
-  for (const recipientId of recipientIds) {
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "")
+    ?? (process.env.REPLIT_DOMAINS ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "https://legadoapp.replit.app");
+
+  for (const recipientId of uniqueRecipientIds) {
+    const recipientRows = await db.select().from(recipientsTable).where(eq(recipientsTable.id, recipientId)).limit(1);
+    if (recipientRows.length === 0) continue;
+    const recipient = recipientRows[0]!;
+
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
     await db.insert(recipientAccessTokensTable).values({
@@ -194,11 +219,20 @@ router.post("/death-reports/:id/approve", requireAdmin, async (req, res) => {
       token,
       expiresAt,
     });
+
+    const accessUrl = `${appUrl}/access/${token}`;
+    await sendAccessLinkEmail({
+      toEmail: recipient.email,
+      toName: recipient.fullName,
+      deceasedName,
+      relationship: recipient.relationship,
+      accessUrl,
+    }).catch((err) => console.error("[admin-release] email error:", recipient.email, err));
   }
 
   await db.update(activationSettingsTable).set({ status: "released", updatedAt: new Date() }).where(eq(activationSettingsTable.userId, report.userId));
 
-  res.json({ message: "Release approved and access tokens generated" });
+  res.json({ message: "Legado liberado. Los destinatarios han recibido sus enlaces de acceso." });
 });
 
 router.post("/death-reports/:id/reject", requireAdmin, async (req, res) => {

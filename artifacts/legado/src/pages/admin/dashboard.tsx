@@ -68,7 +68,10 @@ export default function AdminDashboard() {
     }
   };
 
-  const pendingReleases = reports?.filter(r => r.status === "admin_review").length ?? 0;
+  const pendingReleases = reports?.filter(r =>
+    r.status === "admin_review" ||
+    (r.status === "pending" && r.confirmationsCount > 0)
+  ).length ?? 0;
   const totalUsers = users?.length ?? 0;
   const activeUsers = users?.filter(u => u.status === "active").length ?? 0;
 
