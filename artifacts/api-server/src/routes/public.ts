@@ -6,10 +6,16 @@ import {
   trustedContactsTable,
   deathReportsTable,
   deathConfirmationsTable,
+  releaseEventsTable,
+  recipientAccessTokensTable,
+  recipientsTable,
+  legacyItemRecipientsTable,
+  activationSettingsTable,
 } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
-import { sendDeathReportEmail } from "../lib/email.js";
+import { randomBytes } from "crypto";
+import { sendDeathReportEmail, sendAccessLinkEmail } from "../lib/email.js";
 
 function getAppUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
@@ -321,9 +327,127 @@ router.post("/report-death/confirm/:reportId", async (req, res) => {
     comments: comments?.trim() || null,
   });
 
+  // Check if ALL trusted contacts for this user have now confirmed
+  const allContacts = await db
+    .select()
+    .from(trustedContactsTable)
+    .where(eq(trustedContactsTable.userId, report.userId));
+
+  const allConfirmations = await db
+    .select()
+    .from(deathConfirmationsTable)
+    .where(eq(deathConfirmationsTable.deathReportId, reportId));
+
+  const confirmedContactIds = new Set(allConfirmations.map((c) => c.trustedContactId));
+  const allConfirmed = allContacts.every((c) => confirmedContactIds.has(c.id));
+
+  if (allConfirmed && allContacts.length >= 2) {
+    // All trusted contacts confirmed — auto-release the legacy
+    try {
+      await db
+        .update(deathReportsTable)
+        .set({ status: "released", updatedAt: new Date() })
+        .where(eq(deathReportsTable.id, reportId));
+
+      const releaseId = generateId();
+      await db.insert(releaseEventsTable).values({
+        id: releaseId,
+        userId: report.userId,
+        deathReportId: report.id,
+        releasedByAdminId: null,
+        status: "active",
+        releasedAt: new Date(),
+      });
+
+      // Get deceased profile
+      const profiles = await db
+        .select()
+        .from(profilesTable)
+        .where(eq(profilesTable.userId, report.userId))
+        .limit(1);
+      const deceasedName = profiles[0]?.fullName ?? "Tu ser querido";
+
+      // Find all recipients linked to this user's legacy items
+      const items = await db
+        .select()
+        .from(legacyItemsTable)
+        .where(eq(legacyItemsTable.userId, report.userId));
+
+      const itemIds = items.map((i) => i.id);
+      let uniqueRecipientIds: string[] = [];
+      if (itemIds.length > 0) {
+        const links = await db
+          .select()
+          .from(legacyItemRecipientsTable)
+          .where(inArray(legacyItemRecipientsTable.legacyItemId, itemIds));
+        uniqueRecipientIds = [...new Set(links.map((l) => l.recipientId))];
+      }
+
+      // Also include all recipients for this user regardless of item links
+      const directRecipients = await db
+        .select()
+        .from(recipientsTable)
+        .where(eq(recipientsTable.userId, report.userId));
+      for (const r of directRecipients) {
+        if (!uniqueRecipientIds.includes(r.id)) uniqueRecipientIds.push(r.id);
+      }
+
+      const appUrl = getAppUrl();
+
+      // Generate access token + send email for each recipient
+      for (const recipientId of uniqueRecipientIds) {
+        const recipientRows = await db
+          .select()
+          .from(recipientsTable)
+          .where(eq(recipientsTable.id, recipientId))
+          .limit(1);
+
+        if (recipientRows.length === 0) continue;
+        const recipient = recipientRows[0]!;
+
+        const token = randomBytes(32).toString("hex");
+        const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
+        await db.insert(recipientAccessTokensTable).values({
+          id: generateId(),
+          recipientId,
+          releaseEventId: releaseId,
+          token,
+          expiresAt,
+        });
+
+        const accessUrl = `${appUrl}/access/${token}`;
+
+        await sendAccessLinkEmail({
+          toEmail: recipient.email,
+          toName: recipient.fullName,
+          deceasedName,
+          relationship: recipient.relationship,
+          accessUrl,
+        }).catch((err) => console.error("[email] Failed to send access link to", recipient.email, err));
+      }
+
+      await db
+        .update(activationSettingsTable)
+        .set({ status: "released", updatedAt: new Date() })
+        .where(eq(activationSettingsTable.userId, report.userId))
+        .catch(() => {});
+
+      res.json({
+        success: true,
+        released: true,
+        message: "Todos los contactos han confirmado. El legado ha sido liberado y los destinatarios han recibido sus enlaces de acceso.",
+      });
+      return;
+    } catch (err) {
+      console.error("[auto-release] Error during auto-release:", err);
+    }
+  }
+
   res.json({
     success: true,
-    message: "Confirmación registrada. El administrador revisará el caso y decidirá si liberar el legado.",
+    released: false,
+    message: "Confirmación registrada. Esperando que confirmen todos los contactos de confianza.",
   });
 });
 

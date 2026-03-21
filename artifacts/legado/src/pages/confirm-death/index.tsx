@@ -16,6 +16,7 @@ import {
   AlertCircle,
   UserCircle2,
   ShieldAlert,
+  Unlock,
 } from "lucide-react";
 
 type ReportInfo = {
@@ -27,7 +28,7 @@ type ReportInfo = {
   createdAt: string;
 };
 
-type Step = "info" | "dni" | "done";
+type Step = "info" | "dni" | "done" | "released";
 
 export default function ConfirmDeath() {
   const [, params] = useRoute("/confirm-death/:reportId");
@@ -69,7 +70,11 @@ export default function ConfirmDeath() {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Error al confirmar"); return; }
-      setStep("done");
+      if (data.released) {
+        setStep("released");
+      } else {
+        setStep("done");
+      }
       toast({ title: "Confirmación enviada" });
     } catch {
       setError("Error de conexión. Intenta de nuevo.");
@@ -261,7 +266,7 @@ export default function ConfirmDeath() {
               </motion.div>
             )}
 
-            {/* DONE */}
+            {/* DONE — esperando al otro contacto */}
             {step === "done" && (
               <motion.div
                 key="done"
@@ -273,14 +278,47 @@ export default function ConfirmDeath() {
                 </div>
                 <h2 className="text-xl font-serif font-bold text-gray-900 mb-3">Confirmación registrada</h2>
                 <p className="text-sm text-gray-500 mb-7 leading-relaxed">
-                  Gracias por confirmar. El administrador revisará el reporte y, si todo es correcto,
-                  liberará el legado de <strong>{info.deceasedName}</strong> para sus seres queridos.
+                  Gracias por confirmar. Cuando todos los contactos de confianza hayan confirmado,
+                  el legado de <strong>{info.deceasedName}</strong> será liberado automáticamente
+                  y sus seres queridos recibirán un enlace de acceso.
                 </p>
                 <Link href="/">
                   <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-8">
                     Volver al inicio
                   </Button>
                 </Link>
+              </motion.div>
+            )}
+
+            {/* RELEASED — todos confirmaron, legado liberado */}
+            {step === "released" && (
+              <motion.div
+                key="released"
+                initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                className="bg-white rounded-2xl shadow-xl overflow-hidden text-center"
+              >
+                <div className="bg-gradient-to-br from-violet-600 to-violet-800 p-8 flex flex-col items-center text-white">
+                  <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center mb-4">
+                    <Unlock className="w-8 h-8 text-white" />
+                  </div>
+                  <h2 className="text-2xl font-serif font-bold mb-2">Legado liberado</h2>
+                  <p className="text-violet-200 text-sm">Todos los contactos han confirmado</p>
+                </div>
+                <div className="p-8">
+                  <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                    Todos los contactos de confianza han confirmado el fallecimiento de{" "}
+                    <strong className="text-gray-900">{info.deceasedName}</strong>.
+                  </p>
+                  <div className="bg-violet-50 rounded-xl p-4 mb-7 text-sm text-violet-700 leading-relaxed">
+                    Los destinatarios designados ya han recibido sus enlaces de acceso personales
+                    por correo electrónico para ver el legado.
+                  </div>
+                  <Link href="/">
+                    <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-8">
+                      Volver al inicio
+                    </Button>
+                  </Link>
+                </div>
               </motion.div>
             )}
 

@@ -103,3 +103,86 @@ Si tú no eres ${toName} o recibes este correo por error, por favor ignóralo o 
     html,
   });
 }
+
+export async function sendAccessLinkEmail({
+  toEmail,
+  toName,
+  deceasedName,
+  relationship,
+  accessUrl,
+}: {
+  toEmail: string;
+  toName: string;
+  deceasedName: string;
+  relationship: string;
+  accessUrl: string;
+}): Promise<void> {
+  const transporter = createTransport();
+  if (!transporter) {
+    console.warn("[email] EMAIL_USER / EMAIL_PASS not set — skipping access link email");
+    return;
+  }
+
+  const from = `"Legado" <${process.env.EMAIL_USER}>`;
+
+  const text = `
+Hola ${toName},
+
+${deceasedName} dejó un legado especial para ti.
+
+Sus contactos de confianza han confirmado su partida, y el mensaje que preparó para ti ya está disponible.
+
+Accede a tu legado personal aquí:
+${accessUrl}
+
+Este enlace es único y personal — fue creado especialmente para ti como ${relationship} de ${deceasedName}.
+
+Con cariño,
+— Equipo de Legado
+`.trim();
+
+  const html = `
+<div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="font-size: 24px; color: #7C3AED; margin: 0;">✦ Legado</h1>
+  </div>
+
+  <p style="font-size: 15px; line-height: 1.6;">Hola <strong>${toName}</strong>,</p>
+
+  <div style="background: linear-gradient(135deg, #EDE9FE, #F5F3FF); border-radius: 16px; padding: 24px; margin: 24px 0; text-align: center;">
+    <p style="font-size: 18px; font-weight: 600; color: #5B21B6; margin: 0 0 8px;">
+      ${deceasedName} dejó un legado para ti
+    </p>
+    <p style="font-size: 14px; color: #7C3AED; margin: 0;">
+      Un mensaje preparado con amor, esperando por ti
+    </p>
+  </div>
+
+  <p style="font-size: 15px; line-height: 1.6; color: #374151;">
+    Sus contactos de confianza han confirmado su partida. El mensaje que preparó especialmente para ti, como <strong>${relationship}</strong>, ya está disponible.
+  </p>
+
+  <div style="text-align: center; margin: 36px 0;">
+    <a href="${accessUrl}"
+       style="background: #7C3AED; color: white; text-decoration: none; padding: 16px 40px; border-radius: 12px; font-size: 16px; font-weight: 600; display: inline-block; letter-spacing: 0.3px;">
+      Ver mi legado
+    </a>
+  </div>
+
+  <p style="font-size: 13px; color: #6B7280; line-height: 1.6;">
+    Este enlace es único y personal — fue creado exclusivamente para ti. Por favor no lo compartas con nadie.
+  </p>
+
+  <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+  <p style="font-size: 12px; color: #9CA3AF; text-align: center;">Con cariño, el Equipo de Legado</p>
+</div>
+`.trim();
+
+  await transporter.sendMail({
+    from,
+    to: toEmail,
+    subject: `${deceasedName} dejó un legado para ti`,
+    text,
+    html,
+  });
+}
