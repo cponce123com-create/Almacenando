@@ -20,9 +20,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
-  ShieldCheck, Plus, Pencil, Trash2, Loader2, Mail, ShieldAlert, BadgeCheck,
-  Key, Send, HelpCircle, Eye, EyeOff, CheckCircle2, Trash, Lock, Link2
+  ShieldCheck, Plus, Pencil, Trash2, Loader2, Mail, ShieldAlert,
+  Key, Send, HelpCircle, Eye, EyeOff, CheckCircle2, Lock, Link2
 } from "lucide-react";
+import { DniInput } from "@/components/ui/dni-input";
 import { useToast } from "@/hooks/use-toast";
 
 const contactSchema = z.object({
@@ -251,35 +252,34 @@ export default function TrustedContacts() {
               </DialogTitle>
             </DialogHeader>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-2">
+              <DniInput
+                value={form.watch("dni") || ""}
+                onChange={(digits) => form.setValue("dni", digits)}
+                onResolved={(data) => {
+                  if (!form.getValues("fullName")) {
+                    form.setValue("fullName", data.fullName);
+                  }
+                }}
+                onClear={() => {
+                  form.setValue("fullName", "");
+                }}
+                label="DNI del contacto"
+                required
+              />
+              {form.formState.errors.dni && (
+                <p className="text-xs text-destructive">{form.formState.errors.dni.message}</p>
+              )}
+
               <div className="space-y-1.5">
                 <Label>Nombre Completo</Label>
                 <Input
                   {...form.register("fullName")}
                   className="rounded-xl h-11"
-                  placeholder="Ej: Roberto Sánchez"
+                  placeholder="Se completa automáticamente con el DNI"
                 />
                 {form.formState.errors.fullName && (
                   <p className="text-xs text-destructive">{form.formState.errors.fullName.message}</p>
                 )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5">
-                  <BadgeCheck className="w-4 h-4 text-violet-500" />
-                  DNI / Documento de Identidad <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  {...form.register("dni")}
-                  className="rounded-xl h-11 uppercase tracking-widest"
-                  placeholder="Ej: 12345678A"
-                  onChange={(e) => form.setValue("dni", e.target.value.toUpperCase())}
-                />
-                {form.formState.errors.dni && (
-                  <p className="text-xs text-destructive">{form.formState.errors.dni.message}</p>
-                )}
-                <p className="text-xs text-gray-400">
-                  El DNI se usará para verificar la identidad al reportar el fallecimiento.
-                </p>
               </div>
 
               <div className="space-y-1.5">

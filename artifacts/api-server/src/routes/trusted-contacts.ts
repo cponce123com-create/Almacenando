@@ -113,6 +113,43 @@ router.put("/:id", requireAuth, async (req, res) => {
   res.json(toContact(updated[0]!));
 });
 
+// POST /verify-dni — consulta RENIEC por DNI (sin auth: también lo usa la página pública)
+router.post("/verify-dni", async (req, res) => {
+  const { dni } = req.body;
+  if (!dni || !/^\d{8}$/.test(String(dni).trim())) {
+    res.status(400).json({ error: "DNI debe tener exactamente 8 dígitos numéricos" });
+    return;
+  }
+
+  const token = process.env.RENIEC_API_TOKEN;
+  if (!token) {
+    res.status(503).json({ error: "Servicio RENIEC no configurado. Contacta al administrador." });
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.decolecta.com/v1/reniec/dni?numero=${String(dni).trim()}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    if (!response.ok) {
+      res.status(404).json({ error: "DNI no encontrado en RENIEC" });
+      return;
+    }
+
+    const data: any = await response.json();
+    const firstName: string = data.nombres ?? data.nombre ?? "";
+    const firstLastName: string = data.apellidoPaterno ?? data.apellido_paterno ?? "";
+    const secondLastName: string = data.apellidoMaterno ?? data.apellido_materno ?? "";
+    const fullName = [firstName, firstLastName, secondLastName].filter(Boolean).join(" ");
+
+    res.json({ fullName, firstName, firstLastName, secondLastName });
+  } catch {
+    res.status(503).json({ error: "Error de conexión con RENIEC. Intenta de nuevo." });
+  }
+});
+
 router.delete("/:id", requireAuth, async (req, res) => {
   const userId = (req as typeof req & { userId: string }).userId;
   const existing = await db.select().from(trustedContactsTable).where(and(eq(trustedContactsTable.id, req.params.id), eq(trustedContactsTable.userId, userId))).limit(1);

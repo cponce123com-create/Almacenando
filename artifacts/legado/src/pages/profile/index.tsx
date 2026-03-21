@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, User, Save, BadgeCheck, Camera, Upload } from "lucide-react";
+import { Loader2, User, Save, Camera, Upload } from "lucide-react";
+import { DniInput } from "@/components/ui/dni-input";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type Profile = {
@@ -199,22 +200,15 @@ export default function ProfilePage() {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="dni" className="flex items-center gap-1.5">
-              <BadgeCheck className="w-4 h-4 text-violet-500" />
-              Número de DNI / Documento de identidad <span className="text-red-500">*</span>
-            </Label>
-            <Input
-              id="dni"
-              value={form.dni || ""}
-              onChange={(e) => handleChange("dni", e.target.value.toUpperCase())}
-              placeholder="Ej. 12345678A"
-              className="uppercase tracking-widest"
-            />
-            <p className="text-xs text-gray-400">
-              Tu DNI es la clave que permite verificar tu legado y es usada para el proceso de activación.
-            </p>
-          </div>
+          <DniInput
+            value={form.dni || ""}
+            onChange={(digits) => handleChange("dni", digits)}
+            onResolved={(data) => {
+              handleChange("fullName", data.fullName);
+              handleChange("displayName", data.fullName);
+            }}
+            label="Tu DNI peruano"
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="birthDate">Fecha de nacimiento</Label>

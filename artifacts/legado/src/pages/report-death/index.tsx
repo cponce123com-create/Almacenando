@@ -8,7 +8,6 @@ import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
-  BadgeCheck,
   Loader2,
   Heart,
   Users,
@@ -18,6 +17,7 @@ import {
   FileText,
   ShieldAlert,
 } from "lucide-react";
+import { DniInput } from "@/components/ui/dni-input";
 
 type Step = "lookup" | "contacts" | "reporter_dni" | "confirm" | "done";
 
@@ -59,6 +59,7 @@ export default function ReportDeath() {
   const [step, setStep] = useState<Step>("lookup");
   const [deceasedDni, setDeceasedDni] = useState("");
   const [reporterDni, setReporterDni] = useState("");
+  const [reporterName, setReporterName] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
@@ -301,20 +302,22 @@ export default function ReportDeath() {
               </div>
 
               <div className="space-y-5">
-                <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5 text-sm font-medium">
-                    <BadgeCheck className="w-4 h-4 text-gray-400" />
-                    Tu DNI (contacto de confianza)
-                  </Label>
-                  <Input
-                    value={reporterDni}
-                    onChange={(e) => { setReporterDni(e.target.value.toUpperCase()); resetError(); }}
-                    onKeyDown={(e) => e.key === "Enter" && handleValidate()}
-                    placeholder="Ej. 87654321B"
-                    className="h-12 rounded-xl uppercase tracking-widest text-base"
-                    autoFocus
-                  />
-                </div>
+                <DniInput
+                  value={reporterDni}
+                  onChange={(digits) => { setReporterDni(digits); resetError(); }}
+                  onResolved={(data) => {
+                    setReporterName(data.fullName);
+                  }}
+                  onClear={() => setReporterName("")}
+                  label="Tu número de DNI"
+                  required
+                />
+
+                {reporterName && (
+                  <p className="text-sm text-green-700 font-medium">
+                    Reportando como: <strong>{reporterName}</strong>
+                  </p>
+                )}
 
                 {error && (
                   <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 rounded-xl p-3">
@@ -333,7 +336,7 @@ export default function ReportDeath() {
                   </Button>
                   <Button
                     onClick={handleValidate}
-                    disabled={loading || !reporterDni.trim()}
+                    disabled={loading || reporterDni.length !== 8}
                     className="flex-1 h-12 rounded-xl text-white"
                     style={{ backgroundColor: PRIMARY }}
                   >
