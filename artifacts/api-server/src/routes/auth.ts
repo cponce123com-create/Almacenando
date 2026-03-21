@@ -16,7 +16,11 @@ function generateEncryptionKey(): string {
 
 const registerSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: z
+    .string()
+    .min(8, "La contraseña debe tener al menos 8 caracteres")
+    .regex(/[A-Z]/, "La contraseña debe tener al menos una mayúscula")
+    .regex(/[0-9]/, "La contraseña debe tener al menos un número"),
   fullName: z.string().min(1),
 });
 
