@@ -2,7 +2,11 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import type { Request, Response, NextFunction } from "express";
 
-const JWT_SECRET = process.env.SESSION_SECRET || "legado-secret-key-change-in-prod";
+const jwtSecret = process.env.SESSION_SECRET;
+if (!jwtSecret) {
+  throw new Error("SESSION_SECRET environment variable is required. Set it in your .env file.");
+}
+const JWT_SECRET = jwtSecret;
 const JWT_EXPIRES_IN = "30d";
 
 export function hashPassword(password: string): Promise<string> {

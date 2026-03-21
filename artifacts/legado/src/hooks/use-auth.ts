@@ -7,11 +7,11 @@ const TOKEN_KEY = "legado_token";
 const ADMIN_TOKEN_KEY = "legado_admin_token";
 
 export function getAuthToken() {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function getAdminAuthToken() {
-  return localStorage.getItem(ADMIN_TOKEN_KEY);
+  return sessionStorage.getItem(ADMIN_TOKEN_KEY);
 }
 
 export function getAuthHeaders() {
@@ -46,7 +46,7 @@ export function useAuth() {
 
       if (!res.ok) {
         if (res.status === 401) {
-          localStorage.removeItem(TOKEN_KEY);
+          sessionStorage.removeItem(TOKEN_KEY);
           setToken(null);
         }
         return null;
@@ -70,7 +70,7 @@ export function useAuth() {
     }
 
     const result = await res.json();
-    localStorage.setItem(TOKEN_KEY, result.token);
+    sessionStorage.setItem(TOKEN_KEY, result.token);
     setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
     if (result.encryptionKey) {
@@ -81,7 +81,7 @@ export function useAuth() {
 
   // Set session directly from pre-fetched token + user (no extra API call)
   const setUserSession = (userToken: string, userData: UserResponse, encryptionKey?: string) => {
-    localStorage.setItem(TOKEN_KEY, userToken);
+    sessionStorage.setItem(TOKEN_KEY, userToken);
     setToken(userToken);
     queryClient.setQueryData(["/api/auth/me"], userData);
     if (encryptionKey) {
@@ -102,7 +102,7 @@ export function useAuth() {
     }
 
     const result = await res.json();
-    localStorage.setItem(TOKEN_KEY, result.token);
+    sessionStorage.setItem(TOKEN_KEY, result.token);
     setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
     if (result.encryptionKey) {
@@ -112,7 +112,7 @@ export function useAuth() {
   };
 
   const logout = () => {
-    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
     setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();

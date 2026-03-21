@@ -42,7 +42,7 @@ export default function AdminLogin() {
       }
 
       const result = await res.json();
-      localStorage.setItem(ADMIN_TOKEN_KEY, result.token);
+      sessionStorage.setItem(ADMIN_TOKEN_KEY, result.token);
       toast({ title: "Acceso concedido", description: "Bienvenido al panel de administración." });
       setLocation("/admin");
     } catch (error: any) {

@@ -1,0 +1,98 @@
+Necesito que corrijas los siguientes problemas de seguridad en el proyecto. Lee cada archivo antes de modificarlo.
+CRÍTICO 1 — JWT secret sin fallback inseguro
+Archivo: artifacts/api-server/src/lib/auth.ts
+Busca la línea:
+const JWT_SECRET = process.env.SESSION_SECRET || "legado-secret-key-change-in-prod";
+Reemplázala por:
+typescriptconst jwtSecret = process.env.SESSION_SECRET;
+if (!jwtSecret) {
+  throw new Error("SESSION_SECRET environment variable is required. Set it in your .env file.");
+}
+const JWT_SECRET = jwtSecret;
+```
+
+Hacer lo mismo con cualquier otra variable de entorno crítica que tenga fallback inseguro en ese mismo archivo.
+
+---
+
+**ALTO 1 — localStorage a sessionStorage**
+
+Busca en todos los archivos del frontend (`artifacts/legado/src/`) cualquier uso de `localStorage.getItem("legado_token")`, `localStorage.setItem("legado_token"`, `localStorage.removeItem("legado_token"` y reemplaza `localStorage` por `sessionStorage` en todos esos casos.
+
+Hacer lo mismo con `localStorage.getItem("legado_admin_token")`, `localStorage.setItem("legado_admin_token"` y `localStorage.removeItem("legado_admin_token"`.
+
+Buscar también en los archivos de hooks como `use-auth.ts`, `use-admin.ts` o cualquier archivo en `artifacts/legado/src/hooks/` que use `localStorage` para el token.
+
+---
+
+**ALTO 2 — Setup de admin con clave hardcodeada**
+
+Archivo: `artifacts/api-server/src/routes/admin.ts`
+
+Busca la línea con:
+```
+setupKey !== (process.env.ADMIN_SETUP_KEY || "legado-admin-setup")
+Reemplázala por:
+typescriptconst adminSetupKey = process.env.ADMIN_SETUP_KEY;
+if (!adminSetupKey) {
+  res.status(503).json({ error: "Admin setup is not configured on this server." });
+  return;
+}
+if (setupKey !== adminSetupKey) {
+```
+
+Así el endpoint queda deshabilitado si no se configura la variable, en lugar de usar una clave pública.
+
+---
+
+**MEJORA 1 — Reemplazar confirm() del browser en trusted-contacts**
+
+Archivo: `artifacts/legado/src/pages/trusted-contacts/index.tsx`
+
+Busca el código donde se llama a `confirm("¿Eliminar contacto de confianza?")` antes de llamar a `deleteMutation`.
+
+Reemplazarlo por un `AlertDialog` de shadcn/ui. Agregar el estado `const [deleteTarget, setDeleteTarget] = useState<string | null>(null)`. El botón de eliminar ahora llama a `setDeleteTarget(contact.id)` en lugar de confirmar directamente. El `AlertDialog` muestra el título "¿Eliminar contacto de confianza?" y la descripción "Este contacto ya no podrá reportar ni activar tu legado. Esta acción no se puede deshacer." con botones Cancelar y Eliminar. Al confirmar llama a `deleteMutation.mutate({ id: deleteTarget })` y luego `setDeleteTarget(null)`.
+
+Importar `AlertDialog`, `AlertDialogAction`, `AlertDialogCancel`, `AlertDialogContent`, `AlertDialogDescription`, `AlertDialogFooter`, `AlertDialogHeader`, `AlertDialogTitle` desde `@/components/ui/alert-dialog`.
+
+---
+
+**MEJORA 2 — Documentar App Password de Gmail en .env.example**
+
+Archivo: `.env.example`
+
+Busca la sección donde están `EMAIL_USER` y `EMAIL_PASS` y agrega estos comentarios encima:
+```
+# ─────────────────────────────────────────────────────────────────────────────
+# EMAIL (Nodemailer + Gmail)
+# IMPORTANTE: EMAIL_PASS debe ser un "App Password" de Google, NO tu contraseña real.
+# Para generarlo: activa la verificación en 2 pasos en tu cuenta Google, luego ve a
+# myaccount.google.com/apppasswords y crea una clave para "Correo" / "Otro dispositivo".
+# Sin esto Gmail rechazará la conexión.
+# ─────────────────────────────────────────────────────────────────────────────
+
+MEJORA 3 — Expiración del confirmToken en trusted contacts
+Archivo: lib/db/src/schema/trusted-contacts.ts
+Agregar el campo:
+typescriptconfirmTokenExpiresAt: timestamp("confirm_token_expires_at"),
+Después del campo confirmToken.
+Luego en artifacts/api-server/src/routes/trusted-contacts.ts, cuando se genera el confirmToken al crear un contacto, agregar también:
+typescriptconfirmTokenExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 año
+Y hacer lo mismo en el endpoint POST /:id/regenerate-token.
+Finalmente en artifacts/api-server/src/routes/contact-confirm.ts y en artifacts/api-server/src/routes/public.ts, en cada lugar donde se busca un contacto por confirmToken, agregar una validación después de encontrarlo:
+typescriptif (contact.confirmTokenExpiresAt && contact.confirmTokenExpiresAt < new Date()) {
+  res.status(403).json({ error: "Este enlace ha expirado. Pide al titular que regenere tu invitación." });
+  return;
+}
+Después de agregar el campo al schema, ejecutar pnpm db:push para aplicar el cambio a la base de datos.
+
+MEJORA 4 — Documentar la clave de cifrado en la UI
+Archivo: artifacts/legado/src/pages/trusted-contacts/index.tsx
+En la sección de "Clave de Descifrado", debajo del campo donde el usuario pega la clave (Input con placeholder="Pega aquí tu clave base64..."), agregar este bloque informativo justo después del párrafo de descripción existente:
+tsx<div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 mt-3">
+  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+  <p className="text-xs text-amber-800 leading-relaxed">
+    <strong>Legado no almacena tu clave de cifrado.</strong> Esta clave vive solo en tu dispositivo durante esta sesión. Guárdala en un gestor de contraseñas (como Bitwarden o 1Password) para no perderla. Sin ella, nadie podrá abrir los archivos de tu legado.
+  </p>
+</div>
+Asegurarse de que AlertTriangle esté importado desde lucide-react (ya debería estarlo).

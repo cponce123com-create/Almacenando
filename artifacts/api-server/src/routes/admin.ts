@@ -53,7 +53,12 @@ router.post("/login", authLoginLimiter, async (req, res) => {
 
 router.post("/setup", async (req, res) => {
   const { email, password, name, setupKey } = req.body;
-  if (setupKey !== (process.env.ADMIN_SETUP_KEY || "legado-admin-setup")) {
+  const adminSetupKey = process.env.ADMIN_SETUP_KEY;
+  if (!adminSetupKey) {
+    res.status(503).json({ error: "Admin setup is not configured on this server." });
+    return;
+  }
+  if (setupKey !== adminSetupKey) {
     res.status(403).json({ error: "Invalid setup key" });
     return;
   }

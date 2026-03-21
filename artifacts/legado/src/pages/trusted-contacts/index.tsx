@@ -6,6 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -32,9 +42,10 @@ export default function TrustedContacts() {
   const deleteMutation = useDeleteContact();
   const { toast } = useToast();
   const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const authHeader = () => ({
-    Authorization: `Bearer ${localStorage.getItem("legado_token")}`,
+    Authorization: `Bearer ${sessionStorage.getItem("legado_token")}`,
     "Content-Type": "application/json",
   });
 
@@ -364,10 +375,7 @@ export default function TrustedContacts() {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => {
-                        if (confirm("¿Eliminar contacto de confianza?"))
-                          deleteMutation.mutate({ id: contact.id });
-                      }}
+                      onClick={() => setDeleteTarget(contact.id)}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -621,6 +629,28 @@ export default function TrustedContacts() {
           </Card>
         )}
       </div>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar contacto de confianza?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción no se puede deshacer. El contacto perderá acceso a sus funciones de confirmación.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteTarget) deleteMutation.mutate({ id: deleteTarget });
+                setDeleteTarget(null);
+              }}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

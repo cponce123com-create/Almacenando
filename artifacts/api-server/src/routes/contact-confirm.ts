@@ -45,6 +45,11 @@ router.get("/trusted-contact-info/:token", async (req, res) => {
 
   const contact = contacts[0]!;
 
+  if (contact.confirmTokenExpiresAt && contact.confirmTokenExpiresAt < new Date()) {
+    res.status(403).json({ error: "Este enlace ha expirado. Pide al titular que regenere tu invitación." });
+    return;
+  }
+
   const profiles = await db
     .select({ fullName: profilesTable.fullName })
     .from(profilesTable)
@@ -88,6 +93,11 @@ router.post("/death-reports", async (req, res) => {
   }
 
   const contact = contacts[0]!;
+
+  if (contact.confirmTokenExpiresAt && contact.confirmTokenExpiresAt < new Date()) {
+    res.status(403).json({ error: "Este enlace ha expirado. Pide al titular que regenere tu invitación." });
+    return;
+  }
 
   const existingReports = await db
     .select()
@@ -170,6 +180,10 @@ router.post("/death-reports/:id/confirm", async (req, res) => {
   }
 
   const contact = contacts[0]!;
+  if (contact.confirmTokenExpiresAt && contact.confirmTokenExpiresAt < new Date()) {
+    res.status(403).json({ error: "Este enlace ha expirado. Pide al titular que regenere tu invitación." });
+    return;
+  }
 
   if (contact.id === report.reportedByContactId) {
     res.status(400).json({ error: "Ya eres quien inició este reporte. Debe confirmarlo otro contacto." });

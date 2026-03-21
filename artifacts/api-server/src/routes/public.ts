@@ -304,6 +304,10 @@ router.post("/report-death/confirm/:reportId", async (req, res) => {
       )
       .limit(1);
     contact = byToken[0];
+    if (contact?.confirmTokenExpiresAt && contact.confirmTokenExpiresAt < new Date()) {
+      res.status(403).json({ error: "Este enlace ha expirado. Pide al titular que regenere tu invitación." });
+      return;
+    }
   }
 
   if (!contact && confirmerDni) {

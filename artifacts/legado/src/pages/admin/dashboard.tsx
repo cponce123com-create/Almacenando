@@ -56,7 +56,7 @@ export default function AdminDashboard() {
   const activateMutation = useActivateUser();
 
   const handleLogout = () => {
-    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    sessionStorage.removeItem(ADMIN_TOKEN_KEY);
     setLocation("/admin/login");
   };
 

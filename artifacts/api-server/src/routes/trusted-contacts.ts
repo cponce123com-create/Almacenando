@@ -40,6 +40,7 @@ router.post("/", requireAuth, async (req, res) => {
 
   const id = generateId();
   const confirmToken = randomBytes(32).toString("hex");
+  const confirmTokenExpiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
   await db.insert(trustedContactsTable).values({
     id,
     userId,
@@ -51,6 +52,7 @@ router.post("/", requireAuth, async (req, res) => {
     inviteStatus: "pending",
     isConfirmed: false,
     confirmToken,
+    confirmTokenExpiresAt,
   });
   const items = await db.select().from(trustedContactsTable).where(eq(trustedContactsTable.id, id)).limit(1);
   res.status(201).json(toContact(items[0]!));
@@ -82,8 +84,12 @@ router.post("/:id/regenerate-token", requireAuth, async (req, res) => {
     return;
   }
   const newToken = randomBytes(32).toString("hex");
-  await db.update(trustedContactsTable).set({ confirmToken: newToken, updatedAt: new Date() })
-    .where(eq(trustedContactsTable.id, req.params.id));
+  const newExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+  await db.update(trustedContactsTable).set({
+    confirmToken: newToken,
+    confirmTokenExpiresAt: newExpiry,
+    updatedAt: new Date(),
+  }).where(eq(trustedContactsTable.id, req.params.id));
   res.json({ inviteTokenForEmail: newToken });
 });
 

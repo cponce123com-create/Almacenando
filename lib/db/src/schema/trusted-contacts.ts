@@ -13,6 +13,7 @@ export const trustedContactsTable = pgTable("trusted_contacts", {
   dni: text("dni"),
   isConfirmed: boolean("is_confirmed").notNull().default(false),
   confirmToken: text("confirm_token"),
+  confirmTokenExpiresAt: timestamp("confirm_token_expires_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
