@@ -13,6 +13,7 @@ import dashboardRouter from "./dashboard";
 import adminRouter from "./admin";
 import uploadRouter from "./upload";
 import publicRouter from "./public";
+import keyConfigRouter from "./key-config";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use("/access", accessRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/admin", adminRouter);
 router.use("/upload", uploadRouter);
+router.use("/key-config", keyConfigRouter);
 
 export default router;

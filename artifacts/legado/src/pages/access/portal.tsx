@@ -6,6 +6,7 @@ import {
   FileVideo, Mail, Mic, Image as ImageIcon, FileText, Heart,
   LockKeyhole, Unlock, Eye, EyeOff, Download, Loader2,
   BookOpen, AlertCircle, Globe, ChevronDown, ChevronUp,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -250,6 +251,11 @@ export default function AccessPortal() {
   const [keyInput, setKeyInput] = useState("");
   const [showKeyInput, setShowKeyInput] = useState(false);
   const [showKey, setShowKey] = useState(false);
+  const [unlockMode, setUnlockMode] = useState<"key" | "question" | null>(null);
+  const [secretQuestion, setSecretQuestion] = useState<string | null>(null);
+  const [secretAnswer, setSecretAnswer] = useState("");
+  const [unlockingQuestion, setUnlockingQuestion] = useState(false);
+  const [questionError, setQuestionError] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<AccessData>({
     queryKey: ["/access", token],
@@ -259,7 +265,13 @@ export default function AccessPortal() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error || "Token inválido");
       }
-      return res.json();
+      const result = await res.json();
+      // Fetch secret question info in parallel
+      fetch(`/api/access/${token}/secret-question`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((q) => { if (q?.secretQuestion) setSecretQuestion(q.secretQuestion); })
+        .catch(() => {});
+      return result;
     },
     retry: false,
   });
@@ -271,7 +283,33 @@ export default function AccessPortal() {
     if (!trimmed) return;
     setEncKey(trimmed);
     setShowKeyInput(false);
+    setUnlockMode(null);
     setKeyInput("");
+  };
+
+  const handleUnlockQuestion = async () => {
+    if (!secretAnswer.trim()) return;
+    setUnlockingQuestion(true);
+    setQuestionError(null);
+    try {
+      const res = await fetch(`/api/access/${token}/unlock-question`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer: secretAnswer.trim().toLowerCase() }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        setQuestionError(d.error || "Respuesta incorrecta");
+        return;
+      }
+      setEncKey(d.encryptionKey);
+      setUnlockMode(null);
+      setSecretAnswer("");
+    } catch {
+      setQuestionError("Error de conexión");
+    } finally {
+      setUnlockingQuestion(false);
+    }
   };
 
   if (isLoading) {
@@ -368,7 +406,7 @@ export default function AccessPortal() {
                   variant="ghost"
                   size="sm"
                   className="text-xs text-green-700 hover:text-green-900 shrink-0"
-                  onClick={() => { setEncKey(null); }}
+                  onClick={() => { setEncKey(null); setUnlockMode(null); }}
                 >
                   Cambiar
                 </Button>
@@ -382,12 +420,40 @@ export default function AccessPortal() {
                       Algunos archivos están cifrados
                     </p>
                     <p className="text-xs text-amber-600 mt-0.5">
-                      Para ver videos, fotos, audios y documentos necesitas la clave de acceso personal
-                      que {deceasedName} o su familia te entregó.
+                      Para ver videos, fotos, audios y documentos necesitas la clave de acceso
+                      que {deceasedName} preparó para ti.
                     </p>
                   </div>
                 </div>
-                {showKeyInput ? (
+
+                {/* Mode selector buttons */}
+                {unlockMode === null && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 rounded-xl border-amber-300 text-amber-700 hover:bg-amber-100"
+                      onClick={() => setUnlockMode("key")}
+                    >
+                      <Unlock className="w-3.5 h-3.5" />
+                      Tengo la clave
+                    </Button>
+                    {secretQuestion && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 rounded-xl border-violet-300 text-violet-700 hover:bg-violet-50"
+                        onClick={() => setUnlockMode("question")}
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        Responder pregunta secreta
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Key input */}
+                {unlockMode === "key" && (
                   <div className="flex gap-2">
                     <div className="relative flex-1">
                       <Input
@@ -411,17 +477,48 @@ export default function AccessPortal() {
                       <Unlock className="w-4 h-4" />
                       Activar
                     </Button>
+                    <Button variant="ghost" size="sm" className="text-xs text-zinc-500" onClick={() => setUnlockMode(null)}>
+                      Volver
+                    </Button>
                   </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2 rounded-xl border-amber-300 text-amber-700 hover:bg-amber-100"
-                    onClick={() => setShowKeyInput(true)}
-                  >
-                    <Unlock className="w-3.5 h-3.5" />
-                    Ingresar clave de acceso
-                  </Button>
+                )}
+
+                {/* Secret question input */}
+                {unlockMode === "question" && secretQuestion && (
+                  <div className="space-y-3">
+                    <div className="bg-white/60 rounded-xl px-4 py-3 border border-violet-100">
+                      <p className="text-xs text-violet-500 font-medium mb-1">Pregunta secreta</p>
+                      <p className="text-sm font-serif text-zinc-800 italic">"{secretQuestion}"</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        value={secretAnswer}
+                        onChange={(e) => {
+                          setSecretAnswer(e.target.value.replace(/\s/g, ""));
+                          setQuestionError(null);
+                        }}
+                        onKeyDown={(e) => e.key === "Enter" && handleUnlockQuestion()}
+                        placeholder="Tu respuesta (una palabra)"
+                        className="rounded-xl"
+                        autoFocus
+                      />
+                      <Button
+                        onClick={handleUnlockQuestion}
+                        disabled={unlockingQuestion || !secretAnswer}
+                        className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white shrink-0"
+                      >
+                        {unlockingQuestion ? <Loader2 className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-xs text-zinc-500 shrink-0" onClick={() => { setUnlockMode(null); setQuestionError(null); }}>
+                        Volver
+                      </Button>
+                    </div>
+                    {questionError && (
+                      <p className="text-xs text-red-500 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> {questionError}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             )}

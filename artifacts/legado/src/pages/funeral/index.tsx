@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Flower2, Loader2, Save } from "lucide-react";
+import { Flower2, Loader2, Save, Music2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 const BURIAL_TYPES = [
   { value: "cremacion", label: "Cremación" },
@@ -48,6 +49,7 @@ export default function FuneralPreferences() {
     defaultValues: {
       burialType: "",
       ceremonyType: "",
+      spotifyPlaylistUrl: "",
       musicNotes: "",
       dressCode: "",
       guestNotes: "",
@@ -61,6 +63,7 @@ export default function FuneralPreferences() {
       form.reset({
         burialType: prefs.burialType || "",
         ceremonyType: prefs.ceremonyType || "",
+        spotifyPlaylistUrl: (prefs as any).spotifyPlaylistUrl || "",
         musicNotes: prefs.musicNotes || "",
         dressCode: prefs.dressCode || "",
         guestNotes: prefs.guestNotes || "",
@@ -173,11 +176,27 @@ export default function FuneralPreferences() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>Música para la ceremonia</Label>
+                <Label className="flex items-center gap-1.5">
+                  <Music2 className="w-4 h-4 text-green-500" />
+                  Playlist de Spotify para el velatorio
+                </Label>
+                <Input
+                  {...form.register("spotifyPlaylistUrl")}
+                  className="rounded-xl h-11"
+                  placeholder="https://open.spotify.com/playlist/..."
+                  type="url"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Comparte la música que quieres que suene durante el velatorio. Pega el enlace de tu playlist de Spotify.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Notas sobre la música</Label>
                 <Textarea
                   {...form.register("musicNotes")}
                   className="rounded-xl min-h-[80px]"
-                  placeholder="Canciones, artistas, géneros musicales que te gustaría que sonaran…"
+                  placeholder="Canciones, artistas, géneros musicales que te gustaría que sonaran en la ceremonia…"
                 />
               </div>
 

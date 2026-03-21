@@ -7,6 +7,7 @@ export const funeralPreferencesTable = pgTable("funeral_preferences", {
   userId: text("user_id").notNull().unique(),
   burialType: text("burial_type"),
   ceremonyType: text("ceremony_type"),
+  spotifyPlaylistUrl: text("spotify_playlist_url"),
   musicNotes: text("music_notes"),
   dressCode: text("dress_code"),
   guestNotes: text("guest_notes"),

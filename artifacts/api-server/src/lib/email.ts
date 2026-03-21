@@ -186,3 +186,66 @@ Con cariño,
     html,
   });
 }
+
+export async function sendEncryptionKeyEmail({
+  toEmail,
+  toName,
+  ownerName,
+  encryptionKey,
+}: {
+  toEmail: string;
+  toName: string;
+  ownerName: string;
+  encryptionKey: string;
+}): Promise<void> {
+  const transporter = createTransport();
+  if (!transporter) return;
+
+  const from = `"Legado" <${process.env.EMAIL_USER}>`;
+
+  const text = `
+Hola ${toName},
+
+${ownerName} confía en ti y ha compartido contigo la clave de acceso a su legado digital.
+
+Esta clave será necesaria para descifrar los archivos que ${ownerName} ha dejado para sus seres queridos una vez que el legado sea liberado.
+
+CLAVE DE DESCIFRADO:
+${encryptionKey}
+
+Guarda esta clave en un lugar seguro. Sin ella no podrás acceder al contenido del legado.
+
+Con cariño,
+El equipo de Legado
+`;
+
+  const html = `
+  <div style="font-family: Georgia, serif; max-width: 560px; margin: 0 auto; padding: 32px 24px; background: #faf9ff; border-radius: 16px;">
+    <div style="text-align: center; margin-bottom: 28px;">
+      <p style="font-size: 32px; margin: 0;">🔑</p>
+      <h2 style="color: #6D28D9; font-size: 22px; margin: 8px 0 0;">Clave de acceso al legado</h2>
+    </div>
+    <p style="font-size: 15px; line-height: 1.6; color: #374151;">Hola <strong>${toName}</strong>,</p>
+    <p style="font-size: 15px; line-height: 1.6; color: #374151;">
+      <strong>${ownerName}</strong> confía en ti y ha compartido contigo la clave de acceso a su legado digital.
+      Esta clave será necesaria para descifrar los archivos que dejó para sus seres queridos.
+    </p>
+    <div style="background: #1e1b4b; border-radius: 12px; padding: 20px 24px; margin: 24px 0; text-align: center;">
+      <p style="color: #a5b4fc; font-size: 12px; margin: 0 0 8px; letter-spacing: 1px; text-transform: uppercase;">Clave de descifrado</p>
+      <p style="color: #ffffff; font-family: monospace; font-size: 13px; word-break: break-all; margin: 0; letter-spacing: 1px;">${encryptionKey}</p>
+    </div>
+    <p style="font-size: 14px; color: #6B7280; line-height: 1.6;">
+      Guarda esta clave en un lugar muy seguro. Sin ella no podrás acceder al contenido del legado cuando llegue el momento.
+    </p>
+    <p style="font-size: 13px; color: #9CA3AF; margin-top: 32px;">Con cariño, el equipo de Legado</p>
+  </div>
+  `;
+
+  await transporter.sendMail({
+    from,
+    to: toEmail,
+    subject: `${ownerName} compartió contigo su clave de legado`,
+    text,
+    html,
+  });
+}

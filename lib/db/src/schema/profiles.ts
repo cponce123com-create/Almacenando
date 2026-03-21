@@ -13,6 +13,9 @@ export const profilesTable = pgTable("profiles", {
   avatarUrl: text("avatar_url"),
   introMessage: text("intro_message"),
   dni: text("dni"),
+  secretQuestion: text("secret_question"),
+  secretAnswerHash: text("secret_answer_hash"),
+  encryptedLegacyKey: text("encrypted_legacy_key"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

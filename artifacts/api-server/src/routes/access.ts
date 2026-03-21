@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcryptjs";
 import { db } from "@workspace/db";
 import {
   recipientAccessTokensTable,
@@ -109,6 +110,99 @@ router.get("/:token", async (req, res) => {
     deceasedAvatarUrl: profiles[0]?.avatarUrl ?? null,
     deceasedIntroMessage: profiles[0]?.introMessage ?? null,
   });
+});
+
+router.get("/:token/secret-question", async (req, res) => {
+  const tokenRecords = await db
+    .select()
+    .from(recipientAccessTokensTable)
+    .where(eq(recipientAccessTokensTable.token, req.params.token))
+    .limit(1);
+
+  if (tokenRecords.length === 0) {
+    res.status(404).json({ error: "Token not found" });
+    return;
+  }
+
+  const recipients = await db
+    .select()
+    .from(recipientsTable)
+    .where(eq(recipientsTable.id, tokenRecords[0]!.recipientId))
+    .limit(1);
+
+  if (recipients.length === 0) {
+    res.status(404).json({ error: "Recipient not found" });
+    return;
+  }
+
+  const profiles = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.userId, recipients[0]!.userId))
+    .limit(1);
+
+  const profile = profiles[0];
+  if (!profile || !profile.secretQuestion) {
+    res.status(404).json({ error: "No hay pregunta secreta configurada" });
+    return;
+  }
+
+  res.json({ secretQuestion: profile.secretQuestion });
+});
+
+router.post("/:token/unlock-question", async (req, res) => {
+  const { answer } = req.body;
+  if (!answer || typeof answer !== "string") {
+    res.status(400).json({ error: "Respuesta requerida" });
+    return;
+  }
+
+  const tokenRecords = await db
+    .select()
+    .from(recipientAccessTokensTable)
+    .where(eq(recipientAccessTokensTable.token, req.params.token))
+    .limit(1);
+
+  if (tokenRecords.length === 0) {
+    res.status(404).json({ error: "Token not found" });
+    return;
+  }
+
+  if (tokenRecords[0]!.expiresAt && tokenRecords[0]!.expiresAt < new Date()) {
+    res.status(401).json({ error: "Token expirado" });
+    return;
+  }
+
+  const recipients = await db
+    .select()
+    .from(recipientsTable)
+    .where(eq(recipientsTable.id, tokenRecords[0]!.recipientId))
+    .limit(1);
+
+  if (recipients.length === 0) {
+    res.status(404).json({ error: "Recipient not found" });
+    return;
+  }
+
+  const profiles = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.userId, recipients[0]!.userId))
+    .limit(1);
+
+  const profile = profiles[0];
+  if (!profile || !profile.secretAnswerHash || !profile.encryptedLegacyKey) {
+    res.status(404).json({ error: "No hay pregunta secreta configurada" });
+    return;
+  }
+
+  const valid = await bcrypt.compare(answer.trim().toLowerCase(), profile.secretAnswerHash);
+  if (!valid) {
+    res.status(401).json({ error: "Respuesta incorrecta" });
+    return;
+  }
+
+  res.json({ encryptionKey: profile.encryptedLegacyKey });
 });
 
 export default router;
