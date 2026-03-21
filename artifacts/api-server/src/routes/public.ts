@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { generateId } from "../lib/id.js";
+import { sendDeathReportEmail } from "../lib/email.js";
 
 const router = Router();
 
@@ -40,12 +41,13 @@ router.get("/legacy-check", async (req, res) => {
   res.json({ hasLegacy: items.length > 0 });
 });
 
-// Validate if a reporter DNI is a trusted contact of a deceased's DNI
-router.post("/report-death/validate", async (req, res) => {
-  const { deceasedDni, reporterDni } = req.body;
+// Look up trusted contacts for a deceased person by their DNI
+// Returns only names — no personal data — so anyone can use this
+router.post("/report-death/lookup", async (req, res) => {
+  const { deceasedDni } = req.body;
 
-  if (!deceasedDni || !reporterDni) {
-    res.status(400).json({ error: "deceasedDni y reporterDni son requeridos" });
+  if (!deceasedDni || typeof deceasedDni !== "string") {
+    res.status(400).json({ error: "deceasedDni es requerido" });
     return;
   }
 
@@ -60,7 +62,31 @@ router.post("/report-death/validate", async (req, res) => {
     return;
   }
 
-  const deceasedUserId = deceasedProfile[0]!.userId;
+  const contacts = await db
+    .select({ id: trustedContactsTable.id, fullName: trustedContactsTable.fullName })
+    .from(trustedContactsTable)
+    .where(eq(trustedContactsTable.userId, deceasedProfile[0]!.userId));
+
+  if (contacts.length === 0) {
+    res.status(404).json({ error: "Esta persona no tiene contactos de confianza registrados" });
+    return;
+  }
+
+  res.json({
+    deceasedName: deceasedProfile[0]!.fullName,
+    deceasedUserId: deceasedProfile[0]!.userId,
+    trustedContacts: contacts.map((c) => ({ id: c.id, fullName: c.fullName })),
+  });
+});
+
+// Validate reporter DNI against trusted contacts
+router.post("/report-death/validate", async (req, res) => {
+  const { deceasedUserId, reporterDni } = req.body;
+
+  if (!deceasedUserId || !reporterDni) {
+    res.status(400).json({ error: "deceasedUserId y reporterDni son requeridos" });
+    return;
+  }
 
   const trustedContacts = await db
     .select()
@@ -89,8 +115,6 @@ router.post("/report-death/validate", async (req, res) => {
     valid: true,
     contactId: contact.id,
     contactName: contact.fullName,
-    deceasedName: deceasedProfile[0]!.fullName,
-    deceasedUserId,
     otherContacts: allContacts
       .filter((c) => c.id !== contact.id)
       .map((c) => ({ id: c.id, fullName: c.fullName })),
@@ -99,7 +123,7 @@ router.post("/report-death/validate", async (req, res) => {
 
 // Submit a death report by a trusted contact identified by DNI
 router.post("/report-death/submit", async (req, res) => {
-  const { contactId, deceasedUserId, notes } = req.body;
+  const { contactId, deceasedUserId, deceasedName, reporterDni, notes } = req.body;
 
   if (!contactId || !deceasedUserId) {
     res.status(400).json({ error: "contactId y deceasedUserId son requeridos" });
@@ -116,6 +140,8 @@ router.post("/report-death/submit", async (req, res) => {
     res.status(403).json({ error: "Contacto no autorizado" });
     return;
   }
+
+  const reporter = contactRows[0]!;
 
   const existingReports = await db
     .select()
@@ -134,6 +160,26 @@ router.post("/report-death/submit", async (req, res) => {
       reportedByContactId: contactId,
       notes: notes || null,
       status: "pending",
+    });
+  }
+
+  // Send email to all other trusted contacts
+  const otherContacts = await db
+    .select()
+    .from(trustedContactsTable)
+    .where(eq(trustedContactsTable.userId, deceasedUserId));
+
+  const emailsToSend = otherContacts.filter((c) => c.id !== contactId && c.email);
+
+  for (const recipient of emailsToSend) {
+    sendDeathReportEmail({
+      toEmail: recipient.email,
+      toName: recipient.fullName,
+      reporterName: reporter.fullName,
+      deceasedName: deceasedName || "la persona registrada",
+      reporterDni: reporterDni || "",
+    }).catch((err) => {
+      console.error(`[email] Failed to send to ${recipient.email}:`, err.message);
     });
   }
 

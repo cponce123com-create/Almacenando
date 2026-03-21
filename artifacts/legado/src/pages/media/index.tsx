@@ -220,19 +220,24 @@ async function uploadAndSave(
   token: string
 ): Promise<void> {
   const encKey = getEncryptionKey();
-  if (!encKey) throw new Error("No hay clave de cifrado");
+  if (!encKey) throw new Error("No hay clave de cifrado. Cierra sesión y vuelve a iniciar.");
 
   const fileObj = file instanceof File ? file : new File([file], fileName, { type: "video/webm" });
+  const originalMimeType = fileObj.type;
   const { encryptedBlob, ivBase64 } = await encryptFile(fileObj, encKey);
 
   const uploadForm = new FormData();
   uploadForm.append("file", encryptedBlob, fileName);
+  uploadForm.append("originalMimeType", originalMimeType);
   const uploadRes = await fetch("/api/upload", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body: uploadForm,
   });
-  if (!uploadRes.ok) throw new Error("Error al subir el archivo");
+  if (!uploadRes.ok) {
+    const errData = await uploadRes.json().catch(() => ({}));
+    throw new Error((errData as any).error || "Error al subir el archivo");
+  }
   const { url, publicId, resourceType } = await uploadRes.json();
 
   const itemRes = await fetch("/api/legacy-items", {

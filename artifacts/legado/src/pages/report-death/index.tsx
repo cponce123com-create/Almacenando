@@ -6,34 +6,72 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowLeft, BadgeCheck, Loader2, Heart, Users, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Loader2,
+  Heart,
+  Users,
+  CheckCircle2,
+  AlertCircle,
+  UserCircle2,
+  FileText,
+  ShieldAlert,
+} from "lucide-react";
 
-type Step = "deceased_dni" | "reporter_dni" | "confirm" | "done";
+type Step = "lookup" | "contacts" | "reporter_dni" | "confirm" | "done";
+
+type LookupResult = {
+  deceasedName: string;
+  deceasedUserId: string;
+  trustedContacts: { id: string; fullName: string }[];
+};
 
 type ValidateResult = {
   valid: boolean;
   contactId: string;
   contactName: string;
-  deceasedName: string;
-  deceasedUserId: string;
   otherContacts: { id: string; fullName: string }[];
 };
 
 export default function ReportDeath() {
   const { toast } = useToast();
-  const [step, setStep] = useState<Step>("deceased_dni");
+
+  const [step, setStep] = useState<Step>("lookup");
   const [deceasedDni, setDeceasedDni] = useState("");
   const [reporterDni, setReporterDni] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
   const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
   const [error, setError] = useState("");
 
-  const handleValidate = async () => {
-    if (!deceasedDni.trim() || !reporterDni.trim()) {
-      setError("Ambos DNI son requeridos");
-      return;
+  // Step 1: look up deceased by DNI → show trusted contacts
+  const handleLookup = async () => {
+    if (!deceasedDni.trim()) { setError("Ingresa el DNI del fallecido"); return; }
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/public/report-death/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deceasedDni: deceasedDni.trim().toUpperCase() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "DNI no encontrado"); return; }
+      setLookupResult(data);
+      setStep("contacts");
+    } catch {
+      setError("Error de conexión. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // Step 2b: validate reporter DNI
+  const handleValidate = async () => {
+    if (!reporterDni.trim()) { setError("Ingresa tu DNI"); return; }
+    if (!lookupResult) return;
     setError("");
     setLoading(true);
     try {
@@ -41,15 +79,12 @@ export default function ReportDeath() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          deceasedDni: deceasedDni.trim().toUpperCase(),
+          deceasedUserId: lookupResult.deceasedUserId,
           reporterDni: reporterDni.trim().toUpperCase(),
         }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Error de validación");
-        return;
-      }
+      if (!res.ok) { setError(data.error || "DNI no autorizado"); return; }
       setValidateResult(data);
       setStep("confirm");
     } catch {
@@ -59,8 +94,9 @@ export default function ReportDeath() {
     }
   };
 
+  // Step 3: submit report
   const handleSubmit = async () => {
-    if (!validateResult) return;
+    if (!validateResult || !lookupResult) return;
     setLoading(true);
     try {
       const res = await fetch("/api/public/report-death/submit", {
@@ -68,15 +104,14 @@ export default function ReportDeath() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contactId: validateResult.contactId,
-          deceasedUserId: validateResult.deceasedUserId,
+          deceasedUserId: lookupResult.deceasedUserId,
+          deceasedName: lookupResult.deceasedName,
+          reporterDni: reporterDni.trim().toUpperCase(),
           notes: notes.trim() || undefined,
         }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Error al enviar el reporte");
-        return;
-      }
+      if (!res.ok) { setError(data.error || "Error al enviar el reporte"); return; }
       setStep("done");
     } catch {
       setError("Error de conexión. Intenta de nuevo.");
@@ -85,8 +120,10 @@ export default function ReportDeath() {
     }
   };
 
+  const resetError = () => setError("");
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-lavender-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-rose-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="mb-8">
           <Link href="/" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-violet-600 transition-colors">
@@ -95,50 +132,37 @@ export default function ReportDeath() {
         </div>
 
         <AnimatePresence mode="wait">
-          {(step === "deceased_dni" || step === "reporter_dni") && (
+
+          {/* STEP 1 — DNI del fallecido */}
+          {step === "lookup" && (
             <motion.div
-              key="form"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
+              key="lookup"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
               className="bg-white rounded-2xl shadow-xl p-8"
             >
-              <div className="flex flex-col items-center mb-6">
+              <div className="flex flex-col items-center mb-7">
                 <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center mb-3">
                   <Heart className="w-7 h-7 text-violet-600" />
                 </div>
-                <h1 className="text-xl font-serif font-bold text-gray-900 text-center">
-                  Reportar Fallecimiento
-                </h1>
-                <p className="text-sm text-gray-500 text-center mt-1">
-                  Solo los contactos de confianza registrados pueden iniciar este proceso.
+                <h1 className="text-xl font-serif font-bold text-gray-900 text-center">Reportar Fallecimiento</h1>
+                <p className="text-sm text-gray-500 text-center mt-1.5 leading-relaxed">
+                  Ingresa el DNI de la persona fallecida para identificar quiénes son sus contactos de confianza.
                 </p>
               </div>
 
               <div className="space-y-5">
                 <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5">
+                  <Label className="flex items-center gap-1.5 text-sm font-medium">
                     <BadgeCheck className="w-4 h-4 text-gray-400" />
                     DNI de la persona fallecida
                   </Label>
                   <Input
                     value={deceasedDni}
-                    onChange={(e) => setDeceasedDni(e.target.value.toUpperCase())}
+                    onChange={(e) => { setDeceasedDni(e.target.value.toUpperCase()); resetError(); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleLookup()}
                     placeholder="Ej. 12345678A"
-                    className="h-11 rounded-xl uppercase tracking-widest"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5">
-                    <BadgeCheck className="w-4 h-4 text-violet-500" />
-                    Tu DNI (contacto de confianza)
-                  </Label>
-                  <Input
-                    value={reporterDni}
-                    onChange={(e) => setReporterDni(e.target.value.toUpperCase())}
-                    placeholder="Ej. 87654321B"
-                    className="h-11 rounded-xl uppercase tracking-widest"
+                    className="h-12 rounded-xl uppercase tracking-widest text-base"
+                    autoFocus
                   />
                 </div>
 
@@ -150,27 +174,154 @@ export default function ReportDeath() {
                 )}
 
                 <Button
-                  onClick={handleValidate}
-                  disabled={loading || !deceasedDni.trim() || !reporterDni.trim()}
-                  className="w-full h-11 rounded-xl bg-violet-600 hover:bg-violet-700 text-white"
+                  onClick={handleLookup}
+                  disabled={loading || !deceasedDni.trim()}
+                  className="w-full h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-base"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verificar identidad"}
+                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Buscar"}
                 </Button>
               </div>
             </motion.div>
           )}
 
-          {step === "confirm" && validateResult && (
+          {/* STEP 2 — Mostrar contactos de confianza */}
+          {step === "contacts" && lookupResult && (
             <motion.div
-              key="confirm"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -16 }}
+              key="contacts"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
               className="bg-white rounded-2xl shadow-xl p-8"
             >
               <div className="flex flex-col items-center mb-6">
                 <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center mb-3">
                   <Users className="w-7 h-7 text-violet-600" />
+                </div>
+                <h2 className="text-xl font-serif font-bold text-gray-900 text-center">
+                  Contactos de confianza
+                </h2>
+                <p className="text-sm text-gray-500 text-center mt-1.5">
+                  de <span className="font-semibold text-gray-800">{lookupResult.deceasedName}</span>
+                </p>
+              </div>
+
+              <p className="text-sm text-gray-500 mb-4 text-center">
+                Las siguientes personas están registradas como contactos de confianza:
+              </p>
+
+              <div className="space-y-2 mb-7">
+                {lookupResult.trustedContacts.map((c) => (
+                  <div key={c.id} className="flex items-center gap-3 p-3.5 rounded-xl bg-violet-50 border border-violet-100">
+                    <div className="w-9 h-9 rounded-full bg-violet-200 flex items-center justify-center shrink-0">
+                      <UserCircle2 className="w-5 h-5 text-violet-600" />
+                    </div>
+                    <span className="font-medium text-gray-800">{c.fullName}</span>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-400 text-center mb-6">
+                Si eres uno de estos contactos, puedes iniciar el informe de fallecimiento.
+              </p>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  className="flex-1 rounded-xl"
+                  onClick={() => { setStep("lookup"); resetError(); }}
+                >
+                  Atrás
+                </Button>
+                <Button
+                  className="flex-1 rounded-xl bg-violet-600 hover:bg-violet-700 text-white flex items-center gap-2"
+                  onClick={() => { setStep("reporter_dni"); resetError(); }}
+                >
+                  <FileText className="w-4 h-4" />
+                  Realizar informe
+                </Button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 2b — DNI del reportante */}
+          {step === "reporter_dni" && lookupResult && (
+            <motion.div
+              key="reporter_dni"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+              className="bg-white rounded-2xl shadow-xl p-8"
+            >
+              <div className="flex flex-col items-center mb-7">
+                <div className="w-14 h-14 rounded-2xl bg-rose-100 flex items-center justify-center mb-3">
+                  <ShieldAlert className="w-7 h-7 text-rose-600" />
+                </div>
+                <h2 className="text-xl font-serif font-bold text-gray-900 text-center">
+                  Verificar tu identidad
+                </h2>
+                <p className="text-sm text-gray-500 text-center mt-1.5 leading-relaxed">
+                  Ingresa tu DNI para confirmar que eres uno de los contactos de confianza de{" "}
+                  <span className="font-semibold text-gray-800">{lookupResult.deceasedName}</span>.
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                <p className="text-xs font-semibold text-amber-800 mb-1">⚠️ Advertencia importante</p>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  Si este reporte es falso, tu DNI quedará registrado y podrá ser{" "}
+                  <strong>bloqueado permanentemente</strong> del sistema. Nunca más podrás utilizar el servicio de Legado.
+                </p>
+              </div>
+
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5 text-sm font-medium">
+                    <BadgeCheck className="w-4 h-4 text-violet-500" />
+                    Tu DNI (contacto de confianza)
+                  </Label>
+                  <Input
+                    value={reporterDni}
+                    onChange={(e) => { setReporterDni(e.target.value.toUpperCase()); resetError(); }}
+                    onKeyDown={(e) => e.key === "Enter" && handleValidate()}
+                    placeholder="Ej. 87654321B"
+                    className="h-12 rounded-xl uppercase tracking-widest text-base"
+                    autoFocus
+                  />
+                </div>
+
+                {error && (
+                  <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 rounded-xl p-3">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    className="flex-1 rounded-xl"
+                    onClick={() => { setStep("contacts"); resetError(); }}
+                  >
+                    Atrás
+                  </Button>
+                  <Button
+                    onClick={handleValidate}
+                    disabled={loading || !reporterDni.trim()}
+                    className="flex-1 h-12 rounded-xl bg-violet-600 hover:bg-violet-700 text-white"
+                  >
+                    {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Verificar"}
+                  </Button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* STEP 3 — Confirmar y enviar */}
+          {step === "confirm" && validateResult && lookupResult && (
+            <motion.div
+              key="confirm"
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}
+              className="bg-white rounded-2xl shadow-xl p-8"
+            >
+              <div className="flex flex-col items-center mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center mb-3">
+                  <CheckCircle2 className="w-7 h-7 text-green-600" />
                 </div>
                 <h2 className="text-xl font-serif font-bold text-gray-900 text-center">
                   Confirmar reporte
@@ -180,7 +331,7 @@ export default function ReportDeath() {
               <div className="bg-violet-50 rounded-xl p-4 mb-5 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Persona fallecida:</span>
-                  <span className="font-semibold text-gray-900">{validateResult.deceasedName}</span>
+                  <span className="font-semibold text-gray-900">{lookupResult.deceasedName}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Reportado por:</span>
@@ -190,9 +341,9 @@ export default function ReportDeath() {
 
               {validateResult.otherContacts.length > 0 && (
                 <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-5">
-                  <p className="text-xs font-semibold text-amber-700 mb-1">¿Qué sucede después?</p>
-                  <p className="text-xs text-amber-600">
-                    El otro contacto de confianza también deberá confirmar. Una vez ambos confirmen, el admin revisará y liberará el legado.
+                  <p className="text-xs font-semibold text-amber-700 mb-2">¿Qué sucede después?</p>
+                  <p className="text-xs text-amber-600 leading-relaxed">
+                    Se notificará por correo al otro contacto de confianza. Una vez ambos confirmen, el administrador revisará y liberará el legado.
                   </p>
                   {validateResult.otherContacts.map((c) => (
                     <p key={c.id} className="text-xs text-amber-700 font-medium mt-1">• {c.fullName}</p>
@@ -201,12 +352,12 @@ export default function ReportDeath() {
               )}
 
               <div className="space-y-1.5 mb-5">
-                <Label>Notas adicionales (opcional)</Label>
+                <Label className="text-sm">Notas adicionales (opcional)</Label>
                 <Textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Circunstancias, lugar, fecha del fallecimiento…"
-                  className="rounded-xl min-h-[80px]"
+                  placeholder="Circunstancias, fecha, lugar del fallecimiento…"
+                  className="rounded-xl min-h-[80px] resize-none"
                 />
               </div>
 
@@ -218,11 +369,7 @@ export default function ReportDeath() {
               )}
 
               <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1 rounded-xl"
-                  onClick={() => { setStep("deceased_dni"); setError(""); }}
-                >
+                <Button variant="outline" className="flex-1 rounded-xl" onClick={() => { setStep("reporter_dni"); resetError(); }}>
                   Atrás
                 </Button>
                 <Button
@@ -230,33 +377,37 @@ export default function ReportDeath() {
                   onClick={handleSubmit}
                   disabled={loading}
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar reporte"}
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Enviar reporte"}
                 </Button>
               </div>
             </motion.div>
           )}
 
+          {/* DONE */}
           {step === "done" && (
             <motion.div
               key="done"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
               className="bg-white rounded-2xl shadow-xl p-8 text-center"
             >
-              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-5">
                 <CheckCircle2 className="w-8 h-8 text-green-600" />
               </div>
-              <h2 className="text-xl font-serif font-bold text-gray-900 mb-2">Reporte enviado</h2>
-              <p className="text-sm text-gray-500 mb-6">
-                Hemos registrado el reporte. El otro contacto de confianza deberá confirmarlo también para que el administrador pueda revisar y liberar el legado.
+              <h2 className="text-xl font-serif font-bold text-gray-900 mb-3">Reporte enviado</h2>
+              <p className="text-sm text-gray-500 mb-3 leading-relaxed">
+                Hemos registrado el reporte y hemos notificado al otro contacto de confianza por correo electrónico.
+              </p>
+              <p className="text-sm text-gray-500 mb-7 leading-relaxed">
+                Una vez ambos contactos confirmen, el administrador revisará el caso y decidirá si se libera el legado.
               </p>
               <Link href="/">
-                <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white">
+                <Button className="rounded-xl bg-violet-600 hover:bg-violet-700 text-white px-8">
                   Volver al inicio
                 </Button>
               </Link>
             </motion.div>
           )}
+
         </AnimatePresence>
       </div>
     </div>

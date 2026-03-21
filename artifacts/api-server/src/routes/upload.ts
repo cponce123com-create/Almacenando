@@ -8,24 +8,10 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 200 * 1024 * 1024, // 200 MB
+    fileSize: 200 * 1024 * 1024,
   },
-  fileFilter: (_req, file, cb) => {
-    const allowed = [
-      "image/jpeg", "image/png", "image/gif", "image/webp",
-      "video/mp4", "video/mov", "video/avi", "video/quicktime", "video/webm",
-      "audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg", "audio/mp4", "audio/m4a",
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ];
-    if (allowed.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}`));
-    }
+  fileFilter: (_req, _file, cb) => {
+    cb(null, true);
   },
 });
 
@@ -36,7 +22,8 @@ router.post("/", requireAuth, upload.single("file"), async (req, res) => {
       return;
     }
 
-    const resourceType = getCloudinaryResourceType(req.file.mimetype);
+    const originalMimeType = (req.body?.originalMimeType as string) || req.file.mimetype;
+    const resourceType = getCloudinaryResourceType(originalMimeType);
 
     const result = await uploadToCloudinary(req.file.buffer, {
       resource_type: resourceType,
