@@ -20,7 +20,19 @@ type Item = {
   contentText?: string | null;
   mediaUrl?: string | null;
   mediaEncryptionIv?: string | null;
+  originalMimeType?: string | null;
   status: string;
+};
+
+type FuneralPreferences = {
+  burialType?: string | null;
+  ceremonyType?: string | null;
+  spotifyPlaylistUrl?: string | null;
+  musicNotes?: string | null;
+  dressCode?: string | null;
+  guestNotes?: string | null;
+  locationNotes?: string | null;
+  additionalNotes?: string | null;
 };
 
 type AccessData = {
@@ -33,6 +45,7 @@ type AccessData = {
   deceasedName: string;
   deceasedAvatarUrl?: string | null;
   deceasedIntroMessage?: string | null;
+  funeralPreferences?: FuneralPreferences | null;
 };
 
 const TYPE_ICONS: Record<string, any> = {
@@ -70,11 +83,12 @@ function MediaDecryptor({
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const getMimeType = (type: string) => {
+  const getMimeType = (type: string, storedMime?: string | null) => {
+    if (storedMime) return storedMime;
     if (type === "video") return "video/mp4";
     if (type === "audio") return "audio/mpeg";
     if (type === "photo") return "image/jpeg";
-    return "application/octet-stream";
+    return "application/pdf";
   };
 
   const handleDecrypt = useCallback(async () => {
@@ -86,7 +100,7 @@ function MediaDecryptor({
       if (!response.ok) throw new Error("No se pudo descargar el archivo");
       const encryptedBuffer = await response.arrayBuffer();
       const decryptedBuffer = await decryptFile(encryptedBuffer, encKey, item.mediaEncryptionIv);
-      const mime = getMimeType(item.type);
+      const mime = getMimeType(item.type, item.originalMimeType);
       const blob = new Blob([decryptedBuffer], { type: mime });
       setBlobUrl(URL.createObjectURL(blob));
     } catch (e: any) {
@@ -135,9 +149,24 @@ function MediaDecryptor({
         </div>
       );
     }
+    const getExtension = (mime: string) => {
+      const map: Record<string, string> = {
+        "application/pdf": ".pdf",
+        "application/msword": ".doc",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+        "application/vnd.ms-excel": ".xls",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+        "text/plain": ".txt",
+      };
+      return map[mime] || "";
+    };
+    const mime = getMimeType(item.type, item.originalMimeType);
+    const ext = getExtension(mime);
+    const filename = item.title + ext;
+
     return (
       <div className="mt-4">
-        <a href={blobUrl} download={item.title} className="inline-block">
+        <a href={blobUrl} download={filename} className="inline-block">
           <Button className="gap-2 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800">
             <Download className="w-4 h-4" />
             Descargar {TYPE_LABELS[item.type] ?? "Archivo"}
@@ -522,6 +551,104 @@ export default function AccessPortal() {
                 )}
               </div>
             )}
+          </motion.div>
+        )}
+
+        {/* Funeral preferences */}
+        {data.funeralPreferences && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.35 }}
+            className="my-6"
+          >
+            <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm overflow-hidden">
+              <div className="flex items-center gap-3 px-6 pt-5 pb-3 border-b border-zinc-50">
+                <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center shrink-0">
+                  <span className="text-lg">🕊️</span>
+                </div>
+                <div>
+                  <h2 className="font-serif text-base font-bold text-zinc-900">Mis últimos deseos</h2>
+                  <p className="text-xs text-zinc-400">Preferencias funerarias de {deceasedName}</p>
+                </div>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                {(() => {
+                  const fp = data.funeralPreferences!;
+                  const BURIAL_LABELS: Record<string, string> = {
+                    cremacion: "Cremación",
+                    entierro_tradicional: "Entierro tradicional",
+                    entierro_ecologico: "Entierro ecológico / natural",
+                    donacion_ciencia: "Donación a la ciencia",
+                    mausoleo: "Mausoleo / panteón familiar",
+                    otro: "Otro",
+                  };
+                  const CEREMONY_LABELS: Record<string, string> = {
+                    intima: "Íntima (solo familia cercana)",
+                    religiosa_catolica: "Religiosa católica",
+                    religiosa_otra: "Religiosa (otra fe)",
+                    civil: "Civil / laica",
+                    celebracion_vida: "Celebración de vida",
+                    sin_ceremonia: "Sin ceremonia",
+                    otra: "Otra",
+                  };
+                  const DRESS_LABELS: Record<string, string> = {
+                    negro_tradicional: "Negro tradicional",
+                    colores_vivos: "Colores vivos y alegres",
+                    blanco: "Blanco (pureza / paz)",
+                    informal_comodo: "Informal y cómodo",
+                    formal_elegante: "Formal elegante",
+                    a_eleccion: "A elección de cada uno",
+                    tematico: "Temático",
+                  };
+                  const fields = [
+                    { label: "Disposición de restos", value: fp.burialType ? BURIAL_LABELS[fp.burialType] ?? fp.burialType : null },
+                    { label: "Tipo de ceremonia", value: fp.ceremonyType ? CEREMONY_LABELS[fp.ceremonyType] ?? fp.ceremonyType : null },
+                    { label: "Código de vestimenta", value: fp.dressCode ? DRESS_LABELS[fp.dressCode] ?? fp.dressCode : null },
+                    { label: "Ubicación deseada", value: fp.locationNotes },
+                    { label: "Notas sobre la música", value: fp.musicNotes },
+                    { label: "Invitados y personas especiales", value: fp.guestNotes },
+                    { label: "Notas adicionales", value: fp.additionalNotes },
+                  ].filter(f => !!f.value);
+
+                  return (
+                    <>
+                      {fp.spotifyPlaylistUrl && (
+                        <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-100">
+                          <span className="text-2xl">🎵</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-green-800 mb-1">Playlist para el velatorio</p>
+                            <a
+                              href={fp.spotifyPlaylistUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-green-700 underline underline-offset-2 truncate block hover:text-green-900"
+                            >
+                              {fp.spotifyPlaylistUrl}
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                      {fields.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {fields.map(f => (
+                            <div key={f.label} className="bg-zinc-50 rounded-xl p-3">
+                              <p className="text-xs text-zinc-400 mb-0.5">{f.label}</p>
+                              <p className="text-sm text-zinc-800 leading-relaxed">{f.value}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {fields.length === 0 && !fp.spotifyPlaylistUrl && (
+                        <p className="text-sm text-zinc-400 italic text-center py-2">
+                          No se especificaron preferencias funerarias detalladas.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
           </motion.div>
         )}
 

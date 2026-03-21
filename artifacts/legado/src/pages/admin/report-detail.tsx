@@ -1,10 +1,10 @@
 import { useRoute, Link, useLocation } from "wouter";
-import { useAdminReport, useApproveRelease, useRejectRelease } from "@/hooks/use-admin";
+import { useAdminReport, useApproveRelease, useRejectRelease, useDeleteReport } from "@/hooks/use-admin";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Loader2, ArrowLeft, CheckCircle, XCircle, Unlock,
-  Clock, Ban, ShieldCheck, AlertTriangle,
+  Clock, Ban, ShieldCheck, AlertTriangle, Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -26,6 +26,19 @@ export default function AdminReportDetail() {
   const { data: report, isLoading } = useAdminReport(id);
   const approveMutation = useApproveRelease();
   const rejectMutation = useRejectRelease();
+  const deleteMutation = useDeleteReport();
+
+  const handleDelete = async () => {
+    if (confirm("¿Eliminar este reporte de fallecimiento? Esta acción no se puede deshacer.")) {
+      try {
+        await deleteMutation.mutateAsync(id);
+        toast({ title: "Reporte eliminado" });
+        setLocation("/admin");
+      } catch (e: any) {
+        toast({ variant: "destructive", title: "Error", description: e.message });
+      }
+    }
+  };
 
   const handleApprove = async () => {
     if (confirm("¿Aprobar y liberar el legado? Se enviarán los enlaces de acceso a los destinatarios de forma inmediata e irreversible.")) {
@@ -246,6 +259,28 @@ export default function AdminReportDetail() {
             </CardContent>
           </Card>
         )}
+
+        {/* Danger zone */}
+        <Card className="border-zinc-200 shadow-sm">
+          <CardContent className="p-5 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-zinc-700">Zona de peligro</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Elimina este reporte (útil para pruebas). No puede deshacerse.</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Trash2 className="w-4 h-4" />}
+              Eliminar reporte
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

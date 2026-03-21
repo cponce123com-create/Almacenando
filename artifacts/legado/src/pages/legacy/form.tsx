@@ -35,6 +35,7 @@ type MediaData = {
   format?: string;
   bytes?: number;
   encryptionIv?: string;
+  originalMimeType?: string;
 };
 
 const ACCEPT_MAP: Record<string, string> = {
@@ -150,6 +151,7 @@ function FileUploadZone({
         format: result.format,
         bytes: file.size,
         encryptionIv: ivBase64,
+        originalMimeType: file.type || undefined,
       });
       toast({ title: ivBase64 ? "Archivo cifrado y subido" : "Archivo subido" });
     } catch (err: any) {
@@ -290,6 +292,7 @@ export default function LegacyForm() {
           publicId: item.mediaPublicId || "",
           resourceType: item.mediaResourceType || "raw",
           encryptionIv: (item as any).mediaEncryptionIv || undefined,
+          originalMimeType: (item as any).originalMimeType || undefined,
         });
       }
     }
@@ -307,6 +310,7 @@ export default function LegacyForm() {
         mediaPublicId: mediaData?.publicId || "",
         mediaResourceType: mediaData?.resourceType || "",
         mediaEncryptionIv: mediaData?.encryptionIv || "",
+        originalMimeType: mediaData?.originalMimeType || "",
       };
 
       let savedId = id;

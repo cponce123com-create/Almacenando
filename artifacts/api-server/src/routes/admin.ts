@@ -245,4 +245,15 @@ router.post("/death-reports/:id/reject", requireAdmin, async (req, res) => {
   res.json({ message: "Release rejected" });
 });
 
+router.delete("/death-reports/:id", requireAdmin, async (req, res) => {
+  const reports = await db.select().from(deathReportsTable).where(eq(deathReportsTable.id, req.params.id)).limit(1);
+  if (reports.length === 0) {
+    res.status(404).json({ error: "Report not found" });
+    return;
+  }
+  await db.delete(deathConfirmationsTable).where(eq(deathConfirmationsTable.deathReportId, req.params.id));
+  await db.delete(deathReportsTable).where(eq(deathReportsTable.id, req.params.id));
+  res.json({ message: "Report deleted" });
+});
+
 export default router;

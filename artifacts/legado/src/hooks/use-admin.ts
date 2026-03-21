@@ -103,3 +103,20 @@ export function useActivateUser() {
     },
   });
 }
+
+export function useDeleteReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/death-reports/${id}`, {
+        method: "DELETE",
+        headers: getAdminAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Error al eliminar el reporte");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/death-reports"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+    },
+  });
+}

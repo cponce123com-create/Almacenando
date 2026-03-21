@@ -7,6 +7,7 @@ import {
   legacyItemsTable,
   legacyItemRecipientsTable,
   profilesTable,
+  funeralPreferencesTable,
 } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 
@@ -68,16 +69,17 @@ router.get("/:token", async (req, res) => {
     }
   }
 
-  const profiles = await db
-    .select()
-    .from(profilesTable)
-    .where(eq(profilesTable.userId, recipient.userId))
-    .limit(1);
+  const [profiles, funeralPrefs] = await Promise.all([
+    db.select().from(profilesTable).where(eq(profilesTable.userId, recipient.userId)).limit(1),
+    db.select().from(funeralPreferencesTable).where(eq(funeralPreferencesTable.userId, recipient.userId)).limit(1),
+  ]);
 
   await db
     .update(recipientAccessTokensTable)
     .set({ usedAt: new Date() })
     .where(eq(recipientAccessTokensTable.token, req.params.token));
+
+  const fp = funeralPrefs[0];
 
   res.json({
     recipient: {
@@ -103,12 +105,23 @@ router.get("/:token", async (req, res) => {
       mediaPublicId: item.mediaPublicId,
       mediaResourceType: item.mediaResourceType,
       mediaEncryptionIv: item.mediaEncryptionIv,
+      originalMimeType: item.originalMimeType,
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
     })),
     deceasedName: profiles[0]?.fullName ?? "Tu ser querido",
     deceasedAvatarUrl: profiles[0]?.avatarUrl ?? null,
     deceasedIntroMessage: profiles[0]?.introMessage ?? null,
+    funeralPreferences: fp ? {
+      burialType: fp.burialType,
+      ceremonyType: fp.ceremonyType,
+      spotifyPlaylistUrl: fp.spotifyPlaylistUrl,
+      musicNotes: fp.musicNotes,
+      dressCode: fp.dressCode,
+      guestNotes: fp.guestNotes,
+      locationNotes: fp.locationNotes,
+      additionalNotes: fp.additionalNotes,
+    } : null,
   });
 });
 

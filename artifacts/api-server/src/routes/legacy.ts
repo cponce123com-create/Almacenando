@@ -19,6 +19,7 @@ const toItem = (item: typeof legacyItemsTable.$inferSelect) => ({
   mediaPublicId: item.mediaPublicId,
   mediaResourceType: item.mediaResourceType,
   mediaEncryptionIv: item.mediaEncryptionIv,
+  originalMimeType: item.originalMimeType,
   createdAt: item.createdAt.toISOString(),
   updatedAt: item.updatedAt.toISOString(),
 });
@@ -31,7 +32,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 router.post("/", requireAuth, async (req, res) => {
   const userId = (req as typeof req & { userId: string }).userId;
-  const { type, title, description, contentText, status, mediaUrl, mediaPublicId, mediaResourceType, mediaEncryptionIv } = req.body;
+  const { type, title, description, contentText, status, mediaUrl, mediaPublicId, mediaResourceType, mediaEncryptionIv, originalMimeType } = req.body;
 
   if (!type || !title) {
     res.status(400).json({ error: "type and title are required" });
@@ -51,6 +52,7 @@ router.post("/", requireAuth, async (req, res) => {
     mediaPublicId,
     mediaResourceType,
     mediaEncryptionIv,
+    originalMimeType,
   });
 
   const items = await db.select().from(legacyItemsTable).where(eq(legacyItemsTable.id, id)).limit(1);
@@ -75,7 +77,7 @@ router.put("/:id", requireAuth, async (req, res) => {
     return;
   }
 
-  const { title, description, contentText, status, mediaUrl, mediaPublicId, mediaResourceType, mediaEncryptionIv } = req.body;
+  const { title, description, contentText, status, mediaUrl, mediaPublicId, mediaResourceType, mediaEncryptionIv, originalMimeType } = req.body;
   await db.update(legacyItemsTable).set({
     title: title ?? existing[0]!.title,
     description: description !== undefined ? description : existing[0]!.description,
@@ -85,6 +87,7 @@ router.put("/:id", requireAuth, async (req, res) => {
     mediaPublicId: mediaPublicId !== undefined ? mediaPublicId : existing[0]!.mediaPublicId,
     mediaResourceType: mediaResourceType !== undefined ? mediaResourceType : existing[0]!.mediaResourceType,
     mediaEncryptionIv: mediaEncryptionIv !== undefined ? mediaEncryptionIv : existing[0]!.mediaEncryptionIv,
+    originalMimeType: originalMimeType !== undefined ? originalMimeType : existing[0]!.originalMimeType,
     updatedAt: new Date(),
   }).where(eq(legacyItemsTable.id, req.params.id));
 
