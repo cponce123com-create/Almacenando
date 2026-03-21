@@ -9,6 +9,7 @@ export const recipientsTable = pgTable("recipients", {
   email: text("email").notNull(),
   phone: text("phone"),
   relationship: text("relationship").notNull(),
+  accessType: text("access_type").notNull().default("specific"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -12,7 +12,12 @@ import { eq, inArray } from "drizzle-orm";
 const router = Router();
 
 router.get("/:token", async (req, res) => {
-  const tokenRecords = await db.select().from(recipientAccessTokensTable).where(eq(recipientAccessTokensTable.token, req.params.token)).limit(1);
+  const tokenRecords = await db
+    .select()
+    .from(recipientAccessTokensTable)
+    .where(eq(recipientAccessTokensTable.token, req.params.token))
+    .limit(1);
+
   if (tokenRecords.length === 0) {
     res.status(404).json({ error: "Token not found" });
     return;
@@ -25,7 +30,12 @@ router.get("/:token", async (req, res) => {
     return;
   }
 
-  const recipients = await db.select().from(recipientsTable).where(eq(recipientsTable.id, tokenRecord.recipientId)).limit(1);
+  const recipients = await db
+    .select()
+    .from(recipientsTable)
+    .where(eq(recipientsTable.id, tokenRecord.recipientId))
+    .limit(1);
+
   if (recipients.length === 0) {
     res.status(404).json({ error: "Recipient not found" });
     return;
@@ -33,18 +43,40 @@ router.get("/:token", async (req, res) => {
 
   const recipient = recipients[0]!;
 
-  const itemLinks = await db.select().from(legacyItemRecipientsTable).where(eq(legacyItemRecipientsTable.recipientId, recipient.id));
-  const itemIds = itemLinks.map((l) => l.legacyItemId);
-
   let items: typeof legacyItemsTable.$inferSelect[] = [];
-  if (itemIds.length > 0) {
-    items = await db.select().from(legacyItemsTable).where(inArray(legacyItemsTable.id, itemIds));
+
+  if (recipient.accessType === "all") {
+    // Full access — return every published item for this user
+    items = await db
+      .select()
+      .from(legacyItemsTable)
+      .where(eq(legacyItemsTable.userId, recipient.userId));
+  } else {
+    // Specific access — return only linked items
+    const itemLinks = await db
+      .select()
+      .from(legacyItemRecipientsTable)
+      .where(eq(legacyItemRecipientsTable.recipientId, recipient.id));
+
+    const itemIds = itemLinks.map((l) => l.legacyItemId);
+    if (itemIds.length > 0) {
+      items = await db
+        .select()
+        .from(legacyItemsTable)
+        .where(inArray(legacyItemsTable.id, itemIds));
+    }
   }
 
-  const profiles = await db.select().from(profilesTable).where(eq(profilesTable.userId, recipient.userId)).limit(1);
-  const profile = profiles[0];
+  const profiles = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.userId, recipient.userId))
+    .limit(1);
 
-  await db.update(recipientAccessTokensTable).set({ usedAt: new Date() }).where(eq(recipientAccessTokensTable.token, req.params.token));
+  await db
+    .update(recipientAccessTokensTable)
+    .set({ usedAt: new Date() })
+    .where(eq(recipientAccessTokensTable.token, req.params.token));
 
   res.json({
     recipient: {
@@ -54,6 +86,7 @@ router.get("/:token", async (req, res) => {
       email: recipient.email,
       phone: recipient.phone,
       relationship: recipient.relationship,
+      accessType: recipient.accessType,
       createdAt: recipient.createdAt.toISOString(),
       updatedAt: recipient.updatedAt.toISOString(),
     },
@@ -68,11 +101,13 @@ router.get("/:token", async (req, res) => {
       mediaUrl: item.mediaUrl,
       mediaPublicId: item.mediaPublicId,
       mediaResourceType: item.mediaResourceType,
+      mediaEncryptionIv: item.mediaEncryptionIv,
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
     })),
-    deceasedName: profile?.fullName ?? "Unknown",
-    deceasedIntroMessage: profile?.introMessage ?? null,
+    deceasedName: profiles[0]?.fullName ?? "Tu ser querido",
+    deceasedAvatarUrl: profiles[0]?.avatarUrl ?? null,
+    deceasedIntroMessage: profiles[0]?.introMessage ?? null,
   });
 });
 
