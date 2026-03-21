@@ -211,7 +211,14 @@ function FileUploadZone({
         accept={ACCEPT_MAP[type] ?? "*/*"}
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) handleFile(file);
+          if (file) {
+            if (file.size > 100 * 1024 * 1024) {
+              toast({ title: "Archivo demasiado grande", description: "El archivo no puede superar 100 MB", variant: "destructive" });
+              e.target.value = "";
+              return;
+            }
+            handleFile(file);
+          }
           e.target.value = "";
         }}
       />

@@ -11,7 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import {
   ShieldCheck, Plus, Pencil, Trash2, Loader2, Mail, ShieldAlert, BadgeCheck,
-  Key, Send, HelpCircle, Eye, EyeOff, CheckCircle2, Trash, Lock
+  Key, Send, HelpCircle, Eye, EyeOff, CheckCircle2, Trash, Lock, Link2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -31,6 +31,31 @@ export default function TrustedContacts() {
   const updateMutation = useUpdateContact();
   const deleteMutation = useDeleteContact();
   const { toast } = useToast();
+  const [copyingId, setCopyingId] = useState<string | null>(null);
+
+  const authHeader = () => ({
+    Authorization: `Bearer ${localStorage.getItem("legado_token")}`,
+    "Content-Type": "application/json",
+  });
+
+  const handleResendInvite = async (contactId: string) => {
+    setCopyingId(contactId);
+    try {
+      const res = await fetch(`/api/trusted-contacts/${contactId}/regenerate-token`, {
+        method: "POST",
+        headers: authHeader(),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const url = `${window.location.origin}/confirm/${data.inviteTokenForEmail}`;
+      await navigator.clipboard.writeText(url);
+      toast({ title: "Enlace copiado al portapapeles" });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error al copiar el enlace", description: e.message });
+    } finally {
+      setCopyingId(null);
+    }
+  };
 
   const [isOpen, setIsOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -89,10 +114,6 @@ export default function TrustedContacts() {
   const [keyConfig, setKeyConfig] = useState<{ hasSecretQuestion: boolean; secretQuestion: string | null; hasStoredKey: boolean } | null>(null);
 
   const apiBase = "/api";
-  const authHeader = () => ({
-    Authorization: `Bearer ${localStorage.getItem("legado_token")}`,
-    "Content-Type": "application/json",
-  });
 
   useEffect(() => {
     const stored = sessionStorage.getItem("legado_enc_key");
@@ -319,6 +340,18 @@ export default function TrustedContacts() {
                     <ShieldCheck className="w-6 h-6" />
                   </div>
                   <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-violet-600"
+                      title="Copiar enlace de invitación"
+                      onClick={() => handleResendInvite(contact.id)}
+                      disabled={copyingId === contact.id}
+                    >
+                      {copyingId === contact.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Link2 className="w-4 h-4" />}
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

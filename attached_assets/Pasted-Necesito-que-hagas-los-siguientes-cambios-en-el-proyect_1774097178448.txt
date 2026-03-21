@@ -1,0 +1,112 @@
+Necesito que hagas los siguientes cambios en el proyecto. Lee cada archivo antes de modificarlo.
+CAMBIO 1 — Botón "Copiar enlace de invitación" en contactos de confianza
+Archivo: artifacts/legado/src/pages/trusted-contacts.tsx
+La API ahora devuelve un campo inviteTokenForEmail cuando se crea un contacto. Necesito que cada tarjeta de contacto tenga un botón con ícono de Link o Copy que al hacer click arme la URL window.location.origin + "/confirm/" + contact.inviteToken y la copie al portapapeles con navigator.clipboard.writeText(). Después de copiar mostrar un toast que diga "Enlace copiado al portapapeles".
+El problema es que el GET de contactos no devuelve el token (es secreto). Entonces el botón debe decir "Reenviar enlace" y al hacer click llamar a POST /api/trusted-contacts/:id/regenerate-token, recibir el nuevo token en la respuesta (campo inviteTokenForEmail), y copiar window.location.origin + "/confirm/" + nuevoToken al portapapeles. Agregar el hook de mutación necesario. Importar el ícono Link de lucide-react.
+
+CAMBIO 2 — Página de perfil real
+Crear archivo nuevo: artifacts/legado/src/pages/profile.tsx
+Página con AppLayout. Debe mostrar:
+
+Nombre completo del usuario (del hook useGetMe)
+Email (solo lectura, no editable)
+Un formulario simple con campo "Nombre para mostrar" que llame a PUT /api/profile con { displayName: string }
+Usar useGetMe y useUpdateProfile de @workspace/api-client-react
+Mismo estilo visual del resto de la app: título con font-serif, tarjeta bg-white rounded-3xl p-8 border border-border shadow-sm
+Toast de éxito al guardar
+
+En artifacts/legado/src/App.tsx cambiar las rutas /profile y /settings para que usen este nuevo componente ProfilePage en lugar de Dashboard. Agregar el import correspondiente.
+
+CAMBIO 3 — Validación de tamaño de archivo en legacy items
+Archivo: artifacts/legado/src/pages/legacy/form.tsx
+En el onChange del input de archivo, después de hacer setFile(e.target.files?.[0] || null), agregar validación:
+if (file && file.size > 100 * 1024 * 1024) {
+  toast({ title: "Archivo demasiado grande", description: "El archivo no puede superar 100MB", variant: "destructive" });
+  setFile(null);
+  e.target.value = "";
+  return;
+}
+También mostrar el tamaño del archivo debajo del nombre cuando hay un archivo seleccionado. El tamaño debe mostrarse en MB con una decimal: (file.size / 1024 / 1024).toFixed(1) + " MB".
+
+CAMBIO 4 — Reemplazar confirm() y prompt() en el panel admin con AlertDialog
+Archivo: artifacts/legado/src/pages/admin/dashboard.tsx
+Reemplazar completamente los window.confirm() y window.prompt() por componentes de shadcn/ui que ya están instalados.
+Para la aprobación: usar AlertDialog con título "¿Liberar este legado?", descripción "Esta acción es irreversible. El legado será entregado a todos los destinatarios registrados.", botón cancelar y botón de confirmación en verde que diga "Sí, liberar legado".
+Para el rechazo: usar un Dialog con un Textarea donde el admin escribe la razón del rechazo, botón cancelar y botón de confirmar en rojo. La razón es opcional.
+Agregar los estados necesarios: showApproveDialog, showRejectDialog, rejectReason. Los imports de AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle y Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter ya están disponibles en @/components/ui/.
+
+CAMBIO 5 — Página pública para contactos de confianza
+Primero agregar en el backend el endpoint que falta.
+Archivo: artifacts/api-server/src/routes/activation.ts
+Agregar este endpoint GET antes del export default:
+typescriptrouter.get("/trusted-contact-info/:token", async (req, res) => {
+  const contact = await db
+    .select()
+    .from(trustedContactsTable)
+    .where(eq(trustedContactsTable.inviteToken, req.params.token))
+    .limit(1);
+
+  if (contact.length === 0) {
+    res.status(404).json({ error: "Not found", message: "Token inválido o expirado" });
+    return;
+  }
+
+  const trustedContact = contact[0];
+
+  if (trustedContact.inviteTokenExpiresAt && trustedContact.inviteTokenExpiresAt < new Date()) {
+    res.status(404).json({ error: "Expired", message: "Este enlace ha expirado" });
+    return;
+  }
+
+  const profile = await db
+    .select()
+    .from(profilesTable)
+    .where(eq(profilesTable.userId, trustedContact.userId))
+    .limit(1);
+
+  res.json({
+    contactName: trustedContact.fullName,
+    ownerName: profile[0]?.fullName || "Usuario de Legado",
+    userId: trustedContact.userId,
+  });
+});
+```
+
+Asegurarse de importar `profilesTable` desde `@workspace/db` si no está ya importado.
+
+Luego crear el archivo frontend nuevo: `artifacts/legado/src/pages/confirm-contact.tsx`
+
+Es una página pública (sin AppLayout ni login). Recibe el token de la URL con `useParams`. Debe:
+
+1. Al cargar, llamar a `GET /api/activation/trusted-contact-info/:token` para mostrar: "Eres contacto de confianza de **[nombre del usuario]** en Legado."
+2. Mostrar un botón "Reportar fallecimiento" que llame a `POST /api/activation/death-reports` con body `{ inviteToken: token }`. Al éxito mostrar mensaje de confirmación.
+3. Si ya existe un reporte pendiente (la API devuelve 409 con el `reportId`), mostrar en su lugar un botón "Confirmar reporte existente" que llame a `POST /api/activation/death-reports/:reportId/confirm` con body `{ inviteToken: token, decision: "confirmed" }`.
+4. Diseño visual: página centrada, fondo `bg-background`, tarjeta `bg-white rounded-3xl p-10 shadow-xl max-w-lg mx-auto mt-20`, ícono `ShieldCheck` de lucide-react en color primary arriba, título en `font-serif text-2xl`, mensajes de error y éxito con colores apropiados.
+5. Estado de carga con spinner mientras consulta el token.
+6. Si el token es inválido (404), mostrar mensaje de error elegante igual al de `recipient-portal.tsx`.
+
+Agregar la ruta en `artifacts/legado/src/App.tsx`:
+```
+<Route path="/confirm/:token" component={ConfirmContact} />
+```
+con el import correspondiente.
+
+---
+
+**CAMBIO 6 — Páginas de privacidad y términos**
+
+Crear dos archivos nuevos:
+
+`artifacts/legado/src/pages/privacy.tsx` — Página estática con el título "Política de Privacidad", texto explicando que Legado almacena datos personales de forma cifrada, que nunca se venden datos a terceros, que los datos se eliminan si el usuario lo solicita, y que se usa Cloudinary para almacenamiento de medios. Usar `Navbar` y footer simple. Tipografía `prose` de Tailwind para el contenido.
+
+`artifacts/legado/src/pages/terms.tsx` — Página estática con "Términos de Servicio", explicando que el servicio es para mayores de 18 años, que Legado no es un servicio legal o notarial, que el usuario es responsable de mantener actualizados sus contactos de confianza, y que Legado puede interrumpir el servicio con 30 días de aviso. Mismo estilo que privacy.tsx.
+
+En `artifacts/legado/src/pages/landing.tsx` cambiar los links del footer:
+- "Privacidad" → `href="/privacy"`
+- "Términos" → `href="/terms"`
+
+En `artifacts/legado/src/App.tsx` agregar las rutas:
+```
+<Route path="/privacy" component={Privacy} />
+<Route path="/terms" component={Terms} />
+con los imports correspondientes.

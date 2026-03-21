@@ -1,8 +1,28 @@
+import { useState } from "react";
 import { useRoute, Link, useLocation } from "wouter";
 import { useAdminReport, useApproveRelease, useRejectRelease, useDeleteReport } from "@/hooks/use-admin";
 import { getAdminAuthHeaders } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import {
   Loader2, ArrowLeft, CheckCircle, XCircle, Unlock,
   Clock, Ban, ShieldCheck, AlertTriangle, Trash2,
@@ -29,17 +49,15 @@ export default function AdminReportDetail() {
   const rejectMutation = useRejectRelease();
   const deleteMutation = useDeleteReport();
 
-  const handleDelete = async () => {
-    if (confirm("¿Eliminar este reporte de fallecimiento? Esta acción no se puede deshacer.")) {
-      try {
-        await deleteMutation.mutateAsync(id);
-        toast({ title: "Reporte eliminado" });
-        setLocation("/admin");
-      } catch (e: any) {
-        toast({ variant: "destructive", title: "Error", description: e.message });
-      }
-    }
-  };
+  const [showApproveDialog, setShowApproveDialog] = useState(false);
+  const [showForceApproveDialog, setShowForceApproveDialog] = useState(false);
+  const [forceApproveError, setForceApproveError] = useState("");
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const doApprove = async (force = false) => {
     const headers = getAdminAuthHeaders() as Record<string, string>;
@@ -51,41 +69,75 @@ export default function AdminReportDetail() {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       if (res.status === 422 && (data as any).canForce) {
-        const confirmed = confirm(
-          `⚠️ ${(data as any).error}\n\n¿Deseas aprobar de todas formas como administrador?`
-        );
-        if (confirmed) {
-          await doApprove(true);
-        }
-        return;
+        setForceApproveError((data as any).error ?? "");
+        setShowApproveDialog(false);
+        setShowForceApproveDialog(true);
+        return false;
       }
       throw new Error((data as any).error || "Error al aprobar");
     }
     approveMutation.reset();
+    return true;
   };
 
-  const handleApprove = async () => {
-    if (confirm("¿Aprobar y liberar el legado? Se enviarán los enlaces de acceso a los destinatarios de forma inmediata e irreversible.")) {
-      try {
-        await doApprove(false);
+  const handleApproveConfirm = async () => {
+    setIsApproving(true);
+    try {
+      const ok = await doApprove(false);
+      if (ok) {
+        setShowApproveDialog(false);
         toast({ title: "Legado liberado", description: "Los destinatarios han recibido sus enlaces de acceso." });
         setLocation("/admin");
-      } catch (e: any) {
-        toast({ variant: "destructive", title: "Error", description: e.message });
       }
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message });
+      setShowApproveDialog(false);
+    } finally {
+      setIsApproving(false);
     }
   };
 
-  const handleReject = async () => {
-    const reason = prompt("Razón del rechazo (opcional):");
-    if (reason !== null) {
-      try {
-        await rejectMutation.mutateAsync({ id, data: { reason } });
-        toast({ title: "Reporte rechazado" });
-        setLocation("/admin");
-      } catch (e: any) {
-        toast({ variant: "destructive", title: "Error", description: e.message });
-      }
+  const handleForceApproveConfirm = async () => {
+    setIsApproving(true);
+    try {
+      await doApprove(true);
+      setShowForceApproveDialog(false);
+      toast({ title: "Legado liberado", description: "Los destinatarios han recibido sus enlaces de acceso." });
+      setLocation("/admin");
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message });
+      setShowForceApproveDialog(false);
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleRejectConfirm = async () => {
+    setIsRejecting(true);
+    try {
+      await rejectMutation.mutateAsync({ id, data: { reason: rejectReason.trim() || undefined } });
+      setShowRejectDialog(false);
+      setRejectReason("");
+      toast({ title: "Reporte rechazado" });
+      setLocation("/admin");
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message });
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    setIsDeleting(true);
+    try {
+      await deleteMutation.mutateAsync(id);
+      setShowDeleteDialog(false);
+      toast({ title: "Reporte eliminado" });
+      setLocation("/admin");
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -233,20 +285,18 @@ export default function AdminReportDetail() {
                 <Button
                   variant="outline"
                   className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-                  onClick={handleReject}
-                  disabled={rejectMutation.isPending || approveMutation.isPending}
+                  onClick={() => setShowRejectDialog(true)}
+                  disabled={isRejecting || isApproving}
                 >
-                  {rejectMutation.isPending
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <XCircle className="w-4 h-4" />}
+                  <XCircle className="w-4 h-4" />
                   Rechazar reporte
                 </Button>
                 <Button
                   className="gap-2 bg-violet-600 hover:bg-violet-700 text-white flex-1 sm:flex-none"
-                  onClick={handleApprove}
-                  disabled={approveMutation.isPending || rejectMutation.isPending}
+                  onClick={() => setShowApproveDialog(true)}
+                  disabled={isApproving || isRejecting}
                 >
-                  {approveMutation.isPending
+                  {isApproving
                     ? <Loader2 className="w-4 h-4 animate-spin" />
                     : <Unlock className="w-4 h-4" />}
                   Aprobar y liberar legado
@@ -295,10 +345,10 @@ export default function AdminReportDetail() {
               variant="outline"
               size="sm"
               className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
+              onClick={() => setShowDeleteDialog(true)}
+              disabled={isDeleting}
             >
-              {deleteMutation.isPending
+              {isDeleting
                 ? <Loader2 className="w-4 h-4 animate-spin" />
                 : <Trash2 className="w-4 h-4" />}
               Eliminar reporte
@@ -306,6 +356,114 @@ export default function AdminReportDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Approve dialog ── */}
+      <AlertDialog open={showApproveDialog} onOpenChange={setShowApproveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Liberar este legado?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción es irreversible. El legado será entregado a todos los destinatarios registrados y recibirán un enlace de acceso personal por correo electrónico.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isApproving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleApproveConfirm}
+              disabled={isApproving}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isApproving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Sí, liberar legado
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Force approve dialog (when confirmations < minimum) ── */}
+      <AlertDialog open={showForceApproveDialog} onOpenChange={setShowForceApproveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Aprobación forzada
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p className="text-amber-700 font-medium mb-2">{forceApproveError}</p>
+                <p>¿Deseas aprobar de todas formas como administrador? Esta acción es irreversible.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isApproving}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleForceApproveConfirm}
+              disabled={isApproving}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {isApproving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Aprobar de todas formas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ── Reject dialog ── */}
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">Rechazar reporte</DialogTitle>
+            <DialogDescription>
+              Indica la razón por la que este reporte no es válido. Esta información puede quedar registrada en el historial.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Razón del rechazo (opcional)…"
+              className="resize-none rounded-xl min-h-[100px]"
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowRejectDialog(false)} disabled={isRejecting}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleRejectConfirm}
+              disabled={isRejecting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isRejecting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirmar rechazo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete dialog ── */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este reporte?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará permanentemente el reporte de fallecimiento y todas sus confirmaciones. No se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={isDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {isDeleting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Sí, eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

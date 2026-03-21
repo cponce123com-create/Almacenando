@@ -24,6 +24,8 @@ import ProfilePage from "@/pages/profile/index";
 import ReportDeath from "@/pages/report-death/index";
 import ConfirmDeath from "@/pages/confirm-death/index";
 import ConfirmContact from "@/pages/confirm-contact";
+import Privacy from "@/pages/privacy";
+import Terms from "@/pages/terms";
 import AdminLogin from "@/pages/admin/login";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminReportDetail from "@/pages/admin/report-detail";
@@ -137,6 +139,8 @@ function Router() {
       <Route path="/report-death" component={ReportDeath} />
       <Route path="/confirm-death/:reportId" component={ConfirmDeath} />
       <Route path="/confirm/:token" component={ConfirmContact} />
+      <Route path="/privacy" component={Privacy} />
+      <Route path="/terms" component={Terms} />
 
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>

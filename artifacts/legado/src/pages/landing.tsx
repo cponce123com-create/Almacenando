@@ -300,7 +300,9 @@ export default function Landing() {
           <span>›</span>
           <Link href="#" className="hover:text-gray-600 transition-colors">Preguntas frecuentes</Link>
           <span>›</span>
-          <Link href="#" className="hover:text-gray-600 transition-colors">Política de privacidad</Link>
+          <Link href="/privacy" className="hover:text-gray-600 transition-colors">Política de privacidad</Link>
+          <span>›</span>
+          <Link href="/terms" className="hover:text-gray-600 transition-colors">Términos de servicio</Link>
           <span>›</span>
           <Link href="#" className="hover:text-gray-600 transition-colors">Contacto</Link>
           <span>›</span>

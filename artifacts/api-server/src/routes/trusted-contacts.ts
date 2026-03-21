@@ -72,6 +72,21 @@ router.post("/", requireAuth, async (req, res) => {
     .catch(() => {});
 });
 
+router.post("/:id/regenerate-token", requireAuth, async (req, res) => {
+  const userId = (req as typeof req & { userId: string }).userId;
+  const existing = await db.select().from(trustedContactsTable).where(
+    and(eq(trustedContactsTable.id, req.params.id), eq(trustedContactsTable.userId, userId))
+  ).limit(1);
+  if (existing.length === 0) {
+    res.status(404).json({ error: "Trusted contact not found" });
+    return;
+  }
+  const newToken = randomBytes(32).toString("hex");
+  await db.update(trustedContactsTable).set({ confirmToken: newToken, updatedAt: new Date() })
+    .where(eq(trustedContactsTable.id, req.params.id));
+  res.json({ inviteTokenForEmail: newToken });
+});
+
 router.put("/:id", requireAuth, async (req, res) => {
   const userId = (req as typeof req & { userId: string }).userId;
   const existing = await db.select().from(trustedContactsTable).where(and(eq(trustedContactsTable.id, req.params.id), eq(trustedContactsTable.userId, userId))).limit(1);
