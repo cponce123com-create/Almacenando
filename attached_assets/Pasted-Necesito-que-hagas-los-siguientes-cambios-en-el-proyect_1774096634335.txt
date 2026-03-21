@@ -1,0 +1,20 @@
+Necesito que hagas los siguientes cambios en el proyecto:
+1. Rate limiting en login (5 minutos de trabajo)
+Instala express-rate-limit y aplícalo en el endpoint POST /auth/login en el archivo artifacts/api-server/src/routes/auth.ts. Máximo 10 intentos por IP cada 15 minutos. Si se supera, responder con 429 y mensaje en español.
+2. Protección de rutas privadas en el frontend
+En artifacts/legado/src/App.tsx, crea un componente PrivateRoute que use el hook useGetMe de @workspace/api-client-react. Si no hay sesión (error o sin datos), redirigir a /login. Envolver todas las rutas privadas con ese componente: /dashboard, /legacy, /legacy/new, /legacy/:id, /recipients, /trusted-contacts, /funeral, /activation, /profile, /settings.
+3. Página de confirmación para contactos de confianza
+Crear el archivo artifacts/legado/src/pages/confirm-contact.tsx. Es una página pública (sin login) que recibe el token por URL en la ruta /confirm/:token. Debe:
+
+Consultar GET /api/activation/trusted-contact-info/:token para mostrar el nombre del usuario al que pertenece el contacto
+Tener un botón "Reportar fallecimiento" que llame a POST /api/activation/death-reports con el inviteToken
+Tener un botón "Confirmar reporte existente" que llame a POST /api/activation/death-reports/:id/confirm
+Mostrar mensajes de éxito y error en español
+Usar el mismo diseño visual del resto de la app (fondo claro, tarjeta centrada, tipografía serif para el título)
+
+Agregar la ruta /confirm/:token en artifacts/legado/src/App.tsx.
+También agregar en el backend artifacts/api-server/src/routes/activation.ts el endpoint GET /trusted-contact-info/:token que recibe el token, busca el contacto en la tabla trusted_contacts, y devuelve el nombre del usuario dueño (buscando en profiles por userId). Si el token no existe o expiró, devolver 404.
+4. Reemplazar imagen hardcodeada en portal de destinatario
+En artifacts/legado/src/pages/recipient-portal.tsx, el div del header tiene un bg-[url('https://images.unsplash.com/...')]. Reemplazar esa URL externa por ${import.meta.env.BASE_URL}images/hero-bg.png que ya existe en el proyecto.
+5. Reemplazar confirm() y prompt() en el panel admin
+En artifacts/legado/src/pages/admin/dashboard.tsx, reemplazar el window.confirm() de la aprobación y el window.prompt() del rechazo por componentes AlertDialog de shadcn/ui que ya están instalados en el proyecto. El diálogo de aprobación debe advertir que la acción es irreversible. El diálogo de rechazo debe tener un campo de texto para escribir la razón.

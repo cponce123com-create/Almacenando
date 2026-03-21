@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
 import { useAuth, getAdminAuthToken } from "@/hooks/use-auth";
+import { useGetMe } from "@workspace/api-client-react";
 
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
@@ -22,6 +23,7 @@ import ProfilePage from "@/pages/profile/index";
 
 import ReportDeath from "@/pages/report-death/index";
 import ConfirmDeath from "@/pages/confirm-death/index";
+import ConfirmContact from "@/pages/confirm-contact";
 import AdminLogin from "@/pages/admin/login";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminReportDetail from "@/pages/admin/report-detail";
@@ -54,6 +56,29 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   }
 
   if (!isAuthenticated) return null;
+
+  return <Component />;
+}
+
+function PrivateRoute({ component: Component }: { component: React.ComponentType }) {
+  const { data, isLoading, isError } = useGetMe();
+  const [_, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && (isError || !data)) {
+      setLocation("/login");
+    }
+  }, [isLoading, isError, data]);
+
+  if (isLoading) {
+    return (
+      <div className="h-screen w-full bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (isError || !data) return null;
 
   return <Component />;
 }
@@ -111,6 +136,7 @@ function Router() {
 
       <Route path="/report-death" component={ReportDeath} />
       <Route path="/confirm-death/:reportId" component={ConfirmDeath} />
+      <Route path="/confirm/:token" component={ConfirmContact} />
 
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>

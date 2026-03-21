@@ -3,6 +3,16 @@ import { Link, useLocation } from "wouter";
 import { useAdminReports, useAdminUsers, useSuspendUser, useActivateUser } from "@/hooks/use-admin";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Loader2, ShieldAlert, ArrowRight, LogOut, Users, 
@@ -38,6 +48,7 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState<Tab>("usuarios");
   const [_, setLocation] = useLocation();
   const { toast } = useToast();
+  const [suspendTarget, setSuspendTarget] = useState<{ id: string; email: string } | null>(null);
 
   const { data: users, isLoading: usersLoading, refetch: refetchUsers } = useAdminUsers();
   const { data: reports, isLoading: reportsLoading } = useAdminReports();
@@ -49,13 +60,19 @@ export default function AdminDashboard() {
     setLocation("/admin/login");
   };
 
-  const handleSuspend = async (userId: string, email: string) => {
-    if (!confirm(`¿Suspender la cuenta de ${email}? El usuario no podrá iniciar sesión.`)) return;
+  const handleSuspend = (userId: string, email: string) => {
+    setSuspendTarget({ id: userId, email });
+  };
+
+  const confirmSuspend = async () => {
+    if (!suspendTarget) return;
     try {
-      await suspendMutation.mutateAsync(userId);
+      await suspendMutation.mutateAsync(suspendTarget.id);
       toast({ title: "Cuenta suspendida" });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Error", description: e.message });
+    } finally {
+      setSuspendTarget(null);
     }
   };
 
@@ -340,6 +357,29 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Suspend confirmation dialog */}
+      <AlertDialog open={!!suspendTarget} onOpenChange={(open) => { if (!open) setSuspendTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Suspender esta cuenta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vas a suspender la cuenta de <strong>{suspendTarget?.email}</strong>.
+              El usuario no podrá iniciar sesión mientras esté suspendido,
+              pero sus datos se conservarán y podrás reactivar la cuenta en cualquier momento.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmSuspend}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Suspender cuenta
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -370,7 +370,12 @@ export default function AccessPortal() {
   return (
     <div className="min-h-screen bg-zinc-50 pb-20">
       {/* Hero header */}
-      <div className="bg-gradient-to-br from-violet-900 to-violet-700 text-white">
+      <div
+        className="text-white relative"
+        style={{
+          background: `linear-gradient(135deg, rgba(109,40,217,0.93) 0%, rgba(76,29,149,0.90) 100%), url(${import.meta.env.BASE_URL}images/hero-bg.png) center/cover no-repeat`,
+        }}
+      >
         <div className="max-w-2xl mx-auto px-6 py-12 text-center">
           {deceasedAvatarUrl ? (
             <img

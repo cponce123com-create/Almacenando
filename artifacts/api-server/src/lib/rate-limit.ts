@@ -1,12 +1,12 @@
 import rateLimit from "express-rate-limit";
 
-/** 5 login attempts per 15 minutes per IP */
+/** 10 login attempts per 15 minutes per IP */
 export const authLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 5,
+  limit: 10,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  message: { error: "Demasiados intentos. Espera 15 minutos antes de intentar de nuevo." },
+  message: { error: "Demasiados intentos de inicio de sesión. Espera 15 minutos antes de intentar de nuevo." },
   skip: () => process.env.NODE_ENV === "test",
 });
 
