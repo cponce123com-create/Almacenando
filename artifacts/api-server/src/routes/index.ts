@@ -16,6 +16,7 @@ import uploadRouter from "./upload";
 import publicRouter from "./public";
 import keyConfigRouter from "./key-config";
 import aiRouter from "./ai";
+import funeralSongsRouter from "./funeral-songs.js";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use("/admin", adminRouter);
 router.use("/upload", uploadRouter);
 router.use("/key-config", keyConfigRouter);
 router.use("/ai", aiRouter);
+router.use("/funeral-songs", funeralSongsRouter);
 
 export default router;

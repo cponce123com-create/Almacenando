@@ -16,6 +16,7 @@ import LegacyForm from "@/pages/legacy/form";
 import Recipients from "@/pages/recipients/index";
 import TrustedContacts from "@/pages/trusted-contacts/index";
 import FuneralPreferences from "@/pages/funeral/index";
+import FuneralSongs from "@/pages/funeral/songs";
 import ActivationSettings from "@/pages/activation/index";
 import AccessPortal from "@/pages/access/portal";
 import MediaPage from "@/pages/media/index";
@@ -132,6 +133,7 @@ function Router() {
       <Route path="/legacy/:id"><ProtectedRoute component={LegacyForm} /></Route>
       <Route path="/recipients"><ProtectedRoute component={Recipients} /></Route>
       <Route path="/trusted-contacts"><ProtectedRoute component={TrustedContacts} /></Route>
+      <Route path="/funeral/songs"><ProtectedRoute component={FuneralSongs} /></Route>
       <Route path="/funeral"><ProtectedRoute component={FuneralPreferences} /></Route>
       <Route path="/activation"><ProtectedRoute component={ActivationSettings} /></Route>
       <Route path="/media"><ProtectedRoute component={MediaPage} /></Route>

@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Images,
   UserCircle,
+  Music,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const secondaryNav = [
   { name: "Mis Medios", href: "/media", icon: Images },
   { name: "Mi Perfil", href: "/profile", icon: UserCircle },
   { name: "Preferencias Funerarias", href: "/funeral", icon: Flower2 },
+  { name: "Música del Sepelio", href: "/funeral/songs", icon: Music },
   { name: "Activación", href: "/activation", icon: Settings },
 ];
 
@@ -53,7 +55,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const SidebarLinks = () => (
     <div className="flex flex-col gap-1">
       {allNav.map((item) => {
-        const isActive = location.startsWith(item.href);
+        const bestMatch = allNav
+          .filter(nav => location === nav.href || location.startsWith(nav.href + "/"))
+          .sort((a, b) => b.href.length - a.href.length)[0];
+        const isActive = bestMatch?.href === item.href;
         return (
           <Link
             key={item.name}
@@ -140,7 +145,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </div>
             <nav className="flex-1 px-3 py-4 space-y-1">
               {secondaryNav.map((item) => {
-                const isActive = location.startsWith(item.href);
+                const bestMatchMobile = allNav
+                  .filter(nav => location === nav.href || location.startsWith(nav.href + "/"))
+                  .sort((a, b) => b.href.length - a.href.length)[0];
+                const isActive = bestMatchMobile?.href === item.href;
                 return (
                   <Link
                     key={item.name}
@@ -225,7 +233,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             onClick={() => setMoreOpen(true)}
             className={cn(
               "flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors min-h-[44px]",
-              (location.startsWith("/funeral") || location.startsWith("/activation") || location.startsWith("/media") || location.startsWith("/profile"))
+              (location.startsWith("/funeral") || location.startsWith("/activation") || location.startsWith("/media") || location.startsWith("/profile") || location.startsWith("/funeral/songs"))
                 ? "text-primary"
                 : "text-muted-foreground"
             )}

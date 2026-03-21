@@ -6,7 +6,7 @@ import {
   FileVideo, Mail, Mic, Image as ImageIcon, FileText, Heart,
   LockKeyhole, Unlock, Eye, EyeOff, Download, Loader2,
   BookOpen, AlertCircle, Globe, ChevronDown, ChevronUp,
-  HelpCircle,
+  HelpCircle, Music, Youtube,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,16 @@ type FuneralPreferences = {
   additionalNotes?: string | null;
 };
 
+type FuneralSong = {
+  id: string;
+  youtubeVideoId: string;
+  title: string;
+  artist: string;
+  thumbnailUrl: string;
+  durationSeconds: number | null;
+  position: number;
+};
+
 type AccessData = {
   recipient: {
     fullName: string;
@@ -46,6 +56,7 @@ type AccessData = {
   deceasedAvatarUrl?: string | null;
   deceasedIntroMessage?: string | null;
   funeralPreferences?: FuneralPreferences | null;
+  funeralSongs?: FuneralSong[];
 };
 
 const TYPE_ICONS: Record<string, any> = {
@@ -655,6 +666,46 @@ export default function AccessPortal() {
                   );
                 })()}
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Sección de música */}
+        {data.funeralSongs && data.funeralSongs.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-3xl p-8 shadow-xl border border-border"
+          >
+            <h2 className="font-serif text-2xl font-bold mb-2 flex items-center gap-3">
+              <Music className="w-6 h-6" style={{ color: "#9d174d" }} />
+              Música para esta despedida
+            </h2>
+            <p className="text-muted-foreground mb-6 text-sm">
+              {data.deceasedName} eligió personalmente estas canciones para acompañar este momento.
+            </p>
+            <div className="space-y-3">
+              {data.funeralSongs.map((song, i) => (
+                <a
+                  key={song.id}
+                  href={`https://www.youtube.com/watch?v=${song.youtubeVideoId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-4 p-3 rounded-2xl border border-border hover:bg-gray-50 transition-all group"
+                  style={{ textDecoration: "none" }}
+                >
+                  <span className="text-sm font-bold text-muted-foreground w-5 text-center shrink-0">{i + 1}</span>
+                  <img src={song.thumbnailUrl} alt={song.title} className="w-14 h-10 object-cover rounded-lg shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{song.title}</p>
+                    <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Youtube className="w-4 h-4" />
+                    <span className="text-xs font-medium">Reproducir</span>
+                  </div>
+                </a>
+              ))}
             </div>
           </motion.div>
         )}

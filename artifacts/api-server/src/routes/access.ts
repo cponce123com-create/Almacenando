@@ -8,6 +8,7 @@ import {
   legacyItemRecipientsTable,
   profilesTable,
   funeralPreferencesTable,
+  funeralSongsTable,
 } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import { writeAuditLog } from "../lib/audit.js";
@@ -70,9 +71,10 @@ router.get("/:token", async (req, res) => {
     }
   }
 
-  const [profiles, funeralPrefs] = await Promise.all([
+  const [profiles, funeralPrefs, funeralSongs] = await Promise.all([
     db.select().from(profilesTable).where(eq(profilesTable.userId, recipient.userId)).limit(1),
     db.select().from(funeralPreferencesTable).where(eq(funeralPreferencesTable.userId, recipient.userId)).limit(1),
+    db.select().from(funeralSongsTable).where(eq(funeralSongsTable.userId, recipient.userId)).orderBy(funeralSongsTable.position),
   ]);
 
   // DESIGN DECISION: Tokens are intentionally multi-use (not single-use).
@@ -135,6 +137,15 @@ router.get("/:token", async (req, res) => {
       locationNotes: fp.locationNotes,
       additionalNotes: fp.additionalNotes,
     } : null,
+    funeralSongs: funeralSongs.map((s) => ({
+      id: s.id,
+      youtubeVideoId: s.youtubeVideoId,
+      title: s.title,
+      artist: s.artist,
+      thumbnailUrl: s.thumbnailUrl,
+      durationSeconds: s.durationSeconds,
+      position: s.position,
+    })),
   });
 });
 
