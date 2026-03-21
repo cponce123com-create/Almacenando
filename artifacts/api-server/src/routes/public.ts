@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import { uploadToCloudinary } from "../lib/cloudinary.js";
 import { db } from "@workspace/db";
 import {
   profilesTable,
@@ -18,6 +20,15 @@ import { randomBytes } from "crypto";
 import { sendDeathReportEmail, sendAccessLinkEmail } from "../lib/email.js";
 import { deathReportLimiter, lookupLimiter } from "../lib/rate-limit.js";
 import { writeAuditLog } from "../lib/audit.js";
+
+const certUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) cb(null, true);
+    else cb(new Error("Solo se permiten imágenes"));
+  },
+});
 
 function getAppUrl(): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
@@ -136,9 +147,26 @@ router.post("/report-death/validate", lookupLimiter, async (req, res) => {
   });
 });
 
+// Public certificate image upload — no auth required, 10 MB limit, images only
+router.post("/report-death/upload-certificate", deathReportLimiter, certUpload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "No se recibió ninguna imagen" });
+      return;
+    }
+    const result = await uploadToCloudinary(req.file.buffer, {
+      resource_type: "image",
+      folder: "legado/certificates",
+    });
+    res.json({ url: result.secure_url });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Error al subir la imagen" });
+  }
+});
+
 // Submit a death report by a trusted contact identified by DNI
 router.post("/report-death/submit", deathReportLimiter, async (req, res) => {
-  const { contactId, deceasedUserId, deceasedName, reporterDni, notes } = req.body;
+  const { contactId, deceasedUserId, deceasedName, reporterDni, notes, certificateImageUrl, certificateWithPersonUrl } = req.body;
 
   if (!contactId || !deceasedUserId) {
     res.status(400).json({ error: "contactId y deceasedUserId son requeridos" });
@@ -175,6 +203,8 @@ router.post("/report-death/submit", deathReportLimiter, async (req, res) => {
       reportedByContactId: contactId,
       notes: notes || null,
       status: "pending",
+      certificateImageUrl: certificateImageUrl || null,
+      certificateWithPersonUrl: certificateWithPersonUrl || null,
     });
   }
 

@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Loader2, ArrowLeft, CheckCircle, XCircle, Unlock,
-  Clock, Ban, ShieldCheck, AlertTriangle, Trash2,
+  Clock, Ban, ShieldCheck, AlertTriangle, Trash2, Image as ImageIcon, FileText,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
@@ -259,6 +259,78 @@ export default function AdminReportDetail() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Certificate documentation */}
+        <Card className="border-none shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileText className="w-4 h-4 text-violet-500" />
+              Documentación adjunta
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!(report as any).certificateImageUrl && !(report as any).certificateWithPersonUrl ? (
+              <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-100">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Sin documentación fotográfica</p>
+                  <p className="text-xs text-amber-700 mt-0.5 leading-relaxed">
+                    El reportante no adjuntó fotos del certificado de defunción. Solicita la documentación por un canal alternativo antes de aprobar.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {(report as any).certificateImageUrl ? (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">📄 Certificado de defunción</p>
+                    <a
+                      href={(report as any).certificateImageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block"
+                    >
+                      <img
+                        src={(report as any).certificateImageUrl}
+                        alt="Certificado de defunción"
+                        className="w-full rounded-xl border border-zinc-200 object-cover max-h-56 hover:opacity-90 transition-opacity"
+                      />
+                      <p className="text-xs text-violet-600 hover:underline mt-1">Abrir en tamaño completo →</p>
+                    </a>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-zinc-50 border border-dashed border-zinc-200">
+                    <ImageIcon className="w-6 h-6 text-zinc-300 mb-1" />
+                    <p className="text-xs text-zinc-400">Sin foto de certificado</p>
+                  </div>
+                )}
+                {(report as any).certificateWithPersonUrl ? (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">🤳 Foto con certificado</p>
+                    <a
+                      href={(report as any).certificateWithPersonUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block"
+                    >
+                      <img
+                        src={(report as any).certificateWithPersonUrl}
+                        alt="Foto con certificado"
+                        className="w-full rounded-xl border border-zinc-200 object-cover max-h-56 hover:opacity-90 transition-opacity"
+                      />
+                      <p className="text-xs text-violet-600 hover:underline mt-1">Abrir en tamaño completo →</p>
+                    </a>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-6 rounded-xl bg-zinc-50 border border-dashed border-zinc-200">
+                    <ImageIcon className="w-6 h-6 text-zinc-300 mb-1" />
+                    <p className="text-xs text-zinc-400">Sin foto con certificado</p>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

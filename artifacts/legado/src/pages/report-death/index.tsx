@@ -21,6 +21,21 @@ import {
 
 type Step = "lookup" | "contacts" | "reporter_dni" | "confirm" | "done";
 
+async function uploadCertificateImage(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append("image", file);
+  const res = await fetch("/api/public/report-death/upload-certificate", {
+    method: "POST",
+    body: fd,
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error((d as any).error || "Error al subir la imagen");
+  }
+  const { url } = await res.json();
+  return url as string;
+}
+
 type LookupResult = {
   deceasedName: string;
   deceasedUserId: string;
@@ -45,6 +60,8 @@ export default function ReportDeath() {
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
   const [validateResult, setValidateResult] = useState<ValidateResult | null>(null);
   const [error, setError] = useState("");
+  const [certFile, setCertFile] = useState<File | null>(null);
+  const [certPersonFile, setCertPersonFile] = useState<File | null>(null);
 
   // Step 1: look up deceased by DNI → show trusted contacts
   const handleLookup = async () => {
@@ -99,6 +116,11 @@ export default function ReportDeath() {
     if (!validateResult || !lookupResult) return;
     setLoading(true);
     try {
+      let certificateImageUrl: string | undefined;
+      let certificateWithPersonUrl: string | undefined;
+      if (certFile) certificateImageUrl = await uploadCertificateImage(certFile);
+      if (certPersonFile) certificateWithPersonUrl = await uploadCertificateImage(certPersonFile);
+
       const res = await fetch("/api/public/report-death/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -108,13 +130,15 @@ export default function ReportDeath() {
           deceasedName: lookupResult.deceasedName,
           reporterDni: reporterDni.trim().toUpperCase(),
           notes: notes.trim() || undefined,
+          certificateImageUrl,
+          certificateWithPersonUrl,
         }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Error al enviar el reporte"); return; }
       setStep("done");
-    } catch {
-      setError("Error de conexión. Intenta de nuevo.");
+    } catch (err: any) {
+      setError(err.message || "Error de conexión. Intenta de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -359,6 +383,79 @@ export default function ReportDeath() {
                   placeholder="Circunstancias, fecha, lugar del fallecimiento…"
                   className="rounded-xl min-h-[80px] resize-none"
                 />
+              </div>
+
+              <div className="space-y-3 mb-5">
+                <div className="bg-violet-50 border border-violet-100 rounded-xl p-3">
+                  <p className="text-xs text-violet-700 font-medium mb-1">📎 Documentación fotográfica (opcional)</p>
+                  <p className="text-xs text-violet-600 leading-relaxed">
+                    Adjuntar fotos agiliza significativamente la revisión y aprobación del legado.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-sm text-gray-600">
+                    📄 Foto del certificado de defunción (opcional pero recomendado)
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id="cert-file"
+                      className="hidden"
+                      onChange={(e) => setCertFile(e.target.files?.[0] ?? null)}
+                    />
+                    <label
+                      htmlFor="cert-file"
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-300 bg-gray-50 hover:bg-violet-50 cursor-pointer transition-all text-sm text-gray-500 hover:text-violet-600"
+                    >
+                      {certFile ? (
+                        <span className="text-green-700 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-4 h-4" /> {certFile.name.slice(0, 30)}
+                        </span>
+                      ) : (
+                        <span>Seleccionar imagen</span>
+                      )}
+                    </label>
+                    {certFile && (
+                      <button type="button" onClick={() => setCertFile(null)} className="text-gray-400 hover:text-red-500 p-1">
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-sm text-gray-600">
+                    🤳 Foto sosteniéndolo (opcional pero recomendado)
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id="cert-person-file"
+                      className="hidden"
+                      onChange={(e) => setCertPersonFile(e.target.files?.[0] ?? null)}
+                    />
+                    <label
+                      htmlFor="cert-person-file"
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-violet-300 bg-gray-50 hover:bg-violet-50 cursor-pointer transition-all text-sm text-gray-500 hover:text-violet-600"
+                    >
+                      {certPersonFile ? (
+                        <span className="text-green-700 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-4 h-4" /> {certPersonFile.name.slice(0, 30)}
+                        </span>
+                      ) : (
+                        <span>Seleccionar imagen</span>
+                      )}
+                    </label>
+                    {certPersonFile && (
+                      <button type="button" onClick={() => setCertPersonFile(null)} className="text-gray-400 hover:text-red-500 p-1">
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {error && (

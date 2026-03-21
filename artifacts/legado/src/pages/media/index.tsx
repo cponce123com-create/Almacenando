@@ -139,7 +139,7 @@ function VideoRecorder({ onRecordingComplete }: { onRecordingComplete: (blob: Bl
     try {
       const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
       setStream(s);
-      if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.muted = true; }
+      if (videoRef.current) { videoRef.current.srcObject = s; videoRef.current.muted = true; videoRef.current.play().catch(() => {}); }
     } catch {
       setError("No se pudo acceder a la cámara. Verifica los permisos del navegador.");
     }

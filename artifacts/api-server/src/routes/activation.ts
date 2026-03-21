@@ -40,7 +40,7 @@ router.put("/", requireAuth, async (req, res) => {
     await db.insert(activationSettingsTable).values({
       id, userId,
       minConfirmations: minConfirmations ?? 2,
-      adminReviewRequired: adminReviewRequired ?? true,
+      adminReviewRequired: true,
       status: "inactive",
     });
     const created = await db.select().from(activationSettingsTable).where(eq(activationSettingsTable.id, id)).limit(1);
@@ -50,7 +50,7 @@ router.put("/", requireAuth, async (req, res) => {
 
   await db.update(activationSettingsTable).set({
     minConfirmations: minConfirmations ?? existing[0]!.minConfirmations,
-    adminReviewRequired: adminReviewRequired !== undefined ? adminReviewRequired : existing[0]!.adminReviewRequired,
+    adminReviewRequired: true,
     updatedAt: new Date(),
   }).where(eq(activationSettingsTable.userId, userId));
 

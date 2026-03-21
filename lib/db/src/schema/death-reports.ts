@@ -8,6 +8,8 @@ export const deathReportsTable = pgTable("death_reports", {
   reportedByContactId: text("reported_by_contact_id").notNull(),
   notes: text("notes"),
   status: text("status").notNull().default("pending"),
+  certificateImageUrl: text("certificate_image_url"),
+  certificateWithPersonUrl: text("certificate_with_person_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -1,0 +1,163 @@
+Necesito que implementes las siguientes mejoras en el proyecto. Lee cada archivo antes de modificarlo.
+MEJORA 1 — Página de Mis Medios más intuitiva y profesional
+Archivo: artifacts/legado/src/pages/media/index.tsx
+Rediseñar completamente la página para que sea más clara y funcional:
+
+Mostrar los archivos subidos en una grilla de tarjetas con preview. Si es imagen mostrar la imagen, si es video mostrar un thumbnail con ícono de play encima, si es audio mostrar una onda con un botón de reproducir, si es documento mostrar ícono de PDF con el nombre.
+Cada tarjeta debe mostrar: el título del legacy item al que pertenece, el tipo de archivo, el tamaño en MB, y un botón para ver/reproducir.
+Agregar un estado vacío con ilustración cuando no hay archivos, con texto "Aún no tienes archivos multimedia. Ve a Mi Legado y sube fotos, videos o audios a tus ítems."
+Agregar un botón de descarga en cada tarjeta.
+Organizar con secciones colapsables por tipo: Videos, Fotos, Audios, Documentos.
+Usar el mismo estilo visual del resto de la app: bg-white rounded-3xl border border-border shadow-sm.
+
+
+MEJORA 2 — Cámara negra al grabar video
+Busca el archivo donde se maneja la grabación de video con la cámara (buscar en artifacts/legado/src/ archivos que usen getUserMedia, MediaRecorder, o videoRef).
+El problema es que el preview de la cámara no se muestra mientras graba porque el elemento <video> no tiene el stream asignado en tiempo real.
+Fix: Cuando el usuario activa la cámara y se obtiene el stream con getUserMedia, inmediatamente asignar videoRef.current.srcObject = stream y llamar videoRef.current.play(). El elemento <video> debe tener los atributos muted, autoPlay, y playsInline. Separar claramente el video de preview (stream en vivo) del video de reproducción (grabación terminada). Usar dos elementos <video> distintos si es necesario: uno para el preview en vivo (srcObject = stream) y otro para reproducir la grabación terminada (src = blobUrl).
+
+MEJORA 3 — Integración con Spotify para playlist en preferencias funerarias
+Archivo: artifacts/legado/src/pages/funeral/index.tsx
+En el campo de música (musicNotes), reemplazar el Textarea simple por una sección más rica:
+
+Mantener el textarea para notas de texto libre.
+Agregar debajo un botón "Vincular playlist de Spotify" con el ícono verde de Spotify (usar el color #1DB954). Al hacer click abrir un Dialog donde el usuario puede pegar la URL de una playlist de Spotify (formato https://open.spotify.com/playlist/...).
+Validar que la URL sea de Spotify antes de guardar.
+Si hay una URL guardada, mostrar un embed de Spotify usando <iframe src="https://open.spotify.com/embed/playlist/[ID]" width="100%" height="152" frameBorder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"> extraer el ID de la URL pegada.
+Guardar la URL de Spotify en el campo musicNotes con un prefijo especial como spotify:https://... para distinguirlo del texto libre. Al cargar, detectar si empieza con spotify: y separarlo del texto.
+El botón de vincular debe cambiar a "Playlist vinculada ✓" en verde cuando hay una URL guardada, con opción de cambiarla o eliminarla.
+
+
+MEJORA 4 — Preferencias funerarias que persisten correctamente
+Archivo: artifacts/legado/src/pages/funeral/index.tsx
+El problema es que el formulario se inicializa con defaultValues vacíos y el useEffect que hace form.reset(prefs) corre después, pero si el usuario navega a la página y los datos ya están en caché de React Query, el reset no se dispara de nuevo.
+Fix: Cambiar el useEffect para que use form.reset() con los valores de prefs usando esta lógica:
+typescriptconst { data: prefs, isLoading } = useGetFuneralPreferences();
+
+const form = useForm({
+  defaultValues: {
+    burialType: prefs?.burialType || "",
+    ceremonyType: prefs?.ceremonyType || "",
+    musicNotes: prefs?.musicNotes || "",
+    dressCode: prefs?.dressCode || "",
+    guestNotes: prefs?.guestNotes || "",
+    locationNotes: prefs?.locationNotes || "",
+    additionalNotes: prefs?.additionalNotes || "",
+  }
+});
+
+useEffect(() => {
+  if (prefs) {
+    form.reset({
+      burialType: prefs.burialType || "",
+      ceremonyType: prefs.ceremonyType || "",
+      musicNotes: prefs.musicNotes || "",
+      dressCode: prefs.dressCode || "",
+      guestNotes: prefs.guestNotes || "",
+      locationNotes: prefs.locationNotes || "",
+      additionalNotes: prefs.additionalNotes || "",
+    });
+  }
+}, [prefs?.burialType, prefs?.ceremonyType, prefs?.musicNotes, prefs?.dressCode, prefs?.guestNotes, prefs?.locationNotes, prefs?.additionalNotes]);
+La dependencia del useEffect debe ser cada campo individual, no el objeto prefs completo, para que React detecte el cambio correctamente.
+
+MEJORA 5 — Configuración de activación mejorada con resumen y sin "Revisión de Seguridad"
+Archivo: artifacts/legado/src/pages/activation/index.tsx
+Rediseñar la página con estos cambios:
+
+Eliminar completamente el toggle de "Revisión de Seguridad (Recomendado)" — eso es un proceso interno del equipo de Legado y no debe ser configurable por el usuario.
+En el backend artifacts/api-server/src/routes/activation.ts, hacer que adminReviewRequired siempre sea true y no sea modificable por el usuario. Ignorar ese campo si viene en el body del PUT.
+Agregar al inicio de la página un resumen visual del estado del legado con tarjetas de estado: una tarjeta por cada elemento clave (ítems creados, destinatarios, contactos de confianza, preferencias funerarias) mostrando si está completo o pendiente con un check verde o un ícono de alerta amarillo.
+Agregar una sección informativa con el título "¿Cómo funciona la activación?" que explique en 3 pasos: (1) Un contacto de confianza reporta el fallecimiento con su DNI, (2) Los demás contactos confirman, (3) El equipo de Legado revisa y libera el acceso a los destinatarios.
+El selector de "Confirmaciones Mínimas" debe tener una explicación más clara: "¿Cuántos de tus contactos de confianza deben reportar tu partida para que el proceso comience?"
+Mostrar el estado actual del legado con un badge grande y visible: INACTIVO / ACTIVO / LIBERADO con colores apropiados (gris, verde, azul).
+
+Para obtener los datos del resumen, usar el hook useGetDashboard que ya existe y devuelve legacyItemsCount, recipientsCount, trustedContactsCount.
+
+MEJORA 6 — Sistema de revisión de solicitudes con fotos de certificado
+Crear archivo nuevo: artifacts/legado/src/pages/admin/report-detail.tsx (o modificarlo si ya existe)
+La página de detalle de un reporte de muerte en el panel admin debe mostrar:
+
+Nombre completo del fallecido y su email.
+Lista de contactos de confianza que confirmaron, con su nombre, DNI, relación y decisión.
+Una sección "Documentación adjunta" con dos áreas de carga:
+
+"Certificado de defunción" — permite al admin ver si se subió una foto.
+"Foto sosteniendo el certificado" — ídem.
+
+
+Si no hay fotos subidas, mostrar un aviso en amarillo: "El contacto no adjuntó documentación fotográfica. Puedes igualmente aprobar si la verificación verbal es suficiente."
+Si hay fotos, mostrarlas como miniaturas clicables que abren en modal.
+Botones de Aprobar y Rechazar con AlertDialog como ya existe en el admin dashboard.
+
+En el backend, agregar en la ruta POST /api/public/report-death/submit (archivo artifacts/api-server/src/routes/public.ts) la posibilidad de recibir opcionalmente dos URLs de Cloudinary:
+
+certificateImageUrl: string | null
+certificateWithPersonUrl: string | null
+
+Guardar estas URLs en la tabla death_reports. Agregar los campos al schema en lib/db/src/schema/activation.ts:
+typescriptcertificateImageUrl: text("certificate_image_url"),
+certificateWithPersonUrl: text("certificate_with_person_url"),
+```
+
+En la página pública de reporte (`artifacts/legado/src/pages/report-death/index.tsx`), agregar dos campos de carga de imagen opcionales con el texto:
+- "📎 Subir foto del certificado de defunción (opcional pero recomendado)"
+- "📎 Subir foto sosteniéndolo (opcional pero recomendado)"
+- Con una nota: "Adjuntar fotos agiliza significativamente la revisión y aprobación del legado."
+Usar el mismo flujo de Cloudinary que ya existe en el proyecto (sign-upload + confirm-upload).
+
+Ejecutar `pnpm db:push` después de modificar el schema.
+
+---
+
+**MEJORA 7 — Plantilla de "Mis Últimos Deseos" con generación por IA**
+
+En `artifacts/legado/src/pages/legacy/form.tsx`, cuando el usuario elige el tipo `funeral_note`, en lugar del textarea simple mostrar una interfaz especial de "Mis Últimos Deseos":
+
+Agregar una nueva sección que aparece solo cuando `type === "funeral_note"` con el título "Constructor de Últimos Deseos":
+
+**Paso 1 — Agregar beneficiarios:**
+- Un selector de relación con las opciones: Esposa, Esposo, Hija, Hijo, Madre, Padre, Hermana, Hermano, Novia, Novio, Amigo/a, Otro.
+- Un campo de texto para el nombre de esa persona.
+- Un campo de texto libre para escribir qué le deja: "Le dejo mi..." con placeholder "Ej: mi automóvil Toyota Corolla 2018, mi colección de libros, el 50% de mis ahorros...".
+- Un botón "Agregar" que añade ese beneficiario a una lista.
+- La lista muestra cada entrada como una tarjeta con los datos y un botón de eliminar.
+- Se pueden agregar múltiples beneficiarios.
+
+**Paso 2 — Generar el documento:**
+- Un botón prominente "✨ Generar mis últimos deseos con IA" que llame a la API de Anthropic.
+- Antes de llamar a la IA, mostrar un spinner con el texto "Redactando tu documento legal...".
+- El prompt que se debe enviar a la API de Anthropic (claude-sonnet-4-20250514, max_tokens: 4000) debe ser:
+```
+Eres un asistente legal especializado en derecho sucesorio peruano. 
+Redacta un documento formal de "Últimas Voluntades" en español para Perú, 
+basándote en la siguiente información proporcionada por el testador:
+
+Beneficiarios y bienes:
+[LISTA DE BENEFICIARIOS]
+
+El documento debe:
+1. Tener el formato de un testamento informal pero legalmente orientado al sistema jurídico peruano
+2. Incluir encabezado formal con espacio para nombre completo, DNI, domicilio y fecha
+3. Mencionar que es un documento de carácter orientativo y que debe ser formalizado ante notario público
+4. Incluir una sección por cada beneficiario con el bien o activo que se le destina
+5. Incluir cláusulas estándar del derecho sucesorio peruano: legítima, libre disposición, albacea
+6. Cerrar con espacio para firma y fecha
+7. Usar lenguaje formal pero comprensible
+8. Tener entre 800 y 1200 palabras
+
+Redacta el documento completo ahora:
+
+El documento generado debe aparecer en un Textarea editable para que el usuario pueda hacer ajustes manuales.
+Guardar el texto generado en el campo contentText del legacy item.
+Mostrar un aviso: "Este documento es orientativo. Para que tenga validez legal en Perú debe ser firmado ante un Notario Público."
+
+Para llamar a la API de Anthropic desde el frontend usar fetch directamente al endpoint /api/ai/generate-will que debes crear en el backend.
+Crear el endpoint POST /api/ai/generate-will en un nuevo archivo artifacts/api-server/src/routes/ai.ts:
+
+Requiere autenticación (requireAuth).
+Recibe { beneficiaries: Array<{ relationship: string, name: string, bequest: string }> }.
+Llama a la API de Anthropic con el modelo claude-sonnet-4-20250514.
+Devuelve { document: string }.
+Agregar la variable de entorno ANTHROPIC_API_KEY al .env.example.
+Registrar la ruta en artifacts/api-server/src/routes/index.ts como router.use("/ai", aiRouter).

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useFuneralPrefs, useMutateFuneralPrefs } from "@/hooks/use-settings";
 import { useForm } from "react-hook-form";
@@ -8,8 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Flower2, Loader2, Save, Music2 } from "lucide-react";
+import { Flower2, Loader2, Save, Music2, Link2, CheckCircle2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 
 const BURIAL_TYPES = [
   { value: "cremacion", label: "Cremación" },
@@ -40,21 +43,44 @@ const DRESS_CODES = [
   { value: "tematico", label: "Temático (especificar en notas)" },
 ];
 
+function extractSpotifyPlaylistId(url: string): string | null {
+  try {
+    const match = url.match(/spotify\.com\/playlist\/([a-zA-Z0-9]+)/);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export default function FuneralPreferences() {
   const { data: prefs, isLoading } = useFuneralPrefs();
   const updateMutation = useMutateFuneralPrefs();
   const { toast } = useToast();
 
-  const form = useForm({
+  const [showSpotifyDialog, setShowSpotifyDialog] = useState(false);
+  const [spotifyInput, setSpotifyInput] = useState("");
+  const [spotifyError, setSpotifyError] = useState("");
+
+  type FuneralFormValues = {
+    burialType: string;
+    ceremonyType: string;
+    spotifyPlaylistUrl: string;
+    musicNotes: string;
+    dressCode: string;
+    guestNotes: string;
+    locationNotes: string;
+    additionalNotes: string;
+  };
+  const form = useForm<FuneralFormValues>({
     defaultValues: {
-      burialType: "",
-      ceremonyType: "",
-      spotifyPlaylistUrl: "",
-      musicNotes: "",
-      dressCode: "",
-      guestNotes: "",
-      locationNotes: "",
-      additionalNotes: "",
+      burialType: prefs?.burialType || "",
+      ceremonyType: prefs?.ceremonyType || "",
+      spotifyPlaylistUrl: (prefs as any)?.spotifyPlaylistUrl || "",
+      musicNotes: prefs?.musicNotes || "",
+      dressCode: prefs?.dressCode || "",
+      guestNotes: prefs?.guestNotes || "",
+      locationNotes: prefs?.locationNotes || "",
+      additionalNotes: prefs?.additionalNotes || "",
     },
   });
 
@@ -71,7 +97,28 @@ export default function FuneralPreferences() {
         additionalNotes: prefs.additionalNotes || "",
       });
     }
-  }, [prefs, form]);
+  }, [
+    prefs?.burialType, prefs?.ceremonyType, prefs?.musicNotes, prefs?.dressCode,
+    prefs?.guestNotes, prefs?.locationNotes, prefs?.additionalNotes,
+  ]);
+
+  const spotifyUrl = form.watch("spotifyPlaylistUrl");
+  const spotifyId = spotifyUrl ? extractSpotifyPlaylistId(spotifyUrl) : null;
+
+  const handleLinkSpotify = () => {
+    const url = spotifyInput.trim();
+    if (!url) { setSpotifyError("Pega la URL de tu playlist de Spotify."); return; }
+    const id = extractSpotifyPlaylistId(url);
+    if (!id) { setSpotifyError("URL no válida. Debe ser del formato https://open.spotify.com/playlist/..."); return; }
+    form.setValue("spotifyPlaylistUrl", url);
+    setShowSpotifyDialog(false);
+    setSpotifyInput("");
+    setSpotifyError("");
+  };
+
+  const handleRemoveSpotify = () => {
+    form.setValue("spotifyPlaylistUrl", "");
+  };
 
   const onSubmit = async (values: any) => {
     try {
@@ -119,9 +166,7 @@ export default function FuneralPreferences() {
                     </SelectTrigger>
                     <SelectContent>
                       {BURIAL_TYPES.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -138,9 +183,7 @@ export default function FuneralPreferences() {
                     </SelectTrigger>
                     <SelectContent>
                       {CEREMONY_TYPES.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -158,9 +201,7 @@ export default function FuneralPreferences() {
                   </SelectTrigger>
                   <SelectContent>
                     {DRESS_CODES.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -175,20 +216,61 @@ export default function FuneralPreferences() {
                 />
               </div>
 
-              <div className="space-y-1.5">
+              {/* ── Spotify ── */}
+              <div className="space-y-2">
                 <Label className="flex items-center gap-1.5">
                   <Music2 className="w-4 h-4 text-green-500" />
-                  Playlist de Spotify para el velatorio
+                  Música para el velatorio
                 </Label>
-                <Input
-                  {...form.register("spotifyPlaylistUrl")}
-                  className="rounded-xl h-11"
-                  placeholder="https://open.spotify.com/playlist/..."
-                  type="url"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Comparte la música que quieres que suene durante el velatorio. Pega el enlace de tu playlist de Spotify.
-                </p>
+
+                {spotifyId ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-green-50 border border-green-200">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-[#1DB954] flex items-center justify-center">
+                          <Music2 className="w-3 h-3 text-white" />
+                        </div>
+                        <span className="text-sm font-medium text-green-800">Playlist vinculada ✓</span>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => { setSpotifyInput(spotifyUrl); setShowSpotifyDialog(true); }}
+                          className="text-xs text-green-700 hover:underline px-2"
+                        >
+                          Cambiar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemoveSpotify}
+                          className="p-1 text-gray-400 hover:text-red-500"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <iframe
+                      src={`https://open.spotify.com/embed/playlist/${spotifyId}`}
+                      width="100%"
+                      height="152"
+                      frameBorder="0"
+                      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                      className="rounded-xl"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowSpotifyDialog(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-gray-200 hover:border-green-400 hover:bg-green-50 transition-all text-sm text-gray-500 hover:text-green-700 font-medium w-full justify-center"
+                  >
+                    <div className="w-5 h-5 rounded-full bg-[#1DB954] flex items-center justify-center">
+                      <Music2 className="w-3 h-3 text-white" />
+                    </div>
+                    <Link2 className="w-4 h-4" />
+                    Vincular playlist de Spotify
+                  </button>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -196,7 +278,7 @@ export default function FuneralPreferences() {
                 <Textarea
                   {...form.register("musicNotes")}
                   className="rounded-xl min-h-[80px]"
-                  placeholder="Canciones, artistas, géneros musicales que te gustaría que sonaran en la ceremonia…"
+                  placeholder="Canciones, artistas, géneros musicales que te gustaría que sonaran…"
                 />
               </div>
 
@@ -233,6 +315,48 @@ export default function FuneralPreferences() {
           </Button>
         </form>
       </div>
+
+      {/* Spotify Dialog */}
+      <Dialog open={showSpotifyDialog} onOpenChange={(o) => { if (!o) { setSpotifyInput(""); setSpotifyError(""); } setShowSpotifyDialog(o); }}>
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-[#1DB954] flex items-center justify-center">
+                <Music2 className="w-3 h-3 text-white" />
+              </div>
+              Vincular playlist de Spotify
+            </DialogTitle>
+            <DialogDescription>
+              Pega el enlace de tu playlist de Spotify para el velatorio.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <Input
+              value={spotifyInput}
+              onChange={(e) => { setSpotifyInput(e.target.value); setSpotifyError(""); }}
+              placeholder="https://open.spotify.com/playlist/..."
+              className="rounded-xl h-11"
+            />
+            {spotifyError && (
+              <p className="text-sm text-red-600">{spotifyError}</p>
+            )}
+            <p className="text-xs text-gray-400">
+              En Spotify: abre tu playlist → compartir → copiar enlace
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowSpotifyDialog(false); setSpotifyInput(""); setSpotifyError(""); }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleLinkSpotify}
+              className="bg-[#1DB954] hover:bg-[#1aa34a] text-white"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" /> Vincular
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

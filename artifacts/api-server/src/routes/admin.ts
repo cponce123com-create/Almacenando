@@ -190,6 +190,8 @@ router.get("/death-reports/:id", requireAdmin, async (req, res) => {
     userName: profiles[0]?.fullName ?? null,
     notes: r.notes,
     status: r.status,
+    certificateImageUrl: (r as any).certificateImageUrl ?? null,
+    certificateWithPersonUrl: (r as any).certificateWithPersonUrl ?? null,
     confirmations: confirmations.map((c) => ({
       id: c.id,
       trustedContactName: contactMap.get(c.trustedContactId) ?? "Unknown",

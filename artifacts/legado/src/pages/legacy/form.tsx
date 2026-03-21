@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, Save, UploadCloud, FileCheck2, X, FileVideo, FileAudio, Image, FileText, Lock } from "lucide-react";
+import { Loader2, ArrowLeft, Save, UploadCloud, FileCheck2, X, FileVideo, FileAudio, Image, FileText, Lock, Sparkles, Plus, Trash2, AlertCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -273,6 +273,38 @@ export default function LegacyForm() {
   const [selectedRecipients, setSelectedRecipients] = useState<string[]>([]);
   const [mediaData, setMediaData] = useState<MediaData | null>(null);
 
+  type Beneficiary = { name: string; relationship: string; bequest: string };
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
+  const [newBenef, setNewBenef] = useState<Beneficiary>({ name: "", relationship: "", bequest: "" });
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const handleAddBeneficiary = () => {
+    if (!newBenef.name.trim() || !newBenef.bequest.trim()) return;
+    setBeneficiaries((prev) => [...prev, newBenef]);
+    setNewBenef({ name: "", relationship: "", bequest: "" });
+  };
+
+  const handleGenerateWill = async () => {
+    if (beneficiaries.length === 0) return;
+    setAiLoading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch("/api/ai/generate-will", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ beneficiaries }),
+      });
+      const data = await res.json();
+      if (res.ok && data.text) {
+        form.setValue("contentText", data.text);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -419,7 +451,7 @@ export default function LegacyForm() {
                 <Input className="h-12 rounded-xl" placeholder="Contexto sobre este mensaje" {...form.register("description")} />
               </div>
 
-              {(currentType === "letter" || currentType === "funeral_note") && (
+              {currentType === "letter" && (
                 <div className="space-y-2">
                   <Label>Contenido del Mensaje</Label>
                   <Textarea
@@ -427,6 +459,106 @@ export default function LegacyForm() {
                     placeholder="Escribe tu mensaje aquí..."
                     {...form.register("contentText")}
                   />
+                </div>
+              )}
+
+              {currentType === "funeral_note" && (
+                <div className="space-y-4">
+                  {/* AI Will Builder */}
+                  <div className="border border-violet-100 rounded-2xl overflow-hidden">
+                    <div className="bg-gradient-to-r from-violet-50 to-purple-50 px-4 py-3 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-violet-500" />
+                      <span className="font-semibold text-violet-900 text-sm">Constructor de testamento con IA</span>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <p className="text-xs text-gray-500 leading-relaxed">
+                        Añade a tus beneficiarios y qué les dejarás. La IA redactará el documento en lenguaje formal y personal.
+                      </p>
+
+                      {/* Beneficiary list */}
+                      {beneficiaries.length > 0 && (
+                        <div className="space-y-2">
+                          {beneficiaries.map((b, i) => (
+                            <div key={i} className="flex items-start gap-2 p-3 bg-violet-50 rounded-xl border border-violet-100">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-violet-900">{b.name}
+                                  {b.relationship && <span className="font-normal text-violet-600 ml-1">({b.relationship})</span>}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-0.5">{b.bequest}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setBeneficiaries((prev) => prev.filter((_, j) => j !== i))}
+                                className="p-1 text-gray-400 hover:text-red-500 shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add beneficiary form */}
+                      <div className="space-y-2 bg-gray-50 rounded-xl p-3">
+                        <p className="text-xs font-semibold text-gray-600">Agregar beneficiario</p>
+                        <Input
+                          placeholder="Nombre completo *"
+                          value={newBenef.name}
+                          onChange={(e) => setNewBenef((p) => ({ ...p, name: e.target.value }))}
+                          className="h-9 rounded-lg text-sm"
+                        />
+                        <Input
+                          placeholder="Relación (ej: hijo, esposa, amigo…)"
+                          value={newBenef.relationship}
+                          onChange={(e) => setNewBenef((p) => ({ ...p, relationship: e.target.value }))}
+                          className="h-9 rounded-lg text-sm"
+                        />
+                        <Textarea
+                          placeholder="¿Qué le dejas? Describe los bienes o el mensaje *"
+                          value={newBenef.bequest}
+                          onChange={(e) => setNewBenef((p) => ({ ...p, bequest: e.target.value }))}
+                          className="min-h-[64px] rounded-lg text-sm resize-none"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full rounded-lg gap-1.5"
+                          onClick={handleAddBeneficiary}
+                          disabled={!newBenef.name.trim() || !newBenef.bequest.trim()}
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Añadir beneficiario
+                        </Button>
+                      </div>
+
+                      <Button
+                        type="button"
+                        className="w-full bg-violet-600 hover:bg-violet-700 text-white rounded-xl gap-2"
+                        onClick={handleGenerateWill}
+                        disabled={beneficiaries.length === 0 || aiLoading}
+                      >
+                        {aiLoading
+                          ? <><Loader2 className="w-4 h-4 animate-spin" /> Generando con IA...</>
+                          : <><Sparkles className="w-4 h-4" /> Generar testamento con IA</>}
+                      </Button>
+
+                      <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                        <p className="text-xs text-amber-700 leading-relaxed">
+                          Este documento es un borrador de carácter personal. Para validez legal consulta a un notario.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Contenido del testamento</Label>
+                    <Textarea
+                      className="min-h-[200px] rounded-xl resize-y"
+                      placeholder="Escribe o genera el contenido de tu nota funeraria o testamento personal…"
+                      {...form.register("contentText")}
+                    />
+                  </div>
                 </div>
               )}
 
