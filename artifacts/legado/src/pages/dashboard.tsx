@@ -13,6 +13,7 @@ import {
   ArrowRight,
   Loader2,
   HeartHandshake,
+  Clock,
 } from "lucide-react";
 
 export default function Dashboard() {
@@ -101,6 +102,24 @@ export default function Dashboard() {
             href="/trusted-contacts"
           />
         </div>
+
+        {/* Time Capsules quick access */}
+        <Link href="/capsulas">
+          <Card className="border border-violet-100 bg-violet-50/40 hover:shadow-md hover:border-violet-200 transition-all cursor-pointer group">
+            <CardContent className="p-6 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-violet-100 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                <Clock className="w-6 h-6 text-violet-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-serif text-lg font-semibold text-gray-900">Cápsulas del Tiempo</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Programa mensajes para el futuro — videos y cartas que se entregarán en la fecha que elijas.
+                </p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-violet-400 group-hover:text-violet-600 transition-colors shrink-0" />
+            </CardContent>
+          </Card>
+        </Link>
 
         {/* Death Reporting Section */}
         <Link href="/report-death">

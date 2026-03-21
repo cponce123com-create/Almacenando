@@ -13,6 +13,7 @@ import {
   Images,
   UserCircle,
   Music,
+  Clock,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ const primaryNav = [
 ];
 
 const secondaryNav = [
+  { name: "Cápsulas del Tiempo", href: "/capsulas", icon: Clock },
   { name: "Mis Medios", href: "/media", icon: Images },
   { name: "Mi Perfil", href: "/profile", icon: UserCircle },
   { name: "Preferencias Funerarias", href: "/funeral", icon: Flower2 },

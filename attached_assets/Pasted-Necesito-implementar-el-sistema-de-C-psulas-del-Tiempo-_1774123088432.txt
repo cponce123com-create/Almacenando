@@ -1,0 +1,1150 @@
+Necesito implementar el sistema de Cápsulas del Tiempo. Es una funcionalidad nueva completa. Lee todos los archivos antes de modificarlos.
+PASO 1 — Schema de base de datos
+Crear archivo nuevo lib/db/src/schema/time-capsules.ts:
+typescriptimport { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const timeCapsulesTable = pgTable("time_capsules", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull(),
+  recipientName: text("recipient_name").notNull(),
+  recipientEmail: text("recipient_email").notNull(),
+  openDate: timestamp("open_date").notNull(),
+  status: text("status").notNull().default("draft"), // draft | sealed | delivered
+  videoUrl: text("video_url"),
+  videoPublicId: text("video_public_id"),
+  videoDurationSeconds: integer("video_duration_seconds"),
+  letterText: text("letter_text"),
+  accessToken: text("access_token").unique(),
+  deliveredAt: timestamp("delivered_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertTimeCapsuleSchema = createInsertSchema(timeCapsulesTable).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type TimeCapsule = typeof timeCapsulesTable.$inferSelect;
+export type InsertTimeCapsule = z.infer<typeof insertTimeCapsuleSchema>;
+En lib/db/src/schema/index.ts agregar:
+typescriptexport * from "./time-capsules";
+Ejecutar en el shell:
+bashpnpm db:push
+
+PASO 2 — Email de entrega de cápsula
+En artifacts/api-server/src/lib/email.ts agregar esta función al final del archivo:
+typescriptexport async function sendTimeCapsuleEmail({
+  toEmail,
+  toName,
+  fromName,
+  capsuleTitle,
+  accessUrl,
+  createdAt,
+}: {
+  toEmail: string;
+  toName: string;
+  fromName: string;
+  capsuleTitle: string;
+  accessUrl: string;
+  createdAt: Date;
+}): Promise<void> {
+  const transporter = createTransport();
+  if (!transporter) {
+    console.warn("[email] EMAIL_USER / EMAIL_PASS not set — skipping capsule email");
+    return;
+  }
+
+  const from = `"Legado" <${process.env.EMAIL_USER}>`;
+  const createdYear = createdAt.getFullYear();
+  const now = new Date();
+  const yearsAgo = now.getFullYear() - createdYear;
+  const timeAgoText = yearsAgo === 0
+    ? "hace unos meses"
+    : yearsAgo === 1
+    ? "hace 1 año"
+    : `hace ${yearsAgo} años`;
+
+  const html = `
+<div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a; background: #fafaf8;">
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="font-size: 28px; color: #7C3AED; margin: 0; letter-spacing: 1px;">✦ Legado</h1>
+    <p style="color: #9CA3AF; font-size: 13px; margin-top: 4px;">Cápsula del Tiempo</p>
+  </div>
+
+  <div style="background: linear-gradient(135deg, #1e1b4b, #4C1D95); border-radius: 20px; padding: 32px; text-align: center; margin-bottom: 32px; color: white;">
+    <div style="font-size: 48px; margin-bottom: 12px;">🕰️</div>
+    <p style="font-size: 14px; color: #C4B5FD; margin: 0 0 8px; letter-spacing: 2px; text-transform: uppercase;">Una cápsula del tiempo</p>
+    <h2 style="font-size: 24px; margin: 0 0 8px; color: white;">${capsuleTitle}</h2>
+    <p style="font-size: 15px; color: #DDD6FE; margin: 0;">
+      <strong>${fromName}</strong> la creó ${timeAgoText} especialmente para ti
+    </p>
+  </div>
+
+  <p style="font-size: 16px; line-height: 1.7; color: #374151;">
+    Hola <strong>${toName}</strong>,
+  </p>
+  <p style="font-size: 15px; line-height: 1.7; color: #374151;">
+    Ha llegado el momento. <strong>${fromName}</strong> guardó un mensaje especial para ti
+    — un video y una carta escritos con tiempo y cariño, esperando este día exacto para ser abiertos.
+  </p>
+
+  <div style="text-align: center; margin: 36px 0;">
+    <a href="${accessUrl}"
+       style="background: #7C3AED; color: white; text-decoration: none; padding: 18px 48px;
+              border-radius: 14px; font-size: 17px; font-weight: 600; display: inline-block; letter-spacing: 0.3px;">
+      Abrir mi cápsula 🕰️
+    </a>
+  </div>
+
+  <p style="font-size: 13px; color: #9CA3AF; text-align: center; line-height: 1.6;">
+    Este enlace es único y fue creado exclusivamente para ti.<br/>
+    No lo compartas con nadie más.
+  </p>
+  <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+  <p style="font-size: 12px; color: #9CA3AF; text-align: center;">
+    Con cariño, el Equipo de Legado
+  </p>
+</div>`.trim();
+
+  await transporter.sendMail({
+    from,
+    to: toEmail,
+    subject: `🕰️ ${fromName} te dejó una cápsula del tiempo: "${capsuleTitle}"`,
+    html,
+  });
+}
+
+PASO 3 — Rutas del backend
+Crear archivo nuevo artifacts/api-server/src/routes/time-capsules.ts:
+typescriptimport { Router } from "express";
+import { db } from "@workspace/db";
+import { timeCapsulesTable, profilesTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { requireAuth } from "../lib/auth.js";
+import { generateId } from "../lib/id.js";
+import { randomBytes } from "crypto";
+import { sendTimeCapsuleEmail } from "../lib/email.js";
+import { writeAuditLog } from "../lib/audit.js";
+
+const router = Router();
+
+const MAX_CAPSULES_PER_USER = 5;
+const MAX_VIDEO_DURATION = 120; // 2 minutos en segundos
+
+function getAppUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  if (process.env.REPLIT_DOMAINS) return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+  return "https://legadoapp.replit.app";
+}
+
+// GET / — listar cápsulas del usuario
+router.get("/", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const capsules = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(eq(timeCapsulesTable.userId, userId))
+    .orderBy(timeCapsulesTable.createdAt);
+  res.json(capsules);
+});
+
+// GET /:id — detalle de una cápsula
+router.get("/:id", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const rows = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(and(
+      eq(timeCapsulesTable.id, req.params.id),
+      eq(timeCapsulesTable.userId, userId)
+    ))
+    .limit(1);
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Cápsula no encontrada" });
+    return;
+  }
+  res.json(rows[0]);
+});
+
+// POST / — crear cápsula
+router.post("/", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+
+  // Verificar límite de 5 cápsulas
+  const existing = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(eq(timeCapsulesTable.userId, userId));
+
+  if (existing.length >= MAX_CAPSULES_PER_USER) {
+    res.status(429).json({
+      error: `Solo puedes tener ${MAX_CAPSULES_PER_USER} cápsulas activas. Elimina una antes de crear otra.`,
+    });
+    return;
+  }
+
+  const { title, recipientName, recipientEmail, openDate } = req.body;
+
+  if (!title || !recipientName || !recipientEmail || !openDate) {
+    res.status(400).json({ error: "Título, destinatario, email y fecha de apertura son requeridos" });
+    return;
+  }
+
+  const open = new Date(openDate);
+  if (open <= new Date()) {
+    res.status(400).json({ error: "La fecha de apertura debe ser en el futuro" });
+    return;
+  }
+
+  const id = generateId();
+  await db.insert(timeCapsulesTable).values({
+    id,
+    userId,
+    title,
+    recipientName,
+    recipientEmail,
+    openDate: open,
+    status: "draft",
+  });
+
+  const created = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(eq(timeCapsulesTable.id, id))
+    .limit(1);
+
+  res.status(201).json(created[0]);
+});
+
+// PUT /:id — editar cápsula (solo en draft)
+router.put("/:id", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const rows = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(and(
+      eq(timeCapsulesTable.id, req.params.id),
+      eq(timeCapsulesTable.userId, userId)
+    ))
+    .limit(1);
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Cápsula no encontrada" });
+    return;
+  }
+
+  if (rows[0].status !== "draft") {
+    res.status(400).json({ error: "No puedes editar una cápsula sellada o entregada" });
+    return;
+  }
+
+  const { title, recipientName, recipientEmail, openDate, letterText, videoUrl, videoPublicId, videoDurationSeconds } = req.body;
+
+  // Validar duración del video
+  if (videoDurationSeconds && videoDurationSeconds > MAX_VIDEO_DURATION) {
+    res.status(400).json({ error: "El video no puede durar más de 2 minutos" });
+    return;
+  }
+
+  await db.update(timeCapsulesTable).set({
+    ...(title && { title }),
+    ...(recipientName && { recipientName }),
+    ...(recipientEmail && { recipientEmail }),
+    ...(openDate && { openDate: new Date(openDate) }),
+    ...(letterText !== undefined && { letterText }),
+    ...(videoUrl !== undefined && { videoUrl }),
+    ...(videoPublicId !== undefined && { videoPublicId }),
+    ...(videoDurationSeconds !== undefined && { videoDurationSeconds }),
+    updatedAt: new Date(),
+  }).where(eq(timeCapsulesTable.id, req.params.id));
+
+  const updated = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(eq(timeCapsulesTable.id, req.params.id))
+    .limit(1);
+
+  res.json(updated[0]);
+});
+
+// POST /:id/seal — sellar cápsula (ya no editable)
+router.post("/:id/seal", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const rows = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(and(
+      eq(timeCapsulesTable.id, req.params.id),
+      eq(timeCapsulesTable.userId, userId)
+    ))
+    .limit(1);
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Cápsula no encontrada" });
+    return;
+  }
+
+  const capsule = rows[0];
+
+  if (capsule.status !== "draft") {
+    res.status(400).json({ error: "Esta cápsula ya está sellada" });
+    return;
+  }
+
+  if (!capsule.letterText && !capsule.videoUrl) {
+    res.status(400).json({ error: "Agrega al menos una carta o un video antes de sellar" });
+    return;
+  }
+
+  await db.update(timeCapsulesTable).set({
+    status: "sealed",
+    updatedAt: new Date(),
+  }).where(eq(timeCapsulesTable.id, req.params.id));
+
+  res.json({ message: "Cápsula sellada. Se entregará automáticamente en la fecha programada." });
+});
+
+// DELETE /:id — eliminar cápsula (solo en draft)
+router.delete("/:id", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const rows = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(and(
+      eq(timeCapsulesTable.id, req.params.id),
+      eq(timeCapsulesTable.userId, userId)
+    ))
+    .limit(1);
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Cápsula no encontrada" });
+    return;
+  }
+
+  if (rows[0].status === "delivered") {
+    res.status(400).json({ error: "No puedes eliminar una cápsula ya entregada" });
+    return;
+  }
+
+  await db.delete(timeCapsulesTable).where(eq(timeCapsulesTable.id, req.params.id));
+  res.json({ message: "Cápsula eliminada" });
+});
+
+// GET /public/:token — portal público de acceso
+router.get("/public/:token", async (req, res) => {
+  const rows = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(eq(timeCapsulesTable.accessToken, req.params.token))
+    .limit(1);
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Enlace inválido o cápsula no encontrada" });
+    return;
+  }
+
+  const capsule = rows[0];
+
+  const profiles = await db
+    .select({ fullName: profilesTable.fullName, avatarUrl: profilesTable.avatarUrl })
+    .from(profilesTable)
+    .where(eq(profilesTable.userId, capsule.userId))
+    .limit(1);
+
+  writeAuditLog({
+    action: "recipient_accessed_portal",
+    userId: capsule.userId,
+    metadata: { capsuleId: capsule.id, via: "time_capsule" },
+  }).catch(() => {});
+
+  res.json({
+    title: capsule.title,
+    recipientName: capsule.recipientName,
+    fromName: profiles[0]?.fullName ?? "Tu ser querido",
+    fromAvatarUrl: profiles[0]?.avatarUrl ?? null,
+    letterText: capsule.letterText,
+    videoUrl: capsule.videoUrl,
+    createdAt: capsule.createdAt,
+    openDate: capsule.openDate,
+  });
+});
+
+// Función exportada para el cron job
+export async function deliverPendingCapsules(): Promise<void> {
+  const now = new Date();
+
+  const pending = await db
+    .select()
+    .from(timeCapsulesTable)
+    .where(eq(timeCapsulesTable.status, "sealed"));
+
+  const due = pending.filter((c) => new Date(c.openDate) <= now);
+
+  if (due.length === 0) return;
+
+  console.log(`[capsules-cron] ${due.length} cápsulas pendientes de entrega`);
+
+  const appUrl = getAppUrl();
+
+  for (const capsule of due) {
+    try {
+      const token = randomBytes(32).toString("hex");
+
+      await db.update(timeCapsulesTable).set({
+        status: "delivered",
+        accessToken: token,
+        deliveredAt: now,
+        updatedAt: now,
+      }).where(eq(timeCapsulesTable.id, capsule.id));
+
+      const profiles = await db
+        .select({ fullName: profilesTable.fullName })
+        .from(profilesTable)
+        .where(eq(profilesTable.userId, capsule.userId))
+        .limit(1);
+
+      const fromName = profiles[0]?.fullName ?? "Tu ser querido";
+      const accessUrl = `${appUrl}/capsula/${token}`;
+
+      await sendTimeCapsuleEmail({
+        toEmail: capsule.recipientEmail,
+        toName: capsule.recipientName,
+        fromName,
+        capsuleTitle: capsule.title,
+        accessUrl,
+        createdAt: capsule.createdAt,
+      });
+
+      writeAuditLog({
+        action: "legacy_released_auto",
+        userId: capsule.userId,
+        actorType: "system",
+        metadata: { capsuleId: capsule.id, via: "cron" },
+      }).catch(() => {});
+
+      console.log(`[capsules-cron] Entregada cápsula ${capsule.id} a ${capsule.recipientEmail}`);
+    } catch (err) {
+      console.error(`[capsules-cron] Error entregando cápsula ${capsule.id}:`, err);
+    }
+  }
+}
+
+export default router;
+Registrar la ruta en artifacts/api-server/src/routes/index.ts:
+typescriptimport timeCapsulesRouter from "./time-capsules.js";
+router.use("/time-capsules", timeCapsulesRouter);
+
+PASO 4 — Cron job diario en el servidor
+En artifacts/api-server/src/index.ts, agregar el cron job después del app.listen:
+typescriptimport { deliverPendingCapsules } from "./routes/time-capsules.js";
+
+// Cron job: revisar cápsulas pendientes cada día a las 8am Lima (UTC-5 = 13:00 UTC)
+function scheduleCapsuleDelivery() {
+  const runAt8amLima = () => {
+    const now = new Date();
+    const lima8am = new Date();
+    lima8am.setUTCHours(13, 0, 0, 0); // 8am Lima = 13:00 UTC
+    if (lima8am <= now) lima8am.setDate(lima8am.getDate() + 1);
+    const msUntil = lima8am.getTime() - now.getTime();
+    setTimeout(async () => {
+      await deliverPendingCapsules();
+      setInterval(deliverPendingCapsules, 24 * 60 * 60 * 1000);
+    }, msUntil);
+  };
+  runAt8amLima();
+  console.log("✓ Cron job de cápsulas del tiempo programado");
+}
+
+scheduleCapsuleDelivery();
+
+PASO 5 — Página frontend de gestión de cápsulas
+Crear archivo nuevo artifacts/legado/src/pages/capsules/index.tsx:
+typescriptimport { useState } from "react";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { getAuthHeaders } from "@/hooks/use-auth";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { motion } from "framer-motion";
+import {
+  Clock, Plus, Lock, CheckCircle2, Trash2,
+  Pencil, Loader2, Mail, Calendar, Video,
+  FileText, Package, Send, AlertTriangle
+} from "lucide-react";
+import { format, formatDistanceToNow, isPast } from "date-fns";
+import { es } from "date-fns/locale";
+
+const BASE = "/api";
+const MAX_CAPSULES = 5;
+
+type Capsule = {
+  id: string;
+  title: string;
+  recipientName: string;
+  recipientEmail: string;
+  openDate: string;
+  status: "draft" | "sealed" | "delivered";
+  videoUrl?: string;
+  letterText?: string;
+  videoDurationSeconds?: number;
+  deliveredAt?: string;
+  createdAt: string;
+};
+
+type FormData = {
+  title: string;
+  recipientName: string;
+  recipientEmail: string;
+  openDate: string;
+  letterText: string;
+};
+
+const emptyForm: FormData = {
+  title: "",
+  recipientName: "",
+  recipientEmail: "",
+  openDate: "",
+  letterText: "",
+};
+
+function StatusBadge({ status }: { status: string }) {
+  const cfg = {
+    draft: { label: "Borrador", className: "bg-amber-100 text-amber-700 border-amber-200" },
+    sealed: { label: "Sellada 🔒", className: "bg-violet-100 text-violet-700 border-violet-200" },
+    delivered: { label: "Entregada ✓", className: "bg-green-100 text-green-700 border-green-200" },
+  }[status] ?? { label: status, className: "bg-gray-100 text-gray-600 border-gray-200" };
+
+  return (
+    <span className={`text-xs px-2.5 py-1 rounded-full font-medium border ${cfg.className}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+export default function CapsulesPage() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormData>(emptyForm);
+  const [sealTarget, setSealTarget] = useState<Capsule | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [savingVideo, setSavingVideo] = useState(false);
+
+  const { data: capsules = [], isLoading } = useQuery<Capsule[]>({
+    queryKey: ["time-capsules"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/time-capsules`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Error al cargar cápsulas");
+      return res.json();
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: FormData) => {
+      const method = editingId ? "PUT" : "POST";
+      const url = editingId ? `${BASE}/time-capsules/${editingId}` : `${BASE}/time-capsules`;
+      const res = await fetch(url, {
+        method,
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, openDate: new Date(data.openDate).toISOString() }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      return d;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["time-capsules"] });
+      toast({ title: editingId ? "Cápsula actualizada" : "Cápsula creada" });
+      setShowForm(false);
+      setForm(emptyForm);
+      setEditingId(null);
+    },
+    onError: (e: any) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const sealMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`${BASE}/time-capsules/${id}/seal`, {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      return d;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["time-capsules"] });
+      toast({ title: "🔒 Cápsula sellada — se entregará en la fecha programada" });
+      setSealTarget(null);
+    },
+    onError: (e: any) => toast({ title: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`${BASE}/time-capsules/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Error al eliminar");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["time-capsules"] });
+      toast({ title: "Cápsula eliminada" });
+      setDeleteTarget(null);
+    },
+  });
+
+  const handleVideoUpload = async (capsuleId: string, file: File) => {
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: "El video no puede superar 100MB", variant: "destructive" });
+      return;
+    }
+
+    setSavingVideo(true);
+    try {
+      // Firmar upload con Cloudinary
+      const sigRes = await fetch(`${BASE}/upload/sign`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ resourceType: "video", folder: "capsulas" }),
+      });
+      const sig = await sigRes.json();
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("signature", sig.signature);
+      formData.append("timestamp", sig.timestamp);
+      formData.append("api_key", sig.apiKey);
+      formData.append("folder", sig.folder);
+
+      const uploadRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${sig.cloudName}/video/upload`,
+        { method: "POST", body: formData }
+      );
+      const uploaded = await uploadRes.json();
+
+      // Validar duración (máx 2 minutos)
+      if (uploaded.duration && uploaded.duration > 120) {
+        toast({ title: "El video no puede durar más de 2 minutos", variant: "destructive" });
+        return;
+      }
+
+      // Guardar en la cápsula
+      await fetch(`${BASE}/time-capsules/${capsuleId}`, {
+        method: "PUT",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: uploaded.secure_url,
+          videoPublicId: uploaded.public_id,
+          videoDurationSeconds: Math.round(uploaded.duration || 0),
+        }),
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["time-capsules"] });
+      toast({ title: "✓ Video subido correctamente" });
+    } catch (err) {
+      toast({ title: "Error al subir el video", variant: "destructive" });
+    } finally {
+      setSavingVideo(false);
+    }
+  };
+
+  const openNew = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  };
+
+  const openEdit = (c: Capsule) => {
+    setEditingId(c.id);
+    setForm({
+      title: c.title,
+      recipientName: c.recipientName,
+      recipientEmail: c.recipientEmail,
+      openDate: c.openDate ? new Date(c.openDate).toISOString().slice(0, 16) : "",
+      letterText: c.letterText || "",
+    });
+    setShowForm(true);
+  };
+
+  const canCreate = capsules.length < MAX_CAPSULES;
+
+  return (
+    <AppLayout>
+      <div className="max-w-4xl mx-auto space-y-8">
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+          <div>
+            <h1 className="font-serif text-3xl font-bold text-foreground flex items-center gap-3">
+              <Clock className="w-8 h-8 text-primary" />
+              Cápsulas del Tiempo
+            </h1>
+            <p className="text-muted-foreground mt-2 max-w-xl">
+              Mensajes programados para abrirse en una fecha especial. Hasta {MAX_CAPSULES} cápsulas activas.
+            </p>
+          </div>
+          <Button
+            onClick={openNew}
+            disabled={!canCreate}
+            className="rounded-xl shadow-md gap-2 shrink-0"
+            title={!canCreate ? `Límite de ${MAX_CAPSULES} cápsulas alcanzado` : ""}
+          >
+            <Plus className="w-4 h-4" />
+            Nueva cápsula
+          </Button>
+        </div>
+
+        {/* Límite visual */}
+        <div className="flex items-center gap-3">
+          {Array.from({ length: MAX_CAPSULES }).map((_, i) => (
+            <div
+              key={i}
+              className={`h-2 flex-1 rounded-full transition-all ${
+                i < capsules.length ? "bg-primary" : "bg-gray-200"
+              }`}
+            />
+          ))}
+          <span className="text-sm text-muted-foreground shrink-0">
+            {capsules.length}/{MAX_CAPSULES}
+          </span>
+        </div>
+
+        {/* Lista de cápsulas */}
+        {isLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+        ) : capsules.length === 0 ? (
+          <div className="bg-white rounded-3xl border border-dashed border-border p-12 text-center">
+            <Package className="w-14 h-14 mx-auto text-muted-foreground/30 mb-4" />
+            <h3 className="font-serif text-xl font-bold mb-2">No tienes cápsulas aún</h3>
+            <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+              Crea tu primera cápsula del tiempo — un mensaje con video y carta que llegará a alguien especial en la fecha que elijas.
+            </p>
+            <Button onClick={openNew} className="rounded-xl gap-2">
+              <Plus className="w-4 h-4" /> Crear mi primera cápsula
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {capsules.map((capsule, i) => (
+              <motion.div
+                key={capsule.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+                className="bg-white rounded-3xl border border-border shadow-sm p-6"
+              >
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-2 flex-wrap">
+                      <h3 className="font-serif text-lg font-bold text-foreground truncate">
+                        {capsule.title}
+                      </h3>
+                      <StatusBadge status={capsule.status} />
+                    </div>
+
+                    <div className="space-y-1.5 text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <Mail className="w-4 h-4 shrink-0" />
+                        <span>Para: <strong className="text-foreground">{capsule.recipientName}</strong> ({capsule.recipientEmail})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 shrink-0" />
+                        <span>
+                          Se abre el{" "}
+                          <strong className="text-foreground">
+                            {format(new Date(capsule.openDate), "d 'de' MMMM 'de' yyyy", { locale: es })}
+                          </strong>
+                          {!isPast(new Date(capsule.openDate)) && capsule.status !== "delivered" && (
+                            <span className="text-primary ml-1">
+                              ({formatDistanceToNow(new Date(capsule.openDate), { locale: es, addSuffix: true })})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Contenido */}
+                    <div className="flex items-center gap-3 mt-3">
+                      <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${capsule.videoUrl ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                        <Video className="w-3 h-3" />
+                        {capsule.videoUrl
+                          ? `Video (${capsule.videoDurationSeconds ? Math.round(capsule.videoDurationSeconds) + "s" : "subido"})`
+                          : "Sin video"}
+                      </span>
+                      <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${capsule.letterText ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                        <FileText className="w-3 h-3" />
+                        {capsule.letterText ? "Carta escrita" : "Sin carta"}
+                      </span>
+                    </div>
+
+                    {capsule.status === "delivered" && capsule.deliveredAt && (
+                      <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Entregada el {format(new Date(capsule.deliveredAt), "d 'de' MMMM 'de' yyyy", { locale: es })}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Acciones */}
+                  {capsule.status === "draft" && (
+                    <div className="flex flex-col gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        onClick={() => openEdit(capsule)}
+                        variant="outline"
+                        className="rounded-xl gap-1.5 h-9"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Editar
+                      </Button>
+
+                      {/* Subir video */}
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          accept="video/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleVideoUpload(capsule.id, file);
+                            e.target.value = "";
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="rounded-xl gap-1.5 h-9 w-full pointer-events-none"
+                          disabled={savingVideo}
+                        >
+                          {savingVideo
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Video className="w-3.5 h-3.5" />}
+                          {capsule.videoUrl ? "Cambiar video" : "Subir video"}
+                        </Button>
+                      </label>
+
+                      <Button
+                        size="sm"
+                        onClick={() => setSealTarget(capsule)}
+                        className="rounded-xl gap-1.5 h-9 bg-violet-600 hover:bg-violet-700 text-white"
+                      >
+                        <Lock className="w-3.5 h-3.5" /> Sellar
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setDeleteTarget(capsule.id)}
+                        className="rounded-xl gap-1.5 h-9 text-destructive hover:bg-red-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Eliminar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Dialog crear/editar */}
+      <Dialog open={showForm} onOpenChange={(o) => { setShowForm(o); if (!o) { setForm(emptyForm); setEditingId(null); } }}>
+        <DialogContent className="max-w-lg rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="font-serif text-xl">
+              {editingId ? "Editar cápsula" : "Nueva cápsula del tiempo"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label className="text-gray-700 text-sm">Título de la cápsula *</Label>
+              <Input
+                value={form.title}
+                onChange={(e) => setForm(p => ({ ...p, title: e.target.value }))}
+                placeholder="Ej: Para ti en tu graduación, Para mi hijo a los 18..."
+                className="rounded-xl h-11 text-gray-900"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-gray-700 text-sm">Nombre del destinatario *</Label>
+                <Input
+                  value={form.recipientName}
+                  onChange={(e) => setForm(p => ({ ...p, recipientName: e.target.value }))}
+                  placeholder="Ej: María"
+                  className="rounded-xl h-11 text-gray-900"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-gray-700 text-sm">Email del destinatario *</Label>
+                <Input
+                  type="email"
+                  value={form.recipientEmail}
+                  onChange={(e) => setForm(p => ({ ...p, recipientEmail: e.target.value }))}
+                  placeholder="correo@ejemplo.com"
+                  className="rounded-xl h-11 text-gray-900"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-gray-700 text-sm">Fecha y hora de apertura *</Label>
+              <Input
+                type="datetime-local"
+                value={form.openDate}
+                min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                onChange={(e) => setForm(p => ({ ...p, openDate: e.target.value }))}
+                className="rounded-xl h-11 text-gray-900"
+              />
+              <p className="text-xs text-muted-foreground">El destinatario recibirá el email exactamente en esta fecha.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-gray-700 text-sm flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-primary" />
+                Carta personal
+              </Label>
+              <Textarea
+                value={form.letterText}
+                onChange={(e) => setForm(p => ({ ...p, letterText: e.target.value }))}
+                placeholder="Escribe tu mensaje aquí. Puede ser tan largo como quieras — el destinatario lo recibirá exactamente como lo escribas..."
+                className="rounded-xl min-h-[140px] text-gray-900 resize-y"
+              />
+            </div>
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800 leading-relaxed">
+                El video (máx 2 min) se sube desde la tarjeta de la cápsula después de guardar. Aquí solo guardas los datos básicos y la carta.
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => { setShowForm(false); setForm(emptyForm); setEditingId(null); }}
+                className="flex-1 rounded-xl h-11"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => saveMutation.mutate(form)}
+                disabled={saveMutation.isPending || !form.title || !form.recipientName || !form.recipientEmail || !form.openDate}
+                className="flex-1 rounded-xl h-11 gap-2"
+              >
+                {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                {editingId ? "Guardar cambios" : "Crear cápsula"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmar sellar */}
+      <AlertDialog open={!!sealTarget} onOpenChange={(o) => !o && setSealTarget(null)}>
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-serif text-xl">🔒 ¿Sellar esta cápsula?</AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              Una vez sellada, <strong>no podrás editar</strong> el contenido. La cápsula se entregará automáticamente
+              a <strong>{sealTarget?.recipientName}</strong> el{" "}
+              {sealTarget && format(new Date(sealTarget.openDate), "d 'de' MMMM 'de' yyyy", { locale: es })}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => sealTarget && sealMutation.mutate(sealTarget.id)}
+              className="rounded-xl bg-violet-600 hover:bg-violet-700"
+            >
+              Sí, sellar cápsula
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmar eliminar */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-serif text-xl">¿Eliminar esta cápsula?</AlertDialogTitle>
+            <AlertDialogDescription>Esta acción no se puede deshacer.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+              className="rounded-xl bg-destructive hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </AppLayout>
+  );
+}
+
+PASO 6 — Portal público de la cápsula
+Crear archivo nuevo artifacts/legado/src/pages/capsules/portal.tsx:
+typescriptimport { useRoute } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import { Loader2, Clock, Heart, FileText, Video } from "lucide-react";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+
+const BASE = "/api";
+
+export default function CapsulePortal() {
+  const [, params] = useRoute("/capsula/:token");
+  const token = params?.token ?? "";
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["capsule-portal", token],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/time-capsules/public/${token}`);
+      if (!res.ok) throw new Error("Token inválido");
+      return res.json();
+    },
+    enabled: !!token,
+    retry: false,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0f0a1e] flex items-center justify-center">
+        <div className="text-center text-white space-y-4">
+          <Loader2 className="w-10 h-10 animate-spin mx-auto text-violet-400" />
+          <p className="text-violet-200 text-sm">Abriendo tu cápsula...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className="min-h-screen bg-[#0f0a1e] flex flex-col items-center justify-center p-6 text-center">
+        <Clock className="w-16 h-16 text-violet-400/50 mb-6" />
+        <h1 className="text-2xl font-serif text-white mb-2">Enlace inválido</h1>
+        <p className="text-violet-300/70 max-w-md">Esta cápsula no existe o el enlace ya no es válido.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0f0a1e] pb-20">
+      {/* Header emocional */}
+      <div className="relative pt-20 pb-24 overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-violet-900/40 to-transparent" />
+        <div className="relative z-10 max-w-2xl mx-auto px-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.8 }}
+          >
+            <div className="text-6xl mb-6">🕰️</div>
+            <p className="text-violet-300 uppercase tracking-widest text-sm font-semibold mb-3">
+              Cápsula del tiempo para {data.recipientName}
+            </p>
+            <h1 className="text-4xl md:text-5xl font-serif font-bold text-white mb-4">
+              {data.title}
+            </h1>
+            <p className="text-violet-200/80 text-lg">
+              <strong className="text-white">{data.fromName}</strong> guardó este mensaje
+              el {format(new Date(data.createdAt), "d 'de' MMMM 'de' yyyy", { locale: es })},
+              esperando este momento especial.
+            </p>
+          </motion.div>
+        </div>
+      </div>
+
+      <div className="max-w-2xl mx-auto px-6 -mt-8 space-y-6 relative z-20">
+
+        {/* Video */}
+        {data.videoUrl && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="bg-white/5 backdrop-blur-sm rounded-3xl overflow-hidden border border-white/10"
+          >
+            <div className="flex items-center gap-3 px-6 py-4 border-b border-white/10">
+              <Video className="w-5 h-5 text-violet-400" />
+              <span className="text-white font-medium">Mensaje en video</span>
+            </div>
+            <video
+              src={data.videoUrl}
+              controls
+              className="w-full max-h-[400px] bg-black"
+              playsInline
+            />
+          </motion.div>
+        )}
+
+        {/* Carta */}
+        {data.letterText && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="bg-white/5 backdrop-blur-sm rounded-3xl p-8 border border-white/10"
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <FileText className="w-5 h-5 text-violet-400" />
+              <span className="text-white font-medium">Carta personal</span>
+            </div>
+            <div className="font-serif text-violet-100/90 text-lg leading-relaxed whitespace-pre-wrap italic border-l-4 border-violet-500/40 pl-6">
+              "{data.letterText}"
+            </div>
+            <div className="mt-6 text-right">
+              <p className="text-violet-300/70 text-sm font-serif">Con todo mi amor,</p>
+              <p className="text-white font-serif font-bold text-lg">{data.fromName}</p>
+            </div>
+          </motion.div>
+        )}
+
+        <div className="text-center pt-8">
+          <Heart className="w-8 h-8 text-rose-400/50 mx-auto mb-3 fill-current" />
+          <p className="text-violet-300/50 text-sm">
+            Guardado con amor en <span className="text-violet-400 font-semibold">Legado</span>
+          </p>
+          
+            href="/register"
+            className="inline-block mt-3 text-xs text-violet-400/70 hover:text-violet-400 transition-colors underline"
+          >
+            ¿Quieres crear tu propia cápsula del tiempo?
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+PASO 7 — Registrar rutas en App.tsx
+En artifacts/legado/src/App.tsx agregar los imports:
+typescriptimport CapsulesPage from "@/pages/capsules/index";
+import CapsulePortal from "@/pages/capsules/portal";
+Agregar las rutas dentro del Router:
+tsx<Route path="/capsulas"><ProtectedRoute component={CapsulesPage} /></Route>
+<Route path="/capsula/:token" component={CapsulePortal} />
+
+PASO 8 — Agregar al Sidebar
+En el archivo del Sidebar, agregar en el array de navegación después de "Mi Legado":
+typescript{ name: "Cápsulas del Tiempo", href: "/capsulas", icon: Clock },
+Asegurarse de que Clock está importado desde lucide-react.
+
+PASO 9 — Agregar al Dashboard
+En artifacts/legado/src/pages/dashboard.tsx, agregar una tarjeta de acceso rápido a Cápsulas del Tiempo en la sección de accesos rápidos, con el ícono de reloj y el texto "Programa mensajes para el futuro".

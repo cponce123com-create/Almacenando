@@ -333,3 +333,78 @@ Con cariño,
     text,
   });
 }
+
+export async function sendTimeCapsuleEmail({
+  toEmail,
+  toName,
+  fromName,
+  capsuleTitle,
+  accessUrl,
+  createdAt,
+}: {
+  toEmail: string;
+  toName: string;
+  fromName: string;
+  capsuleTitle: string;
+  accessUrl: string;
+  createdAt: Date;
+}): Promise<void> {
+  const createdYear = createdAt.getFullYear();
+  const now = new Date();
+  const yearsAgo = now.getFullYear() - createdYear;
+  const timeAgoText =
+    yearsAgo === 0
+      ? "hace unos meses"
+      : yearsAgo === 1
+      ? "hace 1 año"
+      : `hace ${yearsAgo} años`;
+
+  const html = `
+<div style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #1a1a1a; background: #fafaf8;">
+  <div style="text-align: center; margin-bottom: 32px;">
+    <h1 style="font-size: 28px; color: #7C3AED; margin: 0; letter-spacing: 1px;">✦ Legado</h1>
+    <p style="color: #9CA3AF; font-size: 13px; margin-top: 4px;">Cápsula del Tiempo</p>
+  </div>
+
+  <div style="background: linear-gradient(135deg, #1e1b4b, #4C1D95); border-radius: 20px; padding: 32px; text-align: center; margin-bottom: 32px; color: white;">
+    <div style="font-size: 48px; margin-bottom: 12px;">🕰️</div>
+    <p style="font-size: 14px; color: #C4B5FD; margin: 0 0 8px; letter-spacing: 2px; text-transform: uppercase;">Una cápsula del tiempo</p>
+    <h2 style="font-size: 24px; margin: 0 0 8px; color: white;">${capsuleTitle}</h2>
+    <p style="font-size: 15px; color: #DDD6FE; margin: 0;">
+      <strong>${fromName}</strong> la creó ${timeAgoText} especialmente para ti
+    </p>
+  </div>
+
+  <p style="font-size: 16px; line-height: 1.7; color: #374151;">
+    Hola <strong>${toName}</strong>,
+  </p>
+  <p style="font-size: 15px; line-height: 1.7; color: #374151;">
+    Ha llegado el momento. <strong>${fromName}</strong> guardó un mensaje especial para ti
+    — un video y una carta escritos con tiempo y cariño, esperando este día exacto para ser abiertos.
+  </p>
+
+  <div style="text-align: center; margin: 36px 0;">
+    <a href="${accessUrl}"
+       style="background: #7C3AED; color: white; text-decoration: none; padding: 18px 48px;
+              border-radius: 14px; font-size: 17px; font-weight: 600; display: inline-block; letter-spacing: 0.3px;">
+      Abrir mi cápsula 🕰️
+    </a>
+  </div>
+
+  <p style="font-size: 13px; color: #9CA3AF; text-align: center; line-height: 1.6;">
+    Este enlace es único y fue creado exclusivamente para ti.<br/>
+    No lo compartas con nadie más.
+  </p>
+  <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+  <p style="font-size: 12px; color: #9CA3AF; text-align: center;">
+    Con cariño, el Equipo de Legado
+  </p>
+</div>`.trim();
+
+  await sendEmail({
+    to: toEmail,
+    subject: `🕰️ ${fromName} te dejó una cápsula del tiempo: "${capsuleTitle}"`,
+    html,
+    text: `Hola ${toName}, ${fromName} te dejó una cápsula del tiempo. Ábrela aquí: ${accessUrl}`,
+  });
+}

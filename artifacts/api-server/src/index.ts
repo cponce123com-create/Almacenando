@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedAdminIfNeeded, backfillContactTokens } from "./lib/seed.js";
+import { deliverPendingCapsules } from "./routes/time-capsules.js";
 
 const rawPort = process.env["PORT"];
 
@@ -32,4 +33,21 @@ app.listen(port, async () => {
   } else {
     console.log("✓ RENIEC_API_TOKEN configurado");
   }
+  scheduleCapsuleDelivery();
 });
+
+function scheduleCapsuleDelivery() {
+  const runAt8amLima = () => {
+    const now = new Date();
+    const lima8am = new Date();
+    lima8am.setUTCHours(13, 0, 0, 0);
+    if (lima8am <= now) lima8am.setDate(lima8am.getDate() + 1);
+    const msUntil = lima8am.getTime() - now.getTime();
+    setTimeout(async () => {
+      await deliverPendingCapsules();
+      setInterval(deliverPendingCapsules, 24 * 60 * 60 * 1000);
+    }, msUntil);
+  };
+  runAt8amLima();
+  console.log("✓ Cron job de cápsulas del tiempo programado");
+}

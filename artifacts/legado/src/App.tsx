@@ -31,6 +31,8 @@ import FAQ from "@/pages/faq";
 import AdminLogin from "@/pages/admin/login";
 import AdminDashboard from "@/pages/admin/dashboard";
 import AdminReportDetail from "@/pages/admin/report-detail";
+import CapsulesPage from "@/pages/capsules/index";
+import CapsulePortal from "@/pages/capsules/portal";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -145,6 +147,9 @@ function Router() {
       <Route path="/privacy" component={Privacy} />
       <Route path="/terms" component={Terms} />
       <Route path="/faq" component={FAQ} />
+
+      <Route path="/capsulas"><ProtectedRoute component={CapsulesPage} /></Route>
+      <Route path="/capsula/:token" component={CapsulePortal} />
 
       <Route path="/admin/login" component={AdminLogin} />
       <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>

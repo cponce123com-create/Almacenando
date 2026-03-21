@@ -9,3 +9,4 @@ export * from "./death-reports";
 export * from "./admins";
 export * from "./audit-logs";
 export * from "./funeral-songs";
+export * from "./time-capsules";
