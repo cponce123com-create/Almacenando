@@ -259,17 +259,60 @@ function FileUploadZone({
 }
 
 function convertMarkdownToHtml(text: string): string {
-  return text
-    .replace(/^# (.+)$/gm, '<h1 style="font-size:20px;font-weight:bold;text-align:center;margin:0 0 8px;letter-spacing:1px;">$1</h1>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:15px;font-weight:bold;margin:24px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px;">$1</h2>')
-    .replace(/^### (.+)$/gm, '<h3 style="font-size:13px;font-weight:bold;margin:16px 0 6px;">$1</h3>')
-    .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid #999;padding:8px 16px;margin:12px 0;color:#555;font-style:italic;background:#f9f9f9;">$1</blockquote>')
-    .replace(/^\d+\. (.+)$/gm, '<li style="margin:4px 0 4px 24px;list-style:decimal;">$1</li>')
-    .replace(/\n\n/g, '</p><p style="margin:10px 0;">')
-    .replace(/\n/g, '<br/>');
+  const lines = text.split("\n");
+  let html = "";
+  let inOrderedList = false;
+  let inUnorderedList = false;
+
+  const inline = (s: string) =>
+    s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+  for (const line of lines) {
+    if (/^# (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += line.replace(/^# (.+)$/, (_, t) => `<h1 style="font-size:20px;font-weight:bold;text-align:center;margin:0 0 6px;letter-spacing:1px;">${inline(t)}</h1>`);
+    } else if (/^## (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += line.replace(/^## (.+)$/, (_, t) => `<h2 style="font-size:14px;font-weight:bold;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:3px;">${inline(t)}</h2>`);
+    } else if (/^### (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += line.replace(/^### (.+)$/, (_, t) => `<h3 style="font-size:13px;font-weight:bold;margin:14px 0 4px;">${inline(t)}</h3>`);
+    } else if (/^---$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += '<hr style="border:none;border-top:1px solid #ccc;margin:14px 0;" />';
+    } else if (/^\d+\. (.+)$/.test(line)) {
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      if (!inOrderedList) { html += '<ol style="margin:8px 0;padding-left:28px;" start="1">'; inOrderedList = true; }
+      const content = line.replace(/^\d+\. (.+)$/, "$1");
+      html += `<li style="margin:5px 0;line-height:1.7;">${inline(content)}</li>`;
+    } else if (/^- (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (!inUnorderedList) { html += '<ul style="margin:8px 0;padding-left:28px;">'; inUnorderedList = true; }
+      const content = line.replace(/^- (.+)$/, "$1");
+      html += `<li style="margin:5px 0;line-height:1.7;">${inline(content)}</li>`;
+    } else if (/^> (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      const content = line.replace(/^> (.+)$/, "$1");
+      html += `<blockquote style="border-left:3px solid #999;padding:6px 14px;margin:10px 0;color:#444;font-style:italic;background:#f9f9f9;">${inline(content)}</blockquote>`;
+    } else if (line.trim() === "") {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += '<div style="margin:6px 0;"></div>';
+    } else {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += `<p style="margin:7px 0;line-height:1.8;">${inline(line)}</p>`;
+    }
+  }
+
+  if (inOrderedList) html += "</ol>";
+  if (inUnorderedList) html += "</ul>";
+  return html;
 }
 
 export default function LegacyForm() {
@@ -373,18 +416,24 @@ export default function LegacyForm() {
       top: -9999px;
       left: -9999px;
       width: 794px;
-      padding: 60px 70px;
+      min-height: 1123px;
+      padding: 60px 70px 80px;
       background: #ffffff;
       font-family: 'Georgia', 'Times New Roman', serif;
       color: #1a1a1a;
       font-size: 13px;
       line-height: 1.8;
       box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
     `;
 
     const htmlContent = convertMarkdownToHtml(generatedDocument || "");
-    container.innerHTML = `<div style="max-width:654px;margin:0 auto;"><p style="margin:8px 0;">${htmlContent}</p></div>`;
+    container.innerHTML = `<div style="max-width:654px;margin:0 auto;flex-grow:1;">${htmlContent}</div>`;
     document.body.appendChild(container);
+
+    const innerDiv = container.querySelector("div") as HTMLElement;
+    if (innerDiv) innerDiv.style.flexGrow = "1";
 
     try {
       const canvas = await html2canvas(container, {

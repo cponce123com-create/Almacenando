@@ -29,41 +29,44 @@ router.post("/generate-will", requireAuth, async (req, res) => {
     day: "numeric", month: "long", year: "numeric",
   });
 
-  const albaceaClause = testatorData?.executor
-    ? `El albacea designado es ${testatorData.executor}.`
-    : "El albacea será designado en el instrumento notarial definitivo.";
+  const prompt = `Eres un abogado especialista en derecho sucesorio peruano con 20 años de experiencia notarial. 
+Redacta un documento completo de "Últimas Voluntades" en español formal para Perú. 
+Usa EXACTAMENTE los datos proporcionados — ningún campo debe quedar en blanco.
 
-  const previousWillClause = testatorData?.hasPreviousWill === "si"
-    ? "El testador declara expresamente que revoca cualquier testamento anterior."
-    : "El testador declara no haber otorgado testamento anterior.";
+DATOS DEL TESTADOR (usar literalmente, sin modificar):
+- Nombre completo: ${testatorData?.fullName}
+- DNI: ${testatorData?.dni}
+- Estado civil: ${testatorData?.civilStatus}
+- Ciudad: ${testatorData?.city}
+- Domicilio: ${testatorData?.address}
+- Fecha actual: ${today}
+- Albacea: ${testatorData?.executor ? testatorData.executor : "será designado en el instrumento notarial definitivo"}
+- Testamento anterior: ${testatorData?.hasPreviousWill === "si" ? "Sí tiene y lo revoca expresamente" : "No tiene testamento anterior"}
 
-  const prompt = `Eres un asistente legal especializado en derecho sucesorio peruano.
-Redacta un documento formal de "Últimas Voluntades" en español para Perú con los siguientes datos REALES del testador. NO dejes ningún campo en blanco — usa exactamente los datos proporcionados.
-
-DATOS DEL TESTADOR:
-- Nombre completo: ${testatorData?.fullName || "No proporcionado"}
-- DNI: ${testatorData?.dni || "No proporcionado"}
-- Estado civil: ${testatorData?.civilStatus || "No especificado"}
-- Ciudad: ${testatorData?.city || "No proporcionada"}
-- Domicilio: ${testatorData?.address || "No proporcionado"}
-- Fecha: ${today}
-- ${albaceaClause}
-- ${previousWillClause}
-
-BENEFICIARIOS Y BIENES:
+BENEFICIARIOS Y BIENES (detallar extensamente cada uno):
 ${beneficiariesText}
 
-INSTRUCCIONES ESTRICTAS:
-1. Usar EXACTAMENTE los datos del testador proporcionados arriba — NO dejar espacios en blanco ni guiones para completar después
-2. Formato de testamento informal pero legalmente orientado al sistema jurídico peruano
-3. Incluir encabezado formal con los datos reales ya completados
-4. Mencionar que es documento orientativo y debe formalizarse ante notario público
-5. Incluir una sección por cada beneficiario con el bien o activo que se le destina, usando su nombre real
-6. Incluir cláusulas estándar del derecho sucesorio peruano: legítima, libre disposición, albacea
-7. Cerrar con espacio para firma y fecha
-8. Lenguaje formal pero comprensible
-9. Entre 800 y 1200 palabras
-10. Al final incluir una sección de firma con el nombre real del testador ya escrito
+INSTRUCCIONES ESTRICTAS DE REDACCIÓN:
+1. El documento debe tener entre 1500 y 2000 palabras
+2. Usar exclusivamente markdown con estos elementos: # para título principal, ## para cláusulas, ### para subcláusulas, **negrita** para nombres y conceptos clave, > para el aviso legal, - o 1. para listas, --- para separadores
+3. Estructura OBLIGATORIA con estas secciones en este orden exacto:
+   - Título: # DOCUMENTO DE ÚLTIMAS VOLUNTADES
+   - Subtítulo en blockquote con aviso legal orientativo
+   - Fecha y ciudad centrada en negrita
+   - ## ENCABEZADO E IDENTIFICACIÓN DEL TESTADOR (párrafo formal con todos los datos)
+   - ## PRIMERA CLÁUSULA — DECLARACIONES GENERALES (2 párrafos extensos sobre capacidad mental, libertad de voluntad, revocación de testamentos anteriores si aplica)
+   - ## SEGUNDA CLÁUSULA — DE LA LEGÍTIMA Y LA CUOTA DE LIBRE DISPOSICIÓN (explicar artículos 723-727 del CC, mencionar a los herederos forzosos con sus nombres reales)
+   - Una cláusula numerada por cada beneficiario: ## [NÚMERO EN ROMANO] CLÁUSULA — DESIGNACIÓN DE BIENES A FAVOR DE [NOMBRE EN MAYÚSCULAS] (2-3 párrafos extensos describiendo los bienes con detalle legal, mencionar SUNARP si son inmuebles, entidades financieras si es dinero, derechos de autor si es propiedad intelectual)
+   - ## CLÁUSULA SOBRE EL ALBACEA (mencionar artículos 787 y siguientes, describir sus facultades)
+   - ## CLÁUSULA SOBRE DEUDAS Y CARGAS (artículo 661 del CC)
+   - ## CLÁUSULA FINAL — DISPOSICIONES GENERALES (2 párrafos sobre resolución de controversias, buena fe)
+   - ## NOTA LEGAL IMPORTANTE (blockquote con aviso notarial detallado)
+   - ## FIRMA Y SUSCRIPCIÓN (con nombre real, DNI real, ciudad real, fecha real)
+4. Para cada bien legado, redactar al menos 3-4 líneas describiendo el bien, su naturaleza jurídica, y cómo debe realizarse la transferencia
+5. Citar artículos específicos del Código Civil Peruano en cada cláusula
+6. Usar lenguaje notarial formal: "lego y transfiero", "a título de herencia", "con todos los derechos reales", "conforme al ordenamiento jurídico"
+7. Los nombres de personas siempre en MAYÚSCULAS
+8. NO dejar espacios en blanco, guiones o campos por completar — todo debe estar lleno con los datos reales
 
 Redacta el documento completo ahora:`;
 
