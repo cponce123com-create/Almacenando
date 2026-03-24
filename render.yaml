@@ -20,28 +20,18 @@ services:
     buildCommand: >
       pnpm install --frozen-lockfile &&
       BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/legado build &&
-      pnpm --filter @workspace/api-server build
+      pnpm --filter @workspace/api-server build &&
+      pnpm --filter @workspace/db migrate
 
     # -----------------------------------------------------------------------
     # Start Command
     #
-    # Runs migrations first, then starts the server.
-    # The server serves both /api/* routes and the React SPA on all other
-    # routes (static files + index.html fallback for client-side routing).
-    #
-    # WHY inline and not "sh artifacts/api-server/start.sh":
-    #   Equivalent to start.sh but written inline for clarity. Both work.
-    #
-    # WHY "pnpm --filter @workspace/db migrate" and NOT "pnpm run migrate":
-    #   The migrate script lives in lib/db/package.json (@workspace/db).
-    #   The root package.json also has a "migrate" script that delegates here,
-    #   so both "pnpm run migrate" and this form work after the last commit.
-    #
-    # WHY "node artifacts/api-server/dist/index.cjs" and NOT "node dist/index.cjs":
-    #   esbuild outputs to artifacts/api-server/dist/index.cjs.
-    #   There is no dist/ folder at the repo root.
+    # Las migraciones se movieron al buildCommand para que corran UNA SOLA VEZ
+    # por deploy, no en cada cold-start (arranque tras inactividad en plan Free).
+    # Esto evita condiciones de carrera si Render despierta el servicio
+    # en múltiples instancias simultáneamente.
     # -----------------------------------------------------------------------
-    startCommand: pnpm --filter @workspace/db migrate && node artifacts/api-server/dist/index.cjs
+    startCommand: node artifacts/api-server/dist/index.cjs
 
     envVars:
       - key: NODE_ENV
@@ -49,15 +39,17 @@ services:
       - key: PORT
         value: 10000
       - key: DATABASE_URL
-        sync: false          # Set this in the Render dashboard (PostgreSQL internal URL)
+        sync: false          # Configura en el dashboard de Render (PostgreSQL internal URL)
       - key: SESSION_SECRET
-        generateValue: true  # Render auto-generates a secure random value
+        generateValue: true  # Render genera automáticamente un valor seguro
       - key: APP_URL
-        sync: false          # e.g. https://almacenando-api.onrender.com (used for CORS)
-      # Optional — only needed if email features are used
+        sync: false          # Ej: https://almacenando-api.onrender.com (usado para CORS)
+      - key: LOG_LEVEL
+        value: info          # Opciones: trace | debug | info | warn | error
+      # Opcional — solo necesario si se usan funciones de email
       - key: RESEND_API_KEY
         sync: false
-      # Optional — only needed if Cloudinary file storage is used
+      # Opcional — solo necesario si se usa almacenamiento de archivos con Cloudinary
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
