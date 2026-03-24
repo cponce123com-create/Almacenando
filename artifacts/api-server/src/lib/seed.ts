@@ -10,7 +10,7 @@ import {
   personnelTable,
   eppMasterTable,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { hashPassword } from "./auth.js";
 import { generateId } from "./id.js";
 import { logger } from "./logger.js";
@@ -65,10 +65,17 @@ const demoEpp = [
 export async function seedWarehouseData() {
   logger.info("Starting warehouse data seed...");
 
+  // -------------------------------------------------------------------------
+  // USERS — idempotent: check existence by email before inserting
+  // -------------------------------------------------------------------------
   const userIds: Record<string, string> = {};
   for (const user of demoUsers) {
     try {
-      const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, user.email)).limit(1);
+      const existing = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.email, user.email))
+        .limit(1);
       if (existing.length > 0) {
         userIds[user.email] = existing[0]!.id;
         continue;
@@ -90,28 +97,61 @@ export async function seedWarehouseData() {
   }
   logger.info({ count: Object.keys(userIds).length }, "Users seeded");
 
+  // Resolve user IDs — if a user already existed, userIds[email] is populated
+  // above. If for any reason it's missing, fall back to a fresh ID so we never
+  // pass undefined as a FK value (which would cause a FK violation).
   const supervisorId = userIds["supervisor@almacen.com"] ?? generateId();
   const operatorId = userIds["operario@almacen.com"] ?? generateId();
   const qualityId = userIds["calidad@almacen.com"] ?? generateId();
 
+  // -------------------------------------------------------------------------
+  // PRODUCTS — idempotent via onConflictDoNothing on the unique `code` column.
+  //
+  // CRITICAL FIX: After the insert attempt we ALWAYS fetch the real ID from
+  // the database. This is the root cause of the FK errors:
+  //
+  //   Old code:  productIds[code] = freshId  ← WRONG when product already
+  //              existed (onConflictDoNothing silently skips the insert, but
+  //              the freshId was never committed — the real row has a
+  //              different ID from a previous seed run).
+  //
+  //   New code:  insert → then SELECT the actual id by code → store that.
+  //              This guarantees productIds[code] always holds the real DB id.
+  // -------------------------------------------------------------------------
   const productIds: Record<string, string> = {};
+
   for (const product of chemicalProducts) {
-    const id = generateId();
     try {
       await db.insert(productsTable).values({
-        id,
+        id: generateId(),
         ...product,
         status: "active",
       }).onConflictDoNothing();
-      productIds[product.code] = id;
     } catch (err) {
       logger.warn({ code: product.code, err }, "Could not insert product");
     }
   }
+
+  // Fetch actual IDs from DB for ALL products (covers both new inserts and
+  // pre-existing rows from a previous seed run).
+  const codes = chemicalProducts.map((p) => p.code);
+  const dbProducts = await db
+    .select({ id: productsTable.id, code: productsTable.code })
+    .from(productsTable)
+    .where(inArray(productsTable.code, codes));
+
+  for (const row of dbProducts) {
+    productIds[row.code] = row.id;
+  }
+
   logger.info({ count: Object.keys(productIds).length }, "Products seeded");
 
   const today = new Date().toISOString().split("T")[0]!;
 
+  // -------------------------------------------------------------------------
+  // INVENTORY RECORDS — idempotent: skip if a record for this product+date
+  // already exists (no unique constraint on the table, so we guard manually).
+  // -------------------------------------------------------------------------
   const inventorySamples = [
     { productCode: "PROD-001", prev: "200", inputs: "100", outputs: "80" },
     { productCode: "PROD-002", prev: "500", inputs: "200", outputs: "150" },
@@ -124,11 +164,23 @@ export async function seedWarehouseData() {
     { productCode: "PROD-012", prev: "160", inputs: "60", outputs: "50" },
     { productCode: "PROD-015", prev: "75", inputs: "40", outputs: "25" },
   ];
+
   for (const inv of inventorySamples) {
     const pId = productIds[inv.productCode];
-    if (!pId) continue;
-    const finalBal = String(parseFloat(inv.prev) + parseFloat(inv.inputs) - parseFloat(inv.outputs));
+    if (!pId) {
+      logger.warn({ productCode: inv.productCode }, "Skipping inventory record — product not found in DB");
+      continue;
+    }
     try {
+      // Guard: skip if a seed record already exists for this product on today
+      const existing = await db
+        .select({ id: inventoryRecordsTable.id })
+        .from(inventoryRecordsTable)
+        .where(eq(inventoryRecordsTable.productId, pId))
+        .limit(1);
+      if (existing.length > 0) continue;
+
+      const finalBal = String(parseFloat(inv.prev) + parseFloat(inv.inputs) - parseFloat(inv.outputs));
       await db.insert(inventoryRecordsTable).values({
         id: generateId(),
         productId: pId,
@@ -146,15 +198,29 @@ export async function seedWarehouseData() {
   }
   logger.info({ count: inventorySamples.length }, "Inventory records seeded");
 
+  // -------------------------------------------------------------------------
+  // IMMOBILIZED PRODUCTS — idempotent: skip if product already has a record
+  // -------------------------------------------------------------------------
   const immobilizedData = [
     { productCode: "PROD-006", qty: "15", reason: "Contaminación por humedad durante transporte" },
     { productCode: "PROD-011", qty: "10", reason: "Certificado de calidad vencido" },
     { productCode: "PROD-017", qty: "3", reason: "Sospechas de adulteración - en investigación" },
   ];
+
   for (const item of immobilizedData) {
     const pId = productIds[item.productCode];
-    if (!pId) continue;
+    if (!pId) {
+      logger.warn({ productCode: item.productCode }, "Skipping immobilized record — product not found in DB");
+      continue;
+    }
     try {
+      const existing = await db
+        .select({ id: immobilizedProductsTable.id })
+        .from(immobilizedProductsTable)
+        .where(eq(immobilizedProductsTable.productId, pId))
+        .limit(1);
+      if (existing.length > 0) continue;
+
       await db.insert(immobilizedProductsTable).values({
         id: generateId(),
         productId: pId,
@@ -170,15 +236,22 @@ export async function seedWarehouseData() {
   }
   logger.info({ count: immobilizedData.length }, "Immobilized products seeded");
 
+  // -------------------------------------------------------------------------
+  // SAMPLES — idempotent via onConflictDoNothing on unique `sample_code`
+  // -------------------------------------------------------------------------
   const samplesData = [
     { productCode: "PROD-001", code: "MUEST-001", qty: "0.5", purpose: "Control de calidad rutinario", destination: "Lab. Externo ABC" },
     { productCode: "PROD-005", code: "MUEST-002", qty: "0.3", purpose: "Verificación de concentración", destination: "Lab. Interno" },
     { productCode: "PROD-007", code: "MUEST-003", qty: "1.0", purpose: "Análisis de estabilidad", destination: "Lab. Externo XYZ" },
     { productCode: "PROD-009", code: "MUEST-004", qty: "5.0", purpose: "Ensayo de pureza", destination: "Lab. Certificado INDECOPI" },
   ];
+
   for (const s of samplesData) {
     const pId = productIds[s.productCode];
-    if (!pId) continue;
+    if (!pId) {
+      logger.warn({ sampleCode: s.code }, "Skipping sample — product not found in DB");
+      continue;
+    }
     try {
       await db.insert(samplesTable).values({
         id: generateId(),
@@ -191,26 +264,41 @@ export async function seedWarehouseData() {
         destination: s.destination,
         status: "pending",
         takenBy: qualityId,
-      });
+      }).onConflictDoNothing(); // unique constraint on sample_code
     } catch (err) {
       logger.warn({ code: s.code, err }, "Could not insert sample");
     }
   }
   logger.info({ count: samplesData.length }, "Samples seeded");
 
+  // -------------------------------------------------------------------------
+  // DYE LOTS — idempotent: skip if a lot with the same lot number exists
+  // -------------------------------------------------------------------------
   const expDate = new Date();
   expDate.setFullYear(expDate.getFullYear() + 2);
   const expDateStr = expDate.toISOString().split("T")[0]!;
+
   const dyeLotsData = [
     { productCode: "PROD-001", lot: "LOT-2024-001", qty: "200", supplier: "QuimPeru SAC", cert: "CERT-QP-001" },
     { productCode: "PROD-002", lot: "LOT-2024-002", qty: "500", supplier: "QuimPeru SAC", cert: "CERT-QP-002" },
     { productCode: "PROD-010", lot: "LOT-2024-003", qty: "50", supplier: "ReacLab SRL", cert: "CERT-RL-001" },
     { productCode: "PROD-015", lot: "LOT-2024-004", qty: "75", supplier: "QuimPeru SAC", cert: "CERT-QP-003" },
   ];
+
   for (const dl of dyeLotsData) {
     const pId = productIds[dl.productCode];
-    if (!pId) continue;
+    if (!pId) {
+      logger.warn({ lot: dl.lot }, "Skipping dye lot — product not found in DB");
+      continue;
+    }
     try {
+      const existing = await db
+        .select({ id: dyeLotsTable.id })
+        .from(dyeLotsTable)
+        .where(eq(dyeLotsTable.lotNumber, dl.lot))
+        .limit(1);
+      if (existing.length > 0) continue;
+
       await db.insert(dyeLotsTable).values({
         id: generateId(),
         productId: pId,
@@ -231,15 +319,29 @@ export async function seedWarehouseData() {
   }
   logger.info({ count: dyeLotsData.length }, "Dye lots seeded");
 
+  // -------------------------------------------------------------------------
+  // FINAL DISPOSITION — idempotent: skip if manifest number already exists
+  // -------------------------------------------------------------------------
   const dispositionData = [
     { productCode: "PROD-008", qty: "5", type: "Incineración", contractor: "EcoTreat SAC", manifest: "MAN-2024-001" },
     { productCode: "PROD-014", qty: "8", type: "Reciclaje", contractor: "ChemRecycle Perú", manifest: "MAN-2024-002" },
     { productCode: "PROD-020", qty: "3", type: "Tratamiento fisicoquímico", contractor: "AquaChem SAC", manifest: "MAN-2024-003" },
   ];
+
   for (const d of dispositionData) {
     const pId = productIds[d.productCode];
-    if (!pId) continue;
+    if (!pId) {
+      logger.warn({ manifest: d.manifest }, "Skipping disposition — product not found in DB");
+      continue;
+    }
     try {
+      const existing = await db
+        .select({ id: finalDispositionTable.id })
+        .from(finalDispositionTable)
+        .where(eq(finalDispositionTable.manifestNumber, d.manifest))
+        .limit(1);
+      if (existing.length > 0) continue;
+
       await db.insert(finalDispositionTable).values({
         id: generateId(),
         productId: pId,
@@ -259,6 +361,9 @@ export async function seedWarehouseData() {
   }
   logger.info({ count: dispositionData.length }, "Final dispositions seeded");
 
+  // -------------------------------------------------------------------------
+  // PERSONNEL — idempotent via onConflictDoNothing on unique `employee_id`
+  // -------------------------------------------------------------------------
   for (const p of demoPersonnel) {
     try {
       await db.insert(personnelTable).values({
@@ -272,6 +377,9 @@ export async function seedWarehouseData() {
   }
   logger.info({ count: demoPersonnel.length }, "Personnel seeded");
 
+  // -------------------------------------------------------------------------
+  // EPP CATALOG — idempotent via onConflictDoNothing on unique `code`
+  // -------------------------------------------------------------------------
   for (const epp of demoEpp) {
     try {
       await db.insert(eppMasterTable).values({

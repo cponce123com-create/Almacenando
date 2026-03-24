@@ -5,29 +5,42 @@ services:
     region: oregon
     plan: free
 
-    # ---------------------------------------------------------------
-    # Build: install deps + compile server with esbuild
-    # Output: artifacts/api-server/dist/index.cjs
-    # ---------------------------------------------------------------
-    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server build
+    # -----------------------------------------------------------------------
+    # Build Command
+    #
+    # Builds BOTH the frontend (legado) and the backend (api-server).
+    # The backend (app.ts) serves the frontend static files from:
+    #   artifacts/legado/dist/public/
+    # which is produced by the legado build step.
+    #
+    # BASE_PATH=/ ensures Vite builds the frontend with "/" as the base URL
+    # (not the default "/legado/"), so all asset paths are correct when
+    # served from the root of the Render domain.
+    # -----------------------------------------------------------------------
+    buildCommand: >
+      pnpm install --frozen-lockfile &&
+      BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/legado build &&
+      pnpm --filter @workspace/api-server build
 
-    # ---------------------------------------------------------------
-    # Start: run migrations first, then start the server.
+    # -----------------------------------------------------------------------
+    # Start Command
+    #
+    # Runs migrations first, then starts the server.
+    # The server serves both /api/* routes and the React SPA on all other
+    # routes (static files + index.html fallback for client-side routing).
     #
     # WHY inline and not "sh artifacts/api-server/start.sh":
-    #   Render executes startCommand from the repo root. The script
-    #   is equivalent to start.sh but written inline to avoid any
-    #   shell path resolution issues on Render's runner.
+    #   Equivalent to start.sh but written inline for clarity. Both work.
     #
     # WHY "pnpm --filter @workspace/db migrate" and NOT "pnpm run migrate":
-    #   The root package.json has NO "migrate" script. The script lives
-    #   in lib/db/package.json under @workspace/db. The --filter flag
-    #   targets that specific workspace package.
+    #   The migrate script lives in lib/db/package.json (@workspace/db).
+    #   The root package.json also has a "migrate" script that delegates here,
+    #   so both "pnpm run migrate" and this form work after the last commit.
     #
     # WHY "node artifacts/api-server/dist/index.cjs" and NOT "node dist/index.cjs":
     #   esbuild outputs to artifacts/api-server/dist/index.cjs.
     #   There is no dist/ folder at the repo root.
-    # ---------------------------------------------------------------
+    # -----------------------------------------------------------------------
     startCommand: pnpm --filter @workspace/db migrate && node artifacts/api-server/dist/index.cjs
 
     envVars:
@@ -36,11 +49,11 @@ services:
       - key: PORT
         value: 10000
       - key: DATABASE_URL
-        sync: false          # Set this in the Render dashboard
+        sync: false          # Set this in the Render dashboard (PostgreSQL internal URL)
       - key: SESSION_SECRET
         generateValue: true  # Render auto-generates a secure random value
       - key: APP_URL
-        sync: false          # e.g. https://almacenando-api.onrender.com
+        sync: false          # e.g. https://almacenando-api.onrender.com (used for CORS)
       # Optional — only needed if email features are used
       - key: RESEND_API_KEY
         sync: false
