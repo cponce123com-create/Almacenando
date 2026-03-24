@@ -16,8 +16,10 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, async () => {
+app.listen(port, () => {
   logger.info({ port }, "Almacén Químico API - Server listening");
   console.log(`✓ API Server running on port ${port}`);
-  await seedWarehouseData();
+  seedWarehouseData().catch((err) => {
+    logger.warn({ err }, "Seed data could not be applied — server will continue running");
+  });
 });

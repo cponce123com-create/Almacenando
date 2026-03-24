@@ -11,10 +11,11 @@ if (!process.env.DATABASE_URL) {
 }
 
 const isNeon = process.env.DATABASE_URL.includes("neon.tech");
+const isProduction = process.env.NODE_ENV === "production";
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: isNeon ? { rejectUnauthorized: false } : undefined,
+  ssl: isNeon || isProduction ? { rejectUnauthorized: false } : undefined,
 });
 
 export const db = drizzle(pool, { schema });
