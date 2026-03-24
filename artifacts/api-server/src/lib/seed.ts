@@ -10,7 +10,7 @@ import {
   personnelTable,
   eppMasterTable,
 } from "@workspace/db";
-import { count, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { hashPassword } from "./auth.js";
 import { generateId } from "./id.js";
 import { logger } from "./logger.js";
