@@ -1,0 +1,83 @@
+PROMPT 3 — INVENTARIO REAL (TU CASO REAL)
+Implement an inventory tracking system based on real warehouse usage.
+
+Requirements:
+1. Add "Cuadre de Inventario":
+   - Select product
+   - Enter physical count
+   - Compare with system stock
+   - Show difference
+
+2. Save each inventory record with:
+   - Date
+   - User
+   - Product
+   - Difference
+
+3. Add history of inventory checks
+
+4. Add dashboard indicators:
+   - Products pending reconciliation
+   - Products with differences
+
+Make it usable for daily warehouse operations.
+🔥 PROMPT 4 — PRODUCTOS INMOVILIZADOS (CLAVE EN TU TRABAJO)
+Implement "Productos Inmovilizados" module.
+
+Requirements:
+1. Allow marking a product as immobilized
+2. Add manual location field (important)
+3. Add reason for immobilization
+4. Show list of immobilized products
+5. Prevent these products from normal usage
+
+Make it clearly visible in UI.
+🔥 PROMPT 5 — MUESTRAS Y DISPOSICIÓN FINAL
+Implement two modules:
+
+1. "Muestras":
+   - Register samples
+   - Product linked
+   - Quantity
+   - Date
+   - Purpose
+
+2. "Disposición Final":
+   - Products marked for disposal
+   - Quantity
+   - Reason
+   - Status (pending / completed)
+
+Ensure both modules store and display real data.
+🔥 PROMPT 6 — EPP (TU IDEA ORIGINAL)
+Implement EPP (personal protective equipment) control system.
+
+Requirements:
+1. Register EPP items
+2. Assign EPP to personnel
+3. Track usage and expiration
+4. Alerts for missing or expired EPP
+5. Link with personnel module
+
+Make it simple and practical for warehouse use.
+🔥 PROMPT 7 — ARREGLAR TODO EL SISTEMA (EL MÁS IMPORTANTE)
+
+Este es el que debes usar si quieres que TODO funcione:
+
+This app has UI but lacks real functionality.
+
+Convert it into a fully working warehouse management system.
+
+Tasks:
+1. Replace all placeholder modules with real CRUD functionality
+2. Ensure frontend is connected to backend API
+3. Implement persistent storage (database or temporary JSON storage)
+4. Fix all routes and API endpoints
+5. Make data flow correctly across modules
+6. Ensure all modules (products, inventory, samples, immobilized, disposal, EPP) work together
+7. Keep the current UI but make it functional
+
+At the end, explain:
+- What was missing
+- What you implemented
+- How to use the system step by step
