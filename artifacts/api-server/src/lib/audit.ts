@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { auditLogsTable } from "@workspace/db";
 import { generateId } from "./id.js";
+import { logger } from "./logger.js";
 
 export type AuditAction =
   | "create"
@@ -39,6 +40,8 @@ export async function writeAuditLog({
       ipAddress: ipAddress ?? null,
     });
   } catch (err) {
-    console.error("[audit] Failed to write audit log:", err);
+    // Usamos logger en lugar de console.error para que el error
+    // aparezca correctamente en los logs estructurados de Render/Pino.
+    logger.error({ err }, "[audit] Failed to write audit log");
   }
 }
