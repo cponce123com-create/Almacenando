@@ -163,6 +163,26 @@ router.get("/compatibility", requireAuth, async (req, res) => {
   });
 });
 
+// NOTE: /template MUST be declared before /:id.
+// Express matches routes in registration order, so if /:id appears first,
+// GET /template would be captured with id="template" and return 404.
+router.get("/template", requireAuth, (_req, res) => {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ["Nombre Colorante", "Lote Uso", "Lote Nuevo", "Fecha V°B°", "Comentarios"],
+    ["Azul Naval", "L-2023-001", "L-2024-010", "15/01/2024", "CONFORME"],
+    ["Rojo Brillante", "L-2023-045", "L-2024-022", "20/01/2024", "CONFORME NO MEZCLAR"],
+    ["Negro Carbon", "L-2022-099", "L-2024-033", "25/01/2024", "NO CONFORME"],
+  ]);
+  ws["!cols"] = [{ wch: 25 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 35 }];
+  XLSX.utils.book_append_sheet(wb, ws, "Control de Lotes");
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Disposition", 'attachment; filename="plantilla_control_lotes.xlsx"');
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Length", buf.length);
+  res.send(buf);
+});
+
 router.get("/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
   const records = await db
@@ -248,22 +268,6 @@ router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (re
     return;
   }
   res.json({ message: "Evaluación desactivada", record: deactivated });
-});
-
-router.get("/template", requireAuth, (_req, res) => {
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet([
-    ["Nombre Colorante", "Lote Uso", "Lote Nuevo", "Fecha V°B°", "Comentarios"],
-    ["Azul Naval", "L-2023-001", "L-2024-010", "15/01/2024", "CONFORME"],
-    ["Rojo Brillante", "L-2023-045", "L-2024-022", "20/01/2024", "CONFORME NO MEZCLAR"],
-    ["Negro Carbon", "L-2022-099", "L-2024-033", "25/01/2024", "NO CONFORME"],
-  ]);
-  ws["!cols"] = [{ wch: 25 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 35 }];
-  XLSX.utils.book_append_sheet(wb, ws, "Control de Lotes");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-  res.setHeader("Content-Disposition", 'attachment; filename="plantilla_control_lotes.xlsx"');
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.send(buf);
 });
 
 router.post(

@@ -191,22 +191,67 @@ export default function LotEvaluationsPage() {
     }
   }
 
-  function downloadTemplate() {
+  async function downloadTemplate() {
     const token = sessionStorage.getItem("almacen_token");
     const url = `${API_BASE}/api/lot-evaluations/template`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "plantilla_control_lotes.xlsx";
-    document.head.appendChild(a);
-    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
-      .then(r => r.blob())
-      .then(blob => {
-        a.href = URL.createObjectURL(blob);
-        a.click();
-        URL.revokeObjectURL(a.href);
-        a.remove();
-      })
-      .catch(() => toast({ title: "Error", description: "No se pudo descargar la plantilla", variant: "destructive" }));
+    try {
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      // Guard 1: HTTP error status (e.g. 404 when route was shadowed by /:id)
+      if (!res.ok) {
+        let detail = `Error ${res.status}`;
+        try {
+          const body = await res.json();
+          detail = body?.error ?? detail;
+        } catch { /* response was not JSON */ }
+        toast({
+          title: "No se pudo descargar la plantilla",
+          description: detail,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Guard 2: wrong Content-Type (e.g. backend returned JSON or HTML instead of xlsx)
+      const ct = res.headers.get("Content-Type") ?? "";
+      if (!ct.includes("spreadsheetml") && !ct.includes("octet-stream")) {
+        toast({
+          title: "Respuesta inesperada del servidor",
+          description: `Se esperaba un archivo Excel pero el servidor devolvió: ${ct || "tipo desconocido"}`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Guard 3: empty body
+      const blob = await res.blob();
+      if (blob.size === 0) {
+        toast({
+          title: "Archivo vacío",
+          description: "El servidor devolvió un archivo vacío. Intenta de nuevo.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // All guards passed — trigger download
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = "plantilla_control_lotes.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast({
+        title: "Error de red",
+        description: err instanceof Error ? err.message : "No se pudo descargar la plantilla",
+        variant: "destructive",
+      });
+    }
   }
 
   const { data: records = [], isLoading } = useQuery<LotEvaluation[]>({
