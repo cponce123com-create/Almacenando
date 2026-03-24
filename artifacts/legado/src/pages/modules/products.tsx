@@ -432,12 +432,18 @@ function ProductForm({ initial, onSubmit, onCancel, isLoading, isEdit }: Product
 
       <div className="space-y-1.5">
         <Label>Clase de Peligro</Label>
-        <Select value={form.hazardClass ?? ""} onValueChange={v => set("hazardClass", v)}>
+        {/* IMPORTANT: Radix Select v2+ throws if any <SelectItem> has value="".
+            We use the sentinel value "none" to represent "no hazard class"
+            and convert it back to "" / null when reading/writing the form. */}
+        <Select
+          value={form.hazardClass || "none"}
+          onValueChange={v => set("hazardClass", v === "none" ? "" : v)}
+        >
           <SelectTrigger>
             <SelectValue placeholder="Sin clase asignada" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Sin clase asignada</SelectItem>
+            <SelectItem value="none">Sin clase asignada</SelectItem>
             {HAZARD_CLASSES.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
           </SelectContent>
         </Select>
