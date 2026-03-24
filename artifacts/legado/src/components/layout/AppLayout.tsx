@@ -20,6 +20,7 @@ import {
   FlaskConical,
   CalendarDays,
   User,
+  Microscope,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export const modules = [
   { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle, short: "Inmovilizados" },
   { name: "Muestras", href: "/samples", icon: TestTube, short: "Muestras" },
   { name: "Lotes / Tinturas", href: "/dye-lots", icon: Layers, short: "Lotes" },
+  { name: "Control de Lotes", href: "/lot-evaluations", icon: Microscope, short: "Control" },
   { name: "Disposición Final", href: "/disposition", icon: Recycle, short: "Disposición" },
   { name: "Documentos", href: "/documents", icon: FileText, short: "Docs" },
   { name: "EPP", href: "/epp", icon: Shield, short: "EPP" },

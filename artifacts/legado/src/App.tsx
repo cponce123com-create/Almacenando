@@ -20,6 +20,7 @@ import EppPage from "@/pages/modules/epp";
 import PersonnelPage from "@/pages/modules/personnel";
 import ReportsPage from "@/pages/modules/reports";
 import AdminUsersPage from "@/pages/modules/admin-users";
+import LotEvaluationsPage from "@/pages/modules/lot-evaluations";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -87,6 +88,7 @@ function Router() {
       <Route path="/personnel"><ProtectedRoute component={PersonnelPage} /></Route>
       <Route path="/reports"><ProtectedRoute component={ReportsPage} /></Route>
       <Route path="/admin-users"><ProtectedRoute component={AdminUsersPage} /></Route>
+      <Route path="/lot-evaluations"><ProtectedRoute component={LotEvaluationsPage} /></Route>
 
       <Route component={NotFound} />
     </Switch>

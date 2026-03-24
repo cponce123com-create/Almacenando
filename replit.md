@@ -57,9 +57,9 @@ All use password: `Almacen2024!`
 
 ## Database Schema
 
-Tables: `users`, `products`, `inventory_records`, `immobilized_products`, `samples`, `dye_lots`, `final_disposition`, `documents`, `personnel`, `epp_master`, `epp_deliveries`, `epp_checklists`, `audit_logs`
+Tables: `users`, `products`, `inventory_records`, `immobilized_products`, `samples`, `dye_lots`, `final_disposition`, `documents`, `personnel`, `epp_master`, `epp_deliveries`, `epp_checklists`, `audit_logs`, `lot_evaluations`
 
-## Modules (12 total)
+## Modules (13 total)
 
 1. **Dashboard** — Overview, quick stats, module grid
 2. **Maestro de Productos** — Chemical product catalog (code, CAS, category, location, storage)
@@ -67,12 +67,13 @@ Tables: `users`, `products`, `inventory_records`, `immobilized_products`, `sampl
 4. **Productos Inmovilizados** — Products blocked from use with reason and release workflow
 5. **Muestras** — Sample tracking for lab analysis
 6. **Lotes / Tinturas** — Lot/batch management with quality approval
-7. **Disposición Final** — Waste disposal records with contractor and manifests
-8. **Documentos** — Safety documents and certificates
-9. **EPP** — Personal protective equipment catalog, deliveries, and checklists
-10. **Personal** — Personnel directory
-11. **Reportes** — Summary reports and stats
-12. **Administración** — User management (admin only)
+7. **Control de Lotes** — Lab lot evaluation module: register evaluations (colorant, usage lot, new lot, approval date, comments), auto-interpret status (CONFORME / CONFORME NO MEZCLAR / NO CONFORME / FALTA ETIQUETAR / OBSERVACION / REVISAR), view chronological history per colorant, and query compatibility between lots
+8. **Disposición Final** — Waste disposal records with contractor and manifests
+9. **Documentos** — Safety documents and certificates
+10. **EPP** — Personal protective equipment catalog, deliveries, and checklists
+11. **Personal** — Personnel directory
+12. **Reportes** — Summary reports and stats
+13. **Administración** — User management (admin only)
 
 ## API Routes
 

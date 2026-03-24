@@ -12,6 +12,7 @@ import eppRouter from "./epp";
 import personnelRouter from "./personnel";
 import reportsRouter from "./reports";
 import adminUsersRouter from "./admin-users";
+import lotEvaluationsRouter from "./lot-evaluations";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use("/epp", eppRouter);
 router.use("/personnel", personnelRouter);
 router.use("/reports", reportsRouter);
 router.use("/admin/users", adminUsersRouter);
+router.use("/lot-evaluations", lotEvaluationsRouter);
 
 export default router;
