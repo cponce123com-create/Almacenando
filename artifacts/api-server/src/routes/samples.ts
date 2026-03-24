@@ -9,7 +9,9 @@ import { z } from "zod";
 const router = Router();
 
 const sampleSchema = z.object({
-  productId: z.string().min(1),
+  productId: z.string().optional().nullable(),
+  productName: z.string().optional(),
+  supplier: z.string().optional(),
   sampleCode: z.string().min(1),
   quantity: z.string().min(1),
   unit: z.string().min(1),
@@ -30,10 +32,7 @@ router.get("/", requireAuth, async (_req, res) => {
 router.get("/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
   const records = await db.select().from(samplesTable).where(eq(samplesTable.id, id as string)).limit(1);
-  if (records.length === 0) {
-    res.status(404).json({ error: "Muestra no encontrada" });
-    return;
-  }
+  if (records.length === 0) { res.status(404).json({ error: "Muestra no encontrada" }); return; }
   res.json(records[0]);
 });
 
@@ -44,10 +43,18 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "ope
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
     return;
   }
+  const { productId, productName, supplier, ...rest } = parsed.data;
+  if (!productName && !productId) {
+    res.status(400).json({ error: "Debe indicar un nombre de producto" });
+    return;
+  }
   const id = generateId();
   const [created] = await db.insert(samplesTable).values({
     id,
-    ...parsed.data,
+    productId: productId || null,
+    productName: productName || null,
+    supplier: supplier || null,
+    ...rest,
     takenBy: authedReq.userId,
   }).returning();
   res.status(201).json(created);
@@ -60,21 +67,17 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), a
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
     return;
   }
-  const [updated] = await db.update(samplesTable).set({ ...parsed.data, updatedAt: new Date() }).where(eq(samplesTable.id, id as string)).returning();
-  if (!updated) {
-    res.status(404).json({ error: "Muestra no encontrada" });
-    return;
-  }
+  const [updated] = await db.update(samplesTable)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(eq(samplesTable.id, id as string)).returning();
+  if (!updated) { res.status(404).json({ error: "Muestra no encontrada" }); return; }
   res.json(updated);
 });
 
 router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
   const { id } = req.params;
   const [deleted] = await db.delete(samplesTable).where(eq(samplesTable.id, id as string)).returning();
-  if (!deleted) {
-    res.status(404).json({ error: "Muestra no encontrada" });
-    return;
-  }
+  if (!deleted) { res.status(404).json({ error: "Muestra no encontrada" }); return; }
   res.json({ message: "Muestra eliminada" });
 });
 

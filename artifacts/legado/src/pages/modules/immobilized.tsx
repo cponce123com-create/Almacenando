@@ -11,7 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Lock, Plus, Loader2, AlertCircle, Unlock, Trash2 } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Lock, Plus, Loader2, AlertCircle, Unlock, Trash2, ChevronsUpDown, Check } from "lucide-react";
 
 interface Product { id: string; code: string; name: string; unit: string; }
 interface ImmobilizedRecord {
@@ -38,6 +40,63 @@ const REASONS = [
   "Calidad no conforme", "Vencimiento próximo", "Contaminación sospechada",
   "Investigación en curso", "Daño en envase", "Cuarentena preventiva", "Otro",
 ];
+
+function ProductSearchCombobox({
+  products, value, onChange,
+}: {
+  products: Product[]; value: string; onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    if (!q) return products.slice(0, 40);
+    return products.filter(p =>
+      p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)
+    ).slice(0, 40);
+  }, [products, query]);
+
+  const selected = products.find(p => p.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" aria-expanded={open}
+          className="w-full justify-between font-normal h-9 text-sm">
+          {selected ? (
+            <span className="truncate">{selected.code} — {selected.name}</span>
+          ) : (
+            <span className="text-slate-400">Buscar producto por nombre o código...</span>
+          )}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Buscar por código o nombre..."
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            <CommandEmpty>No se encontraron productos</CommandEmpty>
+            <CommandGroup>
+              {filtered.map(p => (
+                <CommandItem key={p.id} value={p.id} onSelect={() => { onChange(p.id); setOpen(false); setQuery(""); }}>
+                  <Check className={`mr-2 h-4 w-4 ${value === p.id ? "opacity-100" : "opacity-0"}`} />
+                  <span className="font-mono text-xs text-slate-500 mr-2">{p.code}</span>
+                  <span className="truncate">{p.name}</span>
+                  <span className="ml-auto text-xs text-slate-400">{p.unit}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function ProductosInmovilizadosPage() {
   const { user } = useAuth();
@@ -242,12 +301,11 @@ export default function ProductosInmovilizadosPage() {
             <form onSubmit={e => { e.preventDefault(); createMutation.mutate(form); }} className="space-y-4">
               <div className="space-y-1.5">
                 <Label>Producto *</Label>
-                <Select value={form.productId} onValueChange={v => set("productId", v)}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar producto" /></SelectTrigger>
-                  <SelectContent>
-                    {products.map(p => <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <ProductSearchCombobox
+                  products={products}
+                  value={form.productId}
+                  onChange={v => set("productId", v)}
+                />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">

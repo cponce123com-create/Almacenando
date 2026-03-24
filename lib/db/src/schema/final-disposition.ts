@@ -6,7 +6,8 @@ import { usersTable } from "./users";
 
 export const finalDispositionTable = pgTable("final_disposition", {
   id: text("id").primaryKey(),
-  productId: text("product_id").notNull().references(() => productsTable.id),
+  productId: text("product_id").references(() => productsTable.id),
+  productNameManual: text("product_name_manual"),
   quantity: numeric("quantity").notNull(),
   unit: text("unit").notNull(),
   dispositionType: text("disposition_type").notNull(),

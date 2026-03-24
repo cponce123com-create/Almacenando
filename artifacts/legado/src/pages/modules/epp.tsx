@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Shield, Plus, Loader2, AlertCircle, Pencil, Trash2, Package, Users } from "lucide-react";
+import { Shield, Plus, Loader2, AlertCircle, Pencil, Trash2, Package, Users, Bell } from "lucide-react";
 
 interface EppItem {
   id: string; code: string; name: string; category: string;
@@ -38,7 +38,7 @@ const EPP_CATEGORIES = [
   "Protección de pies", "Protección corporal", "Protección auditiva", "Otro",
 ];
 
-type ActiveTab = "catalog" | "deliveries";
+type ActiveTab = "catalog" | "deliveries" | "alerts";
 
 export default function EquiposdeProtecciónPersonalPage() {
   const { user } = useAuth();
@@ -74,6 +74,9 @@ export default function EquiposdeProtecciónPersonalPage() {
   });
   const { data: personnel = [] } = useQuery<Personnel[]>({
     queryKey: ["/api/personnel"], queryFn: () => api("/api/personnel"),
+  });
+  const { data: eppAlerts = [] } = useQuery<Record<string, unknown>[]>({
+    queryKey: ["/api/reports/epp-alerts"], queryFn: () => api("/api/reports/epp-alerts"),
   });
 
   const eppMap = useMemo(() => Object.fromEntries(eppItems.map(e => [e.id, e])), [eppItems]);
@@ -248,11 +251,14 @@ export default function EquiposdeProtecciónPersonalPage() {
           ))}
         </div>
 
-        {pendingAlerts > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
+        {eppAlerts.length > 0 && tab !== "alerts" && (
+          <div
+            className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3 cursor-pointer hover:bg-red-100/60 transition-colors"
+            onClick={() => setTab("alerts")}
+          >
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
             <p className="text-sm text-red-700 font-medium">
-              {pendingAlerts} equipo(s) han superado su período de reemplazo y requieren atención.
+              {eppAlerts.length} equipo(s) próximos a su período de reemplazo — haga clic para ver alertas.
             </p>
           </div>
         )}
@@ -267,6 +273,16 @@ export default function EquiposdeProtecciónPersonalPage() {
             onClick={() => setTab("deliveries")}
             className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${tab === "deliveries" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
             <Users className="w-4 h-4" /> Entregas
+          </button>
+          <button
+            onClick={() => setTab("alerts")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${tab === "alerts" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+            <Bell className="w-4 h-4" /> Alertas
+            {eppAlerts.length > 0 && (
+              <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">
+                {eppAlerts.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -424,6 +440,58 @@ export default function EquiposdeProtecciónPersonalPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-xs text-slate-500">{d.notes ?? "—"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "alerts" && (
+          <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+            {eppAlerts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
+                <Bell className="w-10 h-10" />
+                <p className="text-sm font-medium">No hay alertas de reemplazo en este momento</p>
+                <p className="text-xs text-slate-400">Los EPP con reposición en los próximos 30 días aparecerán aquí</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50">
+                      <TableHead className="font-semibold text-slate-600">EPP</TableHead>
+                      <TableHead className="font-semibold text-slate-600">Personal</TableHead>
+                      <TableHead className="font-semibold text-slate-600 w-28">Última Entrega</TableHead>
+                      <TableHead className="font-semibold text-slate-600 w-32">Próx. Reposición</TableHead>
+                      <TableHead className="font-semibold text-slate-600 text-right w-24">Días Restantes</TableHead>
+                      <TableHead className="font-semibold text-slate-600 w-24">Urgencia</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {eppAlerts.map((r, i) => {
+                      const days = r.daysUntilReplacement as number;
+                      const level = r.alertLevel as string;
+                      return (
+                        <TableRow key={i} className={level === "overdue" ? "bg-red-50/40" : level === "due" ? "bg-orange-50/30" : "bg-amber-50/20"}>
+                          <TableCell>
+                            <p className="font-medium text-slate-900 text-sm">{r.eppName as string}</p>
+                            <p className="text-xs text-slate-400">{r.eppCode as string}</p>
+                          </TableCell>
+                          <TableCell className="text-sm text-slate-700">{r.personnelName as string}</TableCell>
+                          <TableCell className="text-sm text-slate-500">{r.deliveryDate as string}</TableCell>
+                          <TableCell className="text-sm font-medium text-slate-800">{r.nextReplacementDate as string}</TableCell>
+                          <TableCell className={`text-right font-mono text-sm font-bold ${days < 0 ? "text-red-600" : days <= 15 ? "text-orange-600" : "text-amber-600"}`}>
+                            {days < 0 ? `+${Math.abs(days)} venc.` : `${days} días`}
+                          </TableCell>
+                          <TableCell>
+                            {level === "overdue" && <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100 text-xs">Vencido</Badge>}
+                            {level === "due" && <Badge className="bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-100 text-xs">Urgente</Badge>}
+                            {level === "soon" && <Badge className="bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100 text-xs">Próximo</Badge>}
+                          </TableCell>
                         </TableRow>
                       );
                     })}

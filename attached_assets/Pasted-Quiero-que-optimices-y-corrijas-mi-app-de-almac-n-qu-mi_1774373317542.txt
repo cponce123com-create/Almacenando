@@ -1,0 +1,93 @@
+Quiero que optimices y corrijas mi app de almacén químico sin romper el diseño actual.
+
+Aplica estos cambios funcionales:
+
+1. Maestro de Productos
+- Revisar el botón "Eliminar producto".
+- Actualmente algunos productos se pueden eliminar y otros no.
+- Quiero que analices por qué ocurre eso.
+- Si existen restricciones por relaciones de datos, no ocultes el problema: muestra un mensaje claro indicando por qué no se puede eliminar.
+- Si no hay una razón válida, corrige el error para que sí permita eliminar.
+- Si un producto está relacionado con otros módulos (inventario, inmovilizados, muestras, disposición final, etc.), implementar mejor una eliminación lógica o estado "inactivo" en vez de borrado físico.
+- Explica al final qué criterio usaste.
+
+2. Productos Inmovilizados
+- Al registrar inmovilización, no quiero un listado desplegable largo.
+- Reemplázalo por un campo de búsqueda tipo autocomplete / searchable select.
+- Debe permitir escribir una palabra, filtrar productos y seleccionar el correcto fácilmente.
+- Debe poder buscar por nombre y por código.
+
+3. Muestras
+- Al registrar nueva muestra, no quiero un listado de productos de la maestra.
+- Las muestras generalmente son productos nuevos que todavía no existen en inventario.
+- Cambia ese campo por un campo de texto libre para escribir el nombre del producto.
+- Agrega también un nuevo campo de texto para "Proveedor".
+- Mantén la posibilidad de guardar la muestra aunque ese producto no exista en la maestra.
+
+4. Disposición Final
+- Reemplazar el listado desplegable actual por un campo de búsqueda tipo autocomplete.
+- Debe permitir seleccionar un producto existente de la maestra.
+- Si no se encuentra, debe permitir escribir un nombre nuevo manualmente.
+- Esto es importante porque productos de disposición final también pueden ser muestras o productos no registrados aún.
+- Guardar claramente si el registro proviene de un producto existente o fue ingresado manualmente.
+
+5. Documentos
+- Implementar subida de archivos.
+- Quiero poder subir documentos y tenerlos disponibles en el módulo Documentos.
+- Debe permitir ver nombre del archivo, fecha de carga y opción de abrir o descargar.
+- Si es posible, agregar categorías o descripción breve.
+
+6. EPP
+- Quiero que primero se elija el operario.
+- Luego debe mostrarse el historial de EPP entregados a ese operario.
+- Debe existir un catálogo de EPP con periodicidad de reposición.
+- Ejemplos:
+  - zapatos: renovación cada 12 meses
+  - filtros de mascarilla: renovación cada 2 meses
+- Debe existir un registro de entregas de EPP por persona.
+- El sistema debe generar alertas de vencimiento o próxima reposición según la fecha de entrega y la periodicidad del EPP.
+- Mostrar alertas claras en pantalla.
+- Mantener separados:
+  1. catálogo de EPP
+  2. entregas por operario
+  3. alertas de reposición/vencimiento
+
+7. Personal
+- El módulo Personal sigue en desarrollo.
+- Quiero un módulo funcional.
+- Agregar botón "Añadir personal".
+- Debe permitir registrar como mínimo:
+  - nombres y apellidos
+  - cargo
+  - área
+  - estado
+  - fecha de ingreso
+  - observaciones
+- Debe mostrar tabla con listado del personal.
+- Debe permitir editar y desactivar.
+
+8. Reportes
+- El módulo Reportes también sigue en desarrollo.
+- Quiero un módulo funcional.
+- Implementa reportes útiles para operación:
+  - productos inmovilizados
+  - muestras registradas
+  - disposición final
+  - historial de inventarios/cuadres
+  - entregas de EPP
+  - alertas de EPP por vencer
+- Agrega filtros por fecha, producto, operario o estado según corresponda.
+- Si es posible, permitir exportar a Excel o CSV.
+
+Requisitos generales:
+- No romper el diseño actual ni la navegación.
+- Reemplazar placeholders por funcionalidad real.
+- Mejorar experiencia de uso en formularios largos.
+- Validar campos obligatorios.
+- Conectar correctamente frontend y backend.
+- Mantener persistencia de datos.
+- Al finalizar, dame:
+  1. módulos corregidos
+  2. archivos modificados
+  3. lógica usada en cada cambio
+  4. cómo probar cada módulo

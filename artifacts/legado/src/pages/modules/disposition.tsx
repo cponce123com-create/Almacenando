@@ -11,14 +11,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Recycle, Plus, Loader2, AlertCircle, Pencil, Trash2, CheckCircle2 } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Recycle, Plus, Loader2, AlertCircle, Pencil, Trash2, CheckCircle2, ChevronsUpDown, Check } from "lucide-react";
 
 interface Product { id: string; code: string; name: string; unit: string; }
 interface Disposition {
-  id: string; productId: string; quantity: string; unit: string;
-  dispositionType: string; dispositionDate: string; contractor?: string | null;
-  manifestNumber?: string | null; certificateNumber?: string | null; cost?: string | null;
-  status: string; notes?: string | null; approvedBy?: string | null; registeredBy: string;
+  id: string; productId?: string | null; productNameManual?: string | null;
+  quantity: string; unit: string; dispositionType: string; dispositionDate: string;
+  contractor?: string | null; manifestNumber?: string | null; certificateNumber?: string | null;
+  cost?: string | null; status: string; notes?: string | null;
 }
 
 const api = async (path: string, opts?: RequestInit) => {
@@ -43,10 +45,191 @@ const DISPOSITION_TYPES = [
 const UNITS = ["L", "mL", "kg", "g", "m³", "unidad"];
 
 const emptyForm = () => ({
-  productId: "", quantity: "", unit: "kg", dispositionType: "",
+  productId: "", productNameManual: "", quantity: "", unit: "kg", dispositionType: "",
   dispositionDate: today(), contractor: "", manifestNumber: "",
   certificateNumber: "", cost: "", status: "pending", notes: "",
 });
+
+function ProductCombobox({
+  products, productId, productNameManual, onProductId, onManual,
+}: {
+  products: Product[]; productId: string; productNameManual: string;
+  onProductId: (v: string) => void; onManual: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    if (!q) return products.slice(0, 40);
+    return products.filter(p =>
+      p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)
+    ).slice(0, 40);
+  }, [products, query]);
+
+  const selected = products.find(p => p.id === productId);
+
+  return (
+    <div className="space-y-2">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" role="combobox" aria-expanded={open}
+            className="w-full justify-between font-normal h-9 text-sm">
+            {selected ? (
+              <span className="truncate">{selected.code} — {selected.name}</span>
+            ) : (
+              <span className="text-slate-400">Buscar en catálogo de productos...</span>
+            )}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="Buscar por código o nombre..."
+              value={query}
+              onValueChange={setQuery}
+            />
+            <CommandList>
+              <CommandEmpty>No se encontraron productos</CommandEmpty>
+              <CommandGroup>
+                {filtered.map(p => (
+                  <CommandItem key={p.id} value={p.id} onSelect={() => {
+                    onProductId(p.id); onManual(""); setOpen(false); setQuery("");
+                  }}>
+                    <Check className={`mr-2 h-4 w-4 ${productId === p.id ? "opacity-100" : "opacity-0"}`} />
+                    <span className="font-mono text-xs text-slate-500 mr-2">{p.code}</span>
+                    <span className="truncate">{p.name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+
+      <div className="flex items-center gap-2">
+        <div className="h-px flex-1 bg-slate-200" />
+        <span className="text-xs text-slate-400">o ingrese manualmente</span>
+        <div className="h-px flex-1 bg-slate-200" />
+      </div>
+      <Input
+        placeholder="Nombre manual del producto (si no está en catálogo)"
+        value={productNameManual}
+        onChange={e => { onManual(e.target.value); if (e.target.value) onProductId(""); }}
+      />
+      {!productId && !productNameManual && (
+        <p className="text-xs text-red-500">Seleccione un producto del catálogo o ingrese uno manualmente</p>
+      )}
+    </div>
+  );
+}
+
+function DispositionForm({
+  initial, products, onSubmit, onCancel, pending, isEdit,
+}: {
+  initial: ReturnType<typeof emptyForm>;
+  products: Product[];
+  onSubmit: (d: ReturnType<typeof emptyForm>) => void;
+  onCancel: () => void;
+  pending: boolean;
+  isEdit: boolean;
+}) {
+  const [f, setF] = useState(initial);
+  const s = (k: keyof typeof f, v: string) => setF(p => ({ ...p, [k]: v }));
+  const hasProduct = !!f.productId || !!f.productNameManual;
+
+  return (
+    <form onSubmit={e => { e.preventDefault(); onSubmit(f); }} className="space-y-4">
+      <div className="space-y-1.5">
+        <Label>Producto *</Label>
+        <ProductCombobox
+          products={products}
+          productId={f.productId}
+          productNameManual={f.productNameManual}
+          onProductId={v => s("productId", v)}
+          onManual={v => s("productNameManual", v)}
+        />
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-1.5">
+          <Label>Cantidad *</Label>
+          <Input type="number" step="0.01" min="0.01" placeholder="0.00"
+            value={f.quantity} onChange={e => s("quantity", e.target.value)} required />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Unidad *</Label>
+          <Select value={f.unit} onValueChange={v => s("unit", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>{UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Fecha *</Label>
+          <Input type="date" value={f.dispositionDate} onChange={e => s("dispositionDate", e.target.value)} required />
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Tipo de Disposición *</Label>
+        <Select value={f.dispositionType} onValueChange={v => s("dispositionType", v)}>
+          <SelectTrigger><SelectValue placeholder="Seleccionar tipo" /></SelectTrigger>
+          <SelectContent>{DISPOSITION_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>Empresa Gestora</Label>
+          <Input placeholder="EcoTreat SAC" value={f.contractor} onChange={e => s("contractor", e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>N° de Manifiesto</Label>
+          <Input placeholder="MAN-2024-001" value={f.manifestNumber} onChange={e => s("manifestNumber", e.target.value)} />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label>N° de Certificado</Label>
+          <Input placeholder="CERT-001" value={f.certificateNumber} onChange={e => s("certificateNumber", e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Costo (S/.)</Label>
+          <Input type="number" step="0.01" min="0" placeholder="0.00" value={f.cost} onChange={e => s("cost", e.target.value)} />
+        </div>
+      </div>
+
+      {isEdit && (
+        <div className="space-y-1.5">
+          <Label>Estado</Label>
+          <Select value={f.status} onValueChange={v => s("status", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {Object.entries(DISP_STATUS).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        <Label>Notas</Label>
+        <Input placeholder="Observaciones del proceso" value={f.notes} onChange={e => s("notes", e.target.value)} />
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit"
+          disabled={pending || !hasProduct || !f.quantity || !f.dispositionType}
+          className="bg-teal-600 hover:bg-teal-700">
+          {pending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+          {isEdit ? "Guardar Cambios" : "Registrar Disposición"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
 
 export default function DisposicionFinalPage() {
   const { user } = useAuth();
@@ -71,6 +254,9 @@ export default function DisposicionFinalPage() {
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() =>
     filterStatus === "all" ? records : records.filter(r => r.status === filterStatus), [records, filterStatus]);
+
+  const displayName = (r: Disposition) =>
+    r.productId ? (productMap[r.productId]?.name ?? r.productId) : (r.productNameManual ?? "—");
 
   const createMutation = useMutation({
     mutationFn: (data: ReturnType<typeof emptyForm>) => api("/api/disposition", {
@@ -107,92 +293,6 @@ export default function DisposicionFinalPage() {
     },
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); setDeleteTarget(null); },
   });
-
-  const DispositionForm = ({ initial, onSubmit, onCancel, pending, isEdit }: {
-    initial: ReturnType<typeof emptyForm>; onSubmit: (d: ReturnType<typeof emptyForm>) => void;
-    onCancel: () => void; pending: boolean; isEdit: boolean;
-  }) => {
-    const [f, setF] = useState(initial);
-    const s = (k: keyof typeof f, v: string) => setF(p => ({ ...p, [k]: v }));
-    return (
-      <form onSubmit={e => { e.preventDefault(); onSubmit(f); }} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label>Producto *</Label>
-          <Select value={f.productId} onValueChange={v => s("productId", v)}>
-            <SelectTrigger><SelectValue placeholder="Seleccionar producto" /></SelectTrigger>
-            <SelectContent>{products.map(p => <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1.5">
-            <Label>Cantidad *</Label>
-            <Input type="number" step="0.01" min="0.01" placeholder="0.00" value={f.quantity} onChange={e => s("quantity", e.target.value)} required />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Unidad *</Label>
-            <Select value={f.unit} onValueChange={v => s("unit", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>{UNITS.map(u => <SelectItem key={u} value={u}>{u}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Fecha *</Label>
-            <Input type="date" value={f.dispositionDate} onChange={e => s("dispositionDate", e.target.value)} required />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label>Tipo de Disposición *</Label>
-          <Select value={f.dispositionType} onValueChange={v => s("dispositionType", v)}>
-            <SelectTrigger><SelectValue placeholder="Seleccionar tipo" /></SelectTrigger>
-            <SelectContent>{DISPOSITION_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>Empresa Gestora</Label>
-            <Input placeholder="EcoTreat SAC" value={f.contractor} onChange={e => s("contractor", e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>N° de Manifiesto</Label>
-            <Input placeholder="MAN-2024-001" value={f.manifestNumber} onChange={e => s("manifestNumber", e.target.value)} />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label>N° de Certificado</Label>
-            <Input placeholder="CERT-001" value={f.certificateNumber} onChange={e => s("certificateNumber", e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Costo (S/.)</Label>
-            <Input type="number" step="0.01" min="0" placeholder="0.00" value={f.cost} onChange={e => s("cost", e.target.value)} />
-          </div>
-        </div>
-        {isEdit && (
-          <div className="space-y-1.5">
-            <Label>Estado</Label>
-            <Select value={f.status} onValueChange={v => s("status", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(DISP_STATUS).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div className="space-y-1.5">
-          <Label>Notas</Label>
-          <Input placeholder="Observaciones del proceso" value={f.notes} onChange={e => s("notes", e.target.value)} />
-        </div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
-          <Button type="submit" disabled={pending || !f.productId || !f.quantity || !f.dispositionType}
-            className="bg-teal-600 hover:bg-teal-700">
-            {pending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isEdit ? "Guardar Cambios" : "Registrar Disposición"}
-          </Button>
-        </DialogFooter>
-      </form>
-    );
-  };
 
   return (
     <AppLayout>
@@ -265,18 +365,22 @@ export default function DisposicionFinalPage() {
                     <TableHead className="font-semibold text-slate-600">Empresa Gestora</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-20 text-right">Costo</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-32">Estado</TableHead>
-                    {canManage && <TableHead className="font-semibold text-slate-600 text-right w-24"></TableHead>}
+                    {canManage && <TableHead className="w-24 text-right"></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map(r => {
-                    const product = productMap[r.productId];
                     const cfg = DISP_STATUS[r.status] ?? DISP_STATUS.pending;
                     return (
                       <TableRow key={r.id} className="hover:bg-slate-50/70">
                         <TableCell>
-                          <p className="font-medium text-slate-900 text-sm">{product?.name ?? r.productId}</p>
-                          <p className="text-xs text-slate-400">{product?.code}</p>
+                          <p className="font-medium text-slate-900 text-sm">{displayName(r)}</p>
+                          {r.productId && productMap[r.productId] && (
+                            <p className="text-xs text-slate-400">{productMap[r.productId]?.code}</p>
+                          )}
+                          {!r.productId && r.productNameManual && (
+                            <p className="text-xs text-amber-500">Ingreso manual</p>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm text-slate-700">{r.quantity} {r.unit}</TableCell>
                         <TableCell className="text-sm text-slate-600">{r.dispositionType}</TableCell>
@@ -298,9 +402,7 @@ export default function DisposicionFinalPage() {
                                 </Button>
                               )}
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
-                                onClick={() => {
-                                  setEditItem(r);
-                                }}>
+                                onClick={() => setEditItem(r)}>
                                 <Pencil className="w-3.5 h-3.5" />
                               </Button>
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
@@ -326,7 +428,8 @@ export default function DisposicionFinalPage() {
                 <Recycle className="w-5 h-5 text-teal-600" /> Nueva Disposición Final
               </DialogTitle>
             </DialogHeader>
-            <DispositionForm initial={emptyForm()} onSubmit={d => createMutation.mutate(d)}
+            <DispositionForm initial={emptyForm()} products={products}
+              onSubmit={d => createMutation.mutate(d)}
               onCancel={() => setShowForm(false)} pending={createMutation.isPending} isEdit={false} />
           </DialogContent>
         </Dialog>
@@ -340,8 +443,11 @@ export default function DisposicionFinalPage() {
             </DialogHeader>
             {editItem && (
               <DispositionForm
+                products={products}
                 initial={{
-                  productId: editItem.productId, quantity: editItem.quantity, unit: editItem.unit,
+                  productId: editItem.productId ?? "",
+                  productNameManual: editItem.productNameManual ?? "",
+                  quantity: editItem.quantity, unit: editItem.unit,
                   dispositionType: editItem.dispositionType, dispositionDate: editItem.dispositionDate,
                   contractor: editItem.contractor ?? "", manifestNumber: editItem.manifestNumber ?? "",
                   certificateNumber: editItem.certificateNumber ?? "", cost: editItem.cost ?? "",
@@ -358,7 +464,7 @@ export default function DisposicionFinalPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>¿Marcar como completado?</AlertDialogTitle>
               <AlertDialogDescription>
-                Se confirmará que la disposición de <strong>{productMap[completeTarget?.productId ?? ""]?.name}</strong> fue completada exitosamente.
+                Se confirmará que la disposición fue completada exitosamente.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

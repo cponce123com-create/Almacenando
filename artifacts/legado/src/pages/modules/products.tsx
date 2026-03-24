@@ -136,15 +136,16 @@ async function updateProduct(id: string, data: Partial<ProductFormData>): Promis
   return res.json();
 }
 
-async function deleteProduct(id: string): Promise<void> {
+async function deleteProduct(id: string): Promise<{ soft: boolean; message: string; reason?: string }> {
   const res = await fetch(`/api/products/${id}`, {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
+  const json = await res.json();
   if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error || "Error al eliminar producto");
+    throw new Error(json.error || "Error al eliminar producto");
   }
+  return json;
 }
 
 function downloadFile(res: Response, fallbackName: string) {
@@ -583,10 +584,17 @@ export default function MaestrodeProductosPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteProduct(id),
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       queryClient.invalidateQueries({ queryKey: ["/api/reports/summary"] });
-      toast({ title: "Producto eliminado", description: "El producto fue eliminado del sistema." });
+      if (data.soft) {
+        toast({
+          title: "Producto marcado como inactivo",
+          description: data.reason ?? "El producto tiene registros relacionados y no puede eliminarse físicamente.",
+        });
+      } else {
+        toast({ title: "Producto eliminado", description: "El producto fue eliminado permanentemente." });
+      }
       setDeleteTarget(null);
     },
     onError: (err: Error) => {
