@@ -1,256 +1,122 @@
 import { useState } from "react";
-import { Link, useLocation } from "wouter";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowLeft, User, ShieldCheck, ArrowRight } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import type { UserResponse } from "@workspace/api-client-react";
-
-const ADMIN_TOKEN_KEY = "legado_admin_token";
-
-const loginSchema = z.object({
-  email: z.string().email("Correo electrónico inválido"),
-  password: z.string().min(1, "La contraseña es requerida"),
-});
-
-type RoleChoice = {
-  hasUser: boolean;
-  hasAdmin: boolean;
-  userToken?: string;
-  userInfo?: UserResponse;
-  userEncryptionKey?: string;
-  adminToken?: string;
-};
+import { Loader2, FlaskConical } from "lucide-react";
 
 export default function Login() {
   const [_, setLocation] = useLocation();
-  const { login, setUserSession } = useAuth();
+  const { login } = useAuth();
   const { toast } = useToast();
   const [isPending, setIsPending] = useState(false);
-  const [roleChoice, setRoleChoice] = useState<RoleChoice | null>(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  const form = useForm<z.infer<typeof loginSchema>>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
-  });
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !password) return;
 
-  async function onSubmit(values: z.infer<typeof loginSchema>) {
     setIsPending(true);
-
-    // Try both user and admin login in parallel
-    const [userResult, adminResult] = await Promise.allSettled([
-      fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
-      }).then(r => r.ok ? r.json() : Promise.reject()),
-      fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(values),
-      }).then(r => r.ok ? r.json() : Promise.reject()),
-    ]);
-
-    const hasUser = userResult.status === "fulfilled";
-    const hasAdmin = adminResult.status === "fulfilled";
-    const userPayload = hasUser ? (userResult as PromiseFulfilledResult<any>).value : undefined;
-    const adminToken = hasAdmin ? (adminResult as PromiseFulfilledResult<any>).value?.token : undefined;
-
-    setIsPending(false);
-
-    if (!hasUser && !hasAdmin) {
+    try {
+      await login(email, password);
+      setLocation("/dashboard");
+    } catch (err: any) {
       toast({
         variant: "destructive",
         title: "Error al iniciar sesión",
-        description: "Correo o contraseña incorrectos.",
+        description: err.message || "Correo o contraseña incorrectos.",
       });
-      return;
+    } finally {
+      setIsPending(false);
     }
-
-    // Both roles available → show selection
-    if (hasUser && hasAdmin) {
-      setRoleChoice({ hasUser, hasAdmin, userToken: userPayload?.token, userInfo: userPayload?.user, userEncryptionKey: userPayload?.encryptionKey, adminToken });
-      return;
-    }
-
-    // Only user
-    if (hasUser && userPayload) {
-      setUserSession(userPayload.token, userPayload.user, userPayload.encryptionKey);
-      setLocation("/dashboard");
-      return;
-    }
-
-    // Only admin
-    if (hasAdmin && adminToken) {
-      sessionStorage.setItem(ADMIN_TOKEN_KEY, adminToken);
-      setLocation("/admin");
-    }
-  }
-
-  function enterAsUser() {
-    if (!roleChoice?.userToken || !roleChoice?.userInfo) return;
-    setUserSession(roleChoice.userToken, roleChoice.userInfo, roleChoice.userEncryptionKey);
-    setLocation("/dashboard");
-  }
-
-  function enterAsAdmin() {
-    if (!roleChoice?.adminToken) return;
-    sessionStorage.setItem(ADMIN_TOKEN_KEY, roleChoice.adminToken);
-    setLocation("/admin");
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background relative overflow-hidden">
-      <div className="absolute inset-0 z-0">
-        <img
-          src={`${import.meta.env.BASE_URL}images/auth-bg.png`}
-          alt="Auth background"
-          className="w-full h-full object-cover opacity-40"
-        />
-        <div className="absolute inset-0 bg-background/60 backdrop-blur-3xl" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="w-full max-w-sm">
+        <div className="bg-white rounded-2xl shadow-lg border border-slate-100 p-8">
+          <div className="flex flex-col items-center mb-8">
+            <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center mb-4 shadow-md">
+              <FlaskConical className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900">Sistema de Almacén</h1>
+            <p className="text-slate-500 text-sm mt-1">Gestión de Productos Químicos</p>
+          </div>
 
-      <AnimatePresence mode="wait">
-        {/* ROLE SELECTION SCREEN */}
-        {roleChoice ? (
-          <motion.div
-            key="role-select"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3 }}
-            className="relative z-10 w-full max-w-md p-8 bg-card/80 backdrop-blur-xl border border-white/50 shadow-2xl rounded-3xl m-4"
-          >
-            <div className="text-center mb-8">
-              <h1 className="font-serif text-2xl font-bold text-foreground">¿Cómo deseas ingresar?</h1>
-              <p className="text-muted-foreground mt-2 text-sm">
-                Tu cuenta tiene acceso a dos áreas. Elige con cuál quieres continuar.
-              </p>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="email" className="text-slate-700">Correo Electrónico</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="usuario@almacen.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+                className="h-11"
+              />
             </div>
 
-            <div className="space-y-4">
-              {/* User option */}
-              <button
-                onClick={enterAsUser}
-                className="w-full group flex items-center gap-5 p-5 rounded-2xl border-2 border-border hover:border-primary hover:bg-primary/5 transition-all text-left"
-              >
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                  <User className="w-6 h-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-foreground">Mi área personal</p>
-                  <p className="text-sm text-muted-foreground mt-0.5">Gestiona tu legado, mensajes y destinatarios</p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
-              </button>
-
-              {/* Admin option */}
-              <button
-                onClick={enterAsAdmin}
-                className="w-full group flex items-center gap-5 p-5 rounded-2xl border-2 border-border hover:border-rose-400 hover:bg-rose-50 transition-all text-left"
-              >
-                <div className="w-12 h-12 rounded-xl bg-rose-100 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                  <ShieldCheck className="w-6 h-6 text-rose-600" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-foreground">Panel de administración</p>
-                  <p className="text-sm text-muted-foreground mt-0.5">Gestiona usuarios y liberaciones de datos</p>
-                </div>
-                <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-rose-500 group-hover:translate-x-1 transition-all" />
-              </button>
+            <div className="space-y-1.5">
+              <Label htmlFor="password" className="text-slate-700">Contraseña</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+                className="h-11"
+              />
             </div>
 
-            <button
-              onClick={() => setRoleChoice(null)}
-              className="mt-6 w-full text-sm text-center text-muted-foreground hover:text-foreground transition-colors"
+            <Button
+              type="submit"
+              className="w-full h-11 bg-blue-600 hover:bg-blue-700"
+              disabled={isPending}
             >
-              ← Volver al inicio de sesión
-            </button>
-          </motion.div>
-        ) : (
-          /* LOGIN FORM */
-          <motion.div
-            key="login-form"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.4 }}
-            className="relative z-10 w-full max-w-md p-8 bg-card/80 backdrop-blur-xl border border-white/50 dark:border-white/10 shadow-2xl rounded-3xl m-4"
-          >
-            <div className="mb-8">
-              <Link href="/" className="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors mb-6">
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Volver al inicio
-              </Link>
-              <h1 className="font-serif text-3xl font-bold text-foreground">Iniciar Sesión</h1>
-              <p className="text-muted-foreground mt-2">Accede a tu cuenta de Legado para continuar preparando tu historia.</p>
+              {isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  Iniciando sesión...
+                </>
+              ) : (
+                "Iniciar Sesión"
+              )}
+            </Button>
+          </form>
+
+          <div className="mt-6 pt-5 border-t border-slate-100">
+            <p className="text-xs text-slate-500 font-medium mb-2">Credenciales de demostración:</p>
+            <div className="space-y-1">
+              {[
+                { label: "Administrador", email: "admin@almacen.com" },
+                { label: "Supervisor", email: "supervisor@almacen.com" },
+                { label: "Operario", email: "operario@almacen.com" },
+              ].map((c) => (
+                <button
+                  key={c.email}
+                  type="button"
+                  onClick={() => { setEmail(c.email); setPassword("Almacen2024!"); }}
+                  className="w-full text-left text-xs px-2.5 py-1.5 rounded-lg hover:bg-slate-50 transition-colors flex justify-between items-center"
+                >
+                  <span className="text-slate-600">{c.label}</span>
+                  <span className="text-slate-400 font-mono">{c.email}</span>
+                </button>
+              ))}
             </div>
+          </div>
+        </div>
 
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="email">Correo Electrónico</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="tu@correo.com"
-                  className="rounded-xl h-12 bg-white/50 dark:bg-black/50"
-                  autoComplete="email"
-                  {...form.register("email")}
-                />
-                {form.formState.errors.email && (
-                  <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  className="rounded-xl h-12 bg-white/50 dark:bg-black/50"
-                  autoComplete="current-password"
-                  {...form.register("password")}
-                />
-                {form.formState.errors.password && (
-                  <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
-                )}
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full h-12 rounded-xl text-md font-medium shadow-lg shadow-primary/25"
-                disabled={isPending}
-              >
-                {isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : "Entrar"}
-              </Button>
-            </form>
-
-            <div className="mt-6 text-center text-sm text-muted-foreground">
-              ¿No tienes una cuenta?{" "}
-              <Link href="/register" className="text-primary hover:underline font-medium">
-                Regístrate aquí
-              </Link>
-            </div>
-
-            <div className="mt-4 pt-4 border-t border-border text-center">
-              <Link
-                href="/admin/login"
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-rose-600 transition-colors"
-              >
-                <ShieldCheck className="w-3.5 h-3.5" />
-                Acceso de Administrador
-              </Link>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        <p className="text-center text-xs text-slate-400 mt-6">
+          Sistema de Gestión de Almacén Químico &copy; {new Date().getFullYear()}
+        </p>
+      </div>
     </div>
   );
 }

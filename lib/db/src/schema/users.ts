@@ -1,14 +1,17 @@
-import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+
+export const warehouseRoles = ["supervisor", "operator", "quality", "admin", "readonly"] as const;
+export type WarehouseRole = typeof warehouseRoles[number];
 
 export const usersTable = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
+  name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
-  emailVerifiedAt: timestamp("email_verified_at"),
+  role: text("role").$type<WarehouseRole>().notNull().default("operator"),
   status: text("status").notNull().default("active"),
-  encryptionKey: text("encryption_key"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

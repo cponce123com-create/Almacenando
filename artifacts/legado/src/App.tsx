@@ -3,37 +3,23 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
-import { useAuth, getAdminAuthToken } from "@/hooks/use-auth";
-import { useGetMe } from "@workspace/api-client-react";
-import { ErrorBoundary } from "@/components/error/ErrorBoundary";
+import { useAuth } from "@/hooks/use-auth";
 
 import NotFound from "@/pages/not-found";
-import Landing from "@/pages/landing";
 import Login from "@/pages/auth/login";
-import Register from "@/pages/auth/register";
 import Dashboard from "@/pages/dashboard";
-import LegacyList from "@/pages/legacy/index";
-import LegacyForm from "@/pages/legacy/form";
-import Recipients from "@/pages/recipients/index";
-import TrustedContacts from "@/pages/trusted-contacts/index";
-import FuneralPreferences from "@/pages/funeral/index";
-import FuneralSongs from "@/pages/funeral/songs";
-import ActivationSettings from "@/pages/activation/index";
-import AccessPortal from "@/pages/access/portal";
-import MediaPage from "@/pages/media/index";
-import ProfilePage from "@/pages/profile/index";
 
-import ReportDeath from "@/pages/report-death/index";
-import ConfirmDeath from "@/pages/confirm-death/index";
-import ConfirmContact from "@/pages/confirm-contact";
-import Privacy from "@/pages/privacy";
-import Terms from "@/pages/terms";
-import FAQ from "@/pages/faq";
-import AdminLogin from "@/pages/admin/login";
-import AdminDashboard from "@/pages/admin/dashboard";
-import AdminReportDetail from "@/pages/admin/report-detail";
-import CapsulesPage from "@/pages/capsules/index";
-import CapsulePortal from "@/pages/capsules/portal";
+import ProductsPage from "@/pages/modules/products";
+import InventoryPage from "@/pages/modules/inventory";
+import ImmobilizedPage from "@/pages/modules/immobilized";
+import SamplesPage from "@/pages/modules/samples";
+import DyeLotsPage from "@/pages/modules/dye-lots";
+import DispositionPage from "@/pages/modules/disposition";
+import DocumentsPage from "@/pages/modules/documents";
+import EppPage from "@/pages/modules/epp";
+import PersonnelPage from "@/pages/modules/personnel";
+import ReportsPage from "@/pages/modules/reports";
+import AdminUsersPage from "@/pages/modules/admin-users";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,36 +42,13 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 
   if (isLoading) {
     return (
-      <div className="h-screen w-full bg-background flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+      <div className="h-screen w-full bg-slate-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!isAuthenticated) return null;
-
-  return <Component />;
-}
-
-function PrivateRoute({ component: Component }: { component: React.ComponentType }) {
-  const { data, isLoading, isError } = useGetMe();
-  const [_, setLocation] = useLocation();
-
-  useEffect(() => {
-    if (!isLoading && (isError || !data)) {
-      setLocation("/login");
-    }
-  }, [isLoading, isError, data]);
-
-  if (isLoading) {
-    return (
-      <div className="h-screen w-full bg-background flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (isError || !data) return null;
 
   return <Component />;
 }
@@ -106,55 +69,24 @@ function PublicOnlyRoute({ component: Component }: { component: React.ComponentT
   return <Component />;
 }
 
-function AdminRoute({ component: Component }: { component: React.ComponentType }) {
-  const [_, setLocation] = useLocation();
-  const hasToken = !!getAdminAuthToken();
-
-  useEffect(() => {
-    if (!hasToken) {
-      setLocation("/admin/login");
-    }
-  }, [hasToken]);
-
-  if (!hasToken) return null;
-
-  return <Component />;
-}
-
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Landing} />
+      <Route path="/"><PublicOnlyRoute component={Login} /></Route>
       <Route path="/login"><PublicOnlyRoute component={Login} /></Route>
-      <Route path="/register"><PublicOnlyRoute component={Register} /></Route>
-
-      <Route path="/access/:token" component={AccessPortal} />
 
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
-      <Route path="/legacy"><ProtectedRoute component={LegacyList} /></Route>
-      <Route path="/legacy/new"><ProtectedRoute component={LegacyForm} /></Route>
-      <Route path="/legacy/:id"><ProtectedRoute component={LegacyForm} /></Route>
-      <Route path="/recipients"><ProtectedRoute component={Recipients} /></Route>
-      <Route path="/trusted-contacts"><ProtectedRoute component={TrustedContacts} /></Route>
-      <Route path="/funeral/songs"><ProtectedRoute component={FuneralSongs} /></Route>
-      <Route path="/funeral"><ProtectedRoute component={FuneralPreferences} /></Route>
-      <Route path="/activation"><ProtectedRoute component={ActivationSettings} /></Route>
-      <Route path="/media"><ProtectedRoute component={MediaPage} /></Route>
-      <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
-
-      <Route path="/report-death" component={ReportDeath} />
-      <Route path="/confirm-death/:reportId" component={ConfirmDeath} />
-      <Route path="/confirm/:token" component={ConfirmContact} />
-      <Route path="/privacy" component={Privacy} />
-      <Route path="/terms" component={Terms} />
-      <Route path="/faq" component={FAQ} />
-
-      <Route path="/capsulas"><ProtectedRoute component={CapsulesPage} /></Route>
-      <Route path="/capsula/:token" component={CapsulePortal} />
-
-      <Route path="/admin/login" component={AdminLogin} />
-      <Route path="/admin"><AdminRoute component={AdminDashboard} /></Route>
-      <Route path="/admin/death-reports/:id"><AdminRoute component={AdminReportDetail} /></Route>
+      <Route path="/products"><ProtectedRoute component={ProductsPage} /></Route>
+      <Route path="/inventory"><ProtectedRoute component={InventoryPage} /></Route>
+      <Route path="/immobilized"><ProtectedRoute component={ImmobilizedPage} /></Route>
+      <Route path="/samples"><ProtectedRoute component={SamplesPage} /></Route>
+      <Route path="/dye-lots"><ProtectedRoute component={DyeLotsPage} /></Route>
+      <Route path="/disposition"><ProtectedRoute component={DispositionPage} /></Route>
+      <Route path="/documents"><ProtectedRoute component={DocumentsPage} /></Route>
+      <Route path="/epp"><ProtectedRoute component={EppPage} /></Route>
+      <Route path="/personnel"><ProtectedRoute component={PersonnelPage} /></Route>
+      <Route path="/reports"><ProtectedRoute component={ReportsPage} /></Route>
+      <Route path="/admin-users"><ProtectedRoute component={AdminUsersPage} /></Route>
 
       <Route component={NotFound} />
     </Switch>
@@ -163,16 +95,14 @@ function Router() {
 
 function App() {
   return (
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <Router />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 

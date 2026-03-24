@@ -1,0 +1,81 @@
+import { Router } from "express";
+import { db } from "@workspace/db";
+import { samplesTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
+import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
+import { generateId } from "../lib/id.js";
+import { z } from "zod";
+
+const router = Router();
+
+const sampleSchema = z.object({
+  productId: z.string().min(1),
+  sampleCode: z.string().min(1),
+  quantity: z.string().min(1),
+  unit: z.string().min(1),
+  sampleDate: z.string().min(1),
+  purpose: z.string().min(1),
+  destination: z.string().optional(),
+  labReference: z.string().optional(),
+  status: z.enum(["pending", "in_lab", "completed", "rejected"]).default("pending"),
+  result: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+router.get("/", requireAuth, async (_req, res) => {
+  const records = await db.select().from(samplesTable).orderBy(desc(samplesTable.sampleDate));
+  res.json(records);
+});
+
+router.get("/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const records = await db.select().from(samplesTable).where(eq(samplesTable.id, id as string)).limit(1);
+  if (records.length === 0) {
+    res.status(404).json({ error: "Muestra no encontrada" });
+    return;
+  }
+  res.json(records[0]);
+});
+
+router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "operator"), async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
+  const parsed = sampleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+  const id = generateId();
+  const [created] = await db.insert(samplesTable).values({
+    id,
+    ...parsed.data,
+    takenBy: authedReq.userId,
+  }).returning();
+  res.status(201).json(created);
+});
+
+router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), async (req, res) => {
+  const { id } = req.params;
+  const parsed = sampleSchema.partial().safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+  const [updated] = await db.update(samplesTable).set({ ...parsed.data, updatedAt: new Date() }).where(eq(samplesTable.id, id as string)).returning();
+  if (!updated) {
+    res.status(404).json({ error: "Muestra no encontrada" });
+    return;
+  }
+  res.json(updated);
+});
+
+router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+  const { id } = req.params;
+  const [deleted] = await db.delete(samplesTable).where(eq(samplesTable.id, id as string)).returning();
+  if (!deleted) {
+    res.status(404).json({ error: "Muestra no encontrada" });
+    return;
+  }
+  res.json({ message: "Muestra eliminada" });
+});
+
+export default router;

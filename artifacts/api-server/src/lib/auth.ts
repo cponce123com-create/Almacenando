@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import type { Request, Response, NextFunction } from "express";
+import type { WarehouseRole } from "@workspace/db";
 
 const jwtSecret = process.env.SESSION_SECRET;
 if (!jwtSecret) {
@@ -17,61 +18,51 @@ export function comparePassword(password: string, hash: string): Promise<boolean
   return bcrypt.compare(password, hash);
 }
 
-export function signToken(payload: { userId: string; email: string }): string {
+export function signToken(payload: { userId: string; email: string; role: WarehouseRole }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
-export function signAdminToken(payload: { adminId: string; email: string }): string {
-  return jwt.sign({ ...payload, isAdmin: true }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-}
-
-export function verifyToken(token: string): { userId: string; email: string } | null {
+export function verifyToken(token: string): { userId: string; email: string; role: WarehouseRole } | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string };
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string; role: WarehouseRole };
     return decoded;
   } catch {
     return null;
   }
 }
 
-export function verifyAdminToken(token: string): { adminId: string; email: string; isAdmin: boolean } | null {
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { adminId: string; email: string; isAdmin: boolean };
-    if (!decoded.isAdmin) return null;
-    return decoded;
-  } catch {
-    return null;
-  }
-}
+export type AuthenticatedRequest = Request & { userId: string; userRole: WarehouseRole; userEmail: string };
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "No autorizado" });
     return;
   }
   const token = authHeader.substring(7);
   const payload = verifyToken(token);
   if (!payload) {
-    res.status(401).json({ error: "Invalid or expired token" });
+    res.status(401).json({ error: "Token inválido o expirado" });
     return;
   }
-  (req as Request & { userId: string }).userId = payload.userId;
+  const authedReq = req as AuthenticatedRequest;
+  authedReq.userId = payload.userId;
+  authedReq.userRole = payload.role;
+  authedReq.userEmail = payload.email;
   next();
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  const token = authHeader.substring(7);
-  const payload = verifyAdminToken(token);
-  if (!payload) {
-    res.status(401).json({ error: "Invalid or expired admin token" });
-    return;
-  }
-  (req as Request & { adminId: string }).adminId = payload.adminId;
-  next();
+export function requireRole(...roles: WarehouseRole[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const authedReq = req as AuthenticatedRequest;
+    if (!authedReq.userId) {
+      res.status(401).json({ error: "No autorizado" });
+      return;
+    }
+    if (!roles.includes(authedReq.userRole)) {
+      res.status(403).json({ error: "Acceso denegado: rol insuficiente" });
+      return;
+    }
+    next();
+  };
 }

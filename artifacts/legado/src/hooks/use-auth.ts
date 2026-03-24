@@ -1,26 +1,25 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type UserResponse, type LoginRequest, type RegisterRequest } from "@workspace/api-client-react";
-import { storeEncryptionKey, clearEncryptionKey } from "@/lib/encryption";
 
-const TOKEN_KEY = "legado_token";
-const ADMIN_TOKEN_KEY = "legado_admin_token";
+const TOKEN_KEY = "almacen_token";
+
+export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: WarehouseRole;
+  status: string;
+  createdAt: string;
+}
 
 export function getAuthToken() {
   return sessionStorage.getItem(TOKEN_KEY);
 }
 
-export function getAdminAuthToken() {
-  return sessionStorage.getItem(ADMIN_TOKEN_KEY);
-}
-
-export function getAuthHeaders() {
+export function getAuthHeaders(): Record<string, string> {
   const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-export function getAdminAuthHeaders() {
-  const token = getAdminAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -34,7 +33,7 @@ export function useAuth() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  const { data: user, isLoading, error } = useQuery<UserResponse | null>({
+  const { data: user, isLoading, error } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
       const currentToken = getAuthToken();
@@ -57,58 +56,23 @@ export function useAuth() {
     retry: false,
   });
 
-  const login = async (data: LoginRequest) => {
+  const login = async (email: string, password: string): Promise<AuthUser> => {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ email, password }),
     });
 
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error || "Login failed");
+      throw new Error(err.error || "Error al iniciar sesión");
     }
 
     const result = await res.json();
     sessionStorage.setItem(TOKEN_KEY, result.token);
     setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
-    if (result.encryptionKey) {
-      storeEncryptionKey(result.encryptionKey);
-    }
-    return result;
-  };
-
-  // Set session directly from pre-fetched token + user (no extra API call)
-  const setUserSession = (userToken: string, userData: UserResponse, encryptionKey?: string) => {
-    sessionStorage.setItem(TOKEN_KEY, userToken);
-    setToken(userToken);
-    queryClient.setQueryData(["/api/auth/me"], userData);
-    if (encryptionKey) {
-      storeEncryptionKey(encryptionKey);
-    }
-  };
-
-  const register = async (data: RegisterRequest) => {
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Registration failed");
-    }
-
-    const result = await res.json();
-    sessionStorage.setItem(TOKEN_KEY, result.token);
-    setToken(result.token);
-    queryClient.setQueryData(["/api/auth/me"], result.user);
-    if (result.encryptionKey) {
-      storeEncryptionKey(result.encryptionKey);
-    }
-    return result;
+    return result.user;
   };
 
   const logout = () => {
@@ -116,7 +80,6 @@ export function useAuth() {
     setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();
-    clearEncryptionKey();
   };
 
   return {
@@ -124,8 +87,22 @@ export function useAuth() {
     isLoading: isLoading && !!token,
     isAuthenticated: !!user,
     login,
-    register,
     logout,
-    setUserSession,
   };
 }
+
+export const ROLE_LABELS: Record<WarehouseRole, string> = {
+  supervisor: "Supervisor",
+  operator: "Operario",
+  quality: "Calidad",
+  admin: "Administrador",
+  readonly: "Solo Lectura",
+};
+
+export const ROLE_COLORS: Record<WarehouseRole, string> = {
+  supervisor: "bg-blue-100 text-blue-800",
+  operator: "bg-green-100 text-green-800",
+  quality: "bg-purple-100 text-purple-800",
+  admin: "bg-red-100 text-red-800",
+  readonly: "bg-gray-100 text-gray-700",
+};
