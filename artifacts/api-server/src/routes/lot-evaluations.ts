@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import * as XLSX from "xlsx";
 import { db } from "@workspace/db";
 import { lotEvaluationsTable, interpretLotStatus } from "@workspace/db";
 import { eq, desc, or, ilike, and } from "drizzle-orm";
@@ -7,6 +9,43 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod";
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+const COL_ALIASES: Record<string, string[]> = {
+  colorantName:  ["nombre_colorante", "colorante", "tintura", "nombre colorante", "nombre de colorante", "nombre del colorante"],
+  usageLot:      ["lote_uso", "lote uso", "lote de uso", "lote_en_uso", "lote en uso", "lote anterior"],
+  newLot:        ["lote_nuevo", "lote nuevo", "nuevo lote", "lote_n", "lote n"],
+  approvalDate:  ["fecha_visto_bueno", "fecha v°b°", "fecha vb", "fecha_vb", "fecha v b", "fecha de aprobacion", "fecha aprobacion", "fecha visto bueno", "fecha v.b."],
+  comments:      ["comentarios", "comentario", "observacion", "observaciones", "resultado", "estado"],
+};
+
+function findCol(headers: string[], field: string): string | null {
+  const aliases = COL_ALIASES[field] ?? [];
+  for (const alias of aliases) {
+    const found = headers.find(h => h === alias);
+    if (found) return found;
+  }
+  return null;
+}
+
+function parseDate(raw: unknown): string | null {
+  if (!raw) return null;
+  if (typeof raw === "number") {
+    try {
+      const d = XLSX.SSF.parse_date_code(raw);
+      if (d) return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
+    } catch { /* fall through */ }
+  }
+  const str = String(raw).trim();
+  if (!str) return null;
+  const parts = str.split(/[\/\-\.]/);
+  if (parts.length === 3) {
+    const [a, b, c] = parts.map(Number);
+    if (c && c > 1900) return `${c}-${String(b).padStart(2, "0")}-${String(a).padStart(2, "0")}`;
+    if (a && a > 1900) return `${a}-${String(b).padStart(2, "0")}-${String(c).padStart(2, "0")}`;
+  }
+  return str;
+}
 
 const evaluationSchema = z.object({
   colorantName: z.string().min(1, "El nombre del colorante es requerido"),
@@ -210,5 +249,118 @@ router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (re
   }
   res.json({ message: "Evaluación desactivada", record: deactivated });
 });
+
+router.get("/template", requireAuth, (_req, res) => {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet([
+    ["Nombre Colorante", "Lote Uso", "Lote Nuevo", "Fecha V°B°", "Comentarios"],
+    ["Azul Naval", "L-2023-001", "L-2024-010", "15/01/2024", "CONFORME"],
+    ["Rojo Brillante", "L-2023-045", "L-2024-022", "20/01/2024", "CONFORME NO MEZCLAR"],
+    ["Negro Carbon", "L-2022-099", "L-2024-033", "25/01/2024", "NO CONFORME"],
+  ]);
+  ws["!cols"] = [{ wch: 25 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 35 }];
+  XLSX.utils.book_append_sheet(wb, ws, "Control de Lotes");
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Disposition", 'attachment; filename="plantilla_control_lotes.xlsx"');
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.send(buf);
+});
+
+router.post(
+  "/import",
+  requireAuth,
+  requireRole("supervisor", "admin", "operator"),
+  upload.single("file"),
+  async (req, res) => {
+    if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
+    let workbook: XLSX.WorkBook;
+    try { workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: false }); }
+    catch { res.status(400).json({ error: "El archivo no es un Excel válido (.xlsx o .xls)" }); return; }
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) { res.status(400).json({ error: "El archivo no contiene hojas de cálculo" }); return; }
+    const ws = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+    if (rawRows.length === 0) { res.status(400).json({ error: "El archivo está vacío" }); return; }
+
+    const headers = Object.keys(rawRows[0]).map(h => String(h).toLowerCase().trim().replace(/\s+/g, " "));
+    const colMap: Record<string, string | null> = {};
+    for (const field of Object.keys(COL_ALIASES)) colMap[field] = findCol(headers, field);
+
+    const missingRequired = (["colorantName", "usageLot", "newLot"] as const).filter(f => !colMap[f]);
+    if (missingRequired.length > 0) {
+      res.status(400).json({
+        error: `No se encontraron columnas requeridas: ${missingRequired.map(f => COL_ALIASES[f]?.[0] ?? f).join(", ")}. Descarga la plantilla para ver el formato correcto.`,
+      });
+      return;
+    }
+
+    const normalizedRows = rawRows.map(row => {
+      const n: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row)) n[String(k).toLowerCase().trim().replace(/\s+/g, " ")] = v;
+      return n;
+    });
+
+    const existing = await db.select({
+      colorantName: lotEvaluationsTable.colorantName,
+      usageLot: lotEvaluationsTable.usageLot,
+      newLot: lotEvaluationsTable.newLot,
+      approvalDate: lotEvaluationsTable.approvalDate,
+    }).from(lotEvaluationsTable);
+
+    const dupKey = (cn: string, ul: string, nl: string, ad: string | null) =>
+      `${cn.toLowerCase().trim()}|${ul.toLowerCase().trim()}|${nl.toLowerCase().trim()}|${ad ?? ""}`;
+    const existingKeys = new Set(existing.map(e => dupKey(e.colorantName, e.usageLot, e.newLot, e.approvalDate)));
+
+    const authedReq = req as AuthenticatedRequest;
+    let inserted = 0;
+    let duplicates = 0;
+    const errors: Array<{ row: number; value: string; error: string }> = [];
+
+    for (let i = 0; i < normalizedRows.length; i++) {
+      const row = normalizedRows[i]; const rowNum = i + 2;
+      try {
+        const colorantName = String(row[colMap.colorantName!] ?? "").trim();
+        const usageLot = String(row[colMap.usageLot!] ?? "").trim();
+        const newLot = String(row[colMap.newLot!] ?? "").trim();
+        const approvalDateRaw = colMap.approvalDate ? row[colMap.approvalDate] : null;
+        const comments = colMap.comments ? String(row[colMap.comments] ?? "").trim() : "";
+
+        if (!colorantName) { errors.push({ row: rowNum, value: `fila ${rowNum}`, error: "El nombre del colorante es obligatorio" }); continue; }
+        if (!usageLot)     { errors.push({ row: rowNum, value: colorantName, error: "El lote en uso es obligatorio" }); continue; }
+        if (!newLot)       { errors.push({ row: rowNum, value: colorantName, error: "El lote nuevo es obligatorio" }); continue; }
+
+        const approvalDate = parseDate(approvalDateRaw);
+        const key = dupKey(colorantName, usageLot, newLot, approvalDate);
+        if (existingKeys.has(key)) { duplicates++; continue; }
+
+        const interpretedStatus = interpretLotStatus(comments || null);
+        await db.insert(lotEvaluationsTable).values({
+          id: generateId(),
+          colorantName,
+          usageLot,
+          newLot,
+          approvalDate,
+          comments: comments || null,
+          interpretedStatus,
+          active: "true",
+          registeredBy: authedReq.userId ?? null,
+        });
+        existingKeys.add(key);
+        inserted++;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Error desconocido";
+        errors.push({ row: rowNum, value: String(row[colMap.colorantName!] ?? `fila ${rowNum}`).trim() || `fila ${rowNum}`, error: msg });
+      }
+    }
+
+    res.json({
+      total: normalizedRows.length,
+      inserted,
+      duplicates,
+      errors,
+      message: `Importación completada: ${inserted} insertados, ${duplicates} duplicados omitidos, ${errors.length} errores.`,
+    });
+  }
+);
 
 export default router;

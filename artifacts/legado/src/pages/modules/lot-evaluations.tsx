@@ -1,5 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
   FlaskConical, Plus, Search, History, Shuffle, BarChart2,
   Pencil, Trash2, CheckCircle, XCircle, AlertCircle, Eye,
   Download, ChevronsUpDown, Check, X, ChevronRight,
+  Upload, FileSpreadsheet, AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -152,6 +153,61 @@ export default function LotEvaluationsPage() {
   const [reportStatus, setReportStatus] = useState("all");
   const [reportFrom, setReportFrom] = useState("");
   const [reportTo, setReportTo] = useState("");
+
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    total: number; inserted: number; duplicates: number;
+    errors: Array<{ row: number; value: string; error: string }>;
+    message: string;
+  } | null>(null);
+  const [showImportResult, setShowImportResult] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setImportLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = sessionStorage.getItem("almacen_token");
+      const res = await fetch(`${API_BASE}/api/lot-evaluations/import`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `Error ${res.status}`);
+      setImportResult(data);
+      setShowImportResult(true);
+      qc.invalidateQueries({ queryKey: ["/api/lot-evaluations"] });
+      qc.invalidateQueries({ queryKey: ["/api/lot-evaluations/colorants"] });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error al importar";
+      toast({ title: "Error de importación", description: msg, variant: "destructive" });
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  function downloadTemplate() {
+    const token = sessionStorage.getItem("almacen_token");
+    const url = `${API_BASE}/api/lot-evaluations/template`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "plantilla_control_lotes.xlsx";
+    document.head.appendChild(a);
+    fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => r.blob())
+      .then(blob => {
+        a.href = URL.createObjectURL(blob);
+        a.click();
+        URL.revokeObjectURL(a.href);
+        a.remove();
+      })
+      .catch(() => toast({ title: "Error", description: "No se pudo descargar la plantilla", variant: "destructive" }));
+  }
 
   const { data: records = [], isLoading } = useQuery<LotEvaluation[]>({
     queryKey: ["/api/lot-evaluations"],
@@ -307,9 +363,37 @@ export default function LotEvaluationsPage() {
             </div>
           </div>
           {tab === "list" && (
-            <Button onClick={openCreate} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
-              <Plus className="w-4 h-4" /> Registrar Evaluación
-            </Button>
+            <div className="flex gap-2 flex-wrap justify-end">
+              <Button
+                variant="outline"
+                onClick={downloadTemplate}
+                className="gap-2 text-slate-600 border-slate-300"
+                title="Descargar plantilla Excel"
+              >
+                <FileSpreadsheet className="w-4 h-4" /> Plantilla
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importLoading}
+                className="gap-2 text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+              >
+                {importLoading
+                  ? <span className="w-4 h-4 border-2 border-emerald-400/40 border-t-emerald-600 rounded-full animate-spin" />
+                  : <Upload className="w-4 h-4" />}
+                {importLoading ? "Importando…" : "Importar Excel"}
+              </Button>
+              <Button onClick={openCreate} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
+                <Plus className="w-4 h-4" /> Registrar Evaluación
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+            </div>
           )}
         </div>
 
@@ -806,6 +890,65 @@ export default function LotEvaluationsPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showImportResult} onOpenChange={setShowImportResult}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+              Resultado de Importación
+            </DialogTitle>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-center">
+                  <div className="text-2xl font-bold text-emerald-700">{importResult.inserted}</div>
+                  <div className="text-xs text-emerald-600 mt-0.5 font-medium">Insertadas</div>
+                </div>
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-700">{importResult.duplicates}</div>
+                  <div className="text-xs text-amber-600 mt-0.5 font-medium">Duplicadas</div>
+                </div>
+                <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-center">
+                  <div className="text-2xl font-bold text-red-700">{importResult.errors.length}</div>
+                  <div className="text-xs text-red-600 mt-0.5 font-medium">Con error</div>
+                </div>
+              </div>
+              <p className="text-sm text-slate-500 text-center">
+                Total procesadas: <span className="font-medium text-slate-700">{importResult.total}</span> filas
+              </p>
+              {importResult.errors.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-red-500" /> Errores encontrados
+                  </p>
+                  <div className="max-h-52 overflow-y-auto rounded-lg border border-red-100 divide-y divide-red-100">
+                    {importResult.errors.map((e, i) => (
+                      <div key={i} className="px-3 py-2 bg-red-50/60 text-xs">
+                        <span className="font-medium text-slate-600">Fila {e.row}</span>
+                        {e.value && e.value !== `fila ${e.row}` && (
+                          <span className="text-slate-500"> · {e.value}</span>
+                        )}
+                        <span className="text-red-600"> — {e.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {importResult.duplicates > 0 && importResult.errors.length === 0 && (
+                <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-700">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>Las filas duplicadas ya existían con la misma combinación de colorante, lote uso, lote nuevo y fecha, por lo que fueron omitidas.</span>
+                </div>
+              )}
+              <Button className="w-full" onClick={() => setShowImportResult(false)}>
+                Cerrar
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </AppLayout>
