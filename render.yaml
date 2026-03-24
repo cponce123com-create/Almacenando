@@ -6,14 +6,29 @@ services:
     plan: free
 
     # ---------------------------------------------------------------
-    # Build: instala dependencias y compila el servidor con esbuild
+    # Build: install deps + compile server with esbuild
+    # Output: artifacts/api-server/dist/index.cjs
     # ---------------------------------------------------------------
     buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server build
 
     # ---------------------------------------------------------------
-    # Start: aplica migraciones primero, luego arranca el servidor
+    # Start: run migrations first, then start the server.
+    #
+    # WHY inline and not "sh artifacts/api-server/start.sh":
+    #   Render executes startCommand from the repo root. The script
+    #   is equivalent to start.sh but written inline to avoid any
+    #   shell path resolution issues on Render's runner.
+    #
+    # WHY "pnpm --filter @workspace/db migrate" and NOT "pnpm run migrate":
+    #   The root package.json has NO "migrate" script. The script lives
+    #   in lib/db/package.json under @workspace/db. The --filter flag
+    #   targets that specific workspace package.
+    #
+    # WHY "node artifacts/api-server/dist/index.cjs" and NOT "node dist/index.cjs":
+    #   esbuild outputs to artifacts/api-server/dist/index.cjs.
+    #   There is no dist/ folder at the repo root.
     # ---------------------------------------------------------------
-    startCommand: sh artifacts/api-server/start.sh
+    startCommand: pnpm --filter @workspace/db migrate && node artifacts/api-server/dist/index.cjs
 
     envVars:
       - key: NODE_ENV
