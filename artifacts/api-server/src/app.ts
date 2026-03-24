@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import path from "path";
 import router from "./routes";
@@ -7,7 +8,19 @@ import { logger } from "./lib/logger";
 import { generalApiLimiter } from "./lib/rate-limit.js";
 
 const app: Express = express();
-app.set("trust proxy", 1);
+
+// ---------------------------------------------------------------------------
+// Trust proxy — "loopback" solo confía en el proxy local de Render,
+// evitando que un atacante falsee su IP con el header X-Forwarded-For.
+// ---------------------------------------------------------------------------
+app.set("trust proxy", "loopback");
+
+// ---------------------------------------------------------------------------
+// Helmet — agrega headers HTTP de seguridad automáticamente:
+//   X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, etc.
+// Se coloca ANTES de cualquier ruta.
+// ---------------------------------------------------------------------------
+app.use(helmet());
 
 // ---------------------------------------------------------------------------
 // Static frontend serving (production only)
