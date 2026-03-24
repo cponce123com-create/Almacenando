@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: almacenando-api
+    runtime: node
+    region: oregon
+    plan: free
+
+    # ---------------------------------------------------------------
+    # Build: instala dependencias y compila el servidor con esbuild
+    # ---------------------------------------------------------------
+    buildCommand: pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server build
+
+    # ---------------------------------------------------------------
+    # Start: aplica migraciones primero, luego arranca el servidor
+    # ---------------------------------------------------------------
+    startCommand: sh artifacts/api-server/start.sh
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false          # Set this in the Render dashboard
+      - key: SESSION_SECRET
+        generateValue: true  # Render auto-generates a secure random value
+      - key: APP_URL
+        sync: false          # e.g. https://almacenando-api.onrender.com
+      # Optional — only needed if email features are used
+      - key: RESEND_API_KEY
+        sync: false
+      # Optional — only needed if Cloudinary file storage is used
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
