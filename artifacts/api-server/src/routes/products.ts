@@ -1,4 +1,6 @@
 import { Router } from "express";
+import multer from "multer";
+import * as XLSX from "xlsx";
 import { db } from "@workspace/db";
 import { productsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -7,6 +9,7 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod";
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const productSchema = z.object({
   code: z.string().min(1),
@@ -23,6 +26,207 @@ const productSchema = z.object({
   notes: z.string().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
 });
+
+const REQUIRED_COLUMNS = [
+  "codigo", "descripcion", "um", "cantidad", "zona", "ubicacion",
+  "familia", "lote", "tipo_producto", "estado", "ubicacion_manual", "observacion",
+];
+
+const TEMPLATE_HEADERS = [
+  "codigo", "descripcion", "um", "cantidad", "zona", "ubicacion",
+  "familia", "lote", "tipo_producto", "estado", "ubicacion_manual", "observacion",
+];
+
+function normalizeStatus(val: string): "active" | "inactive" {
+  const v = String(val ?? "").toLowerCase().trim();
+  if (["activo", "active", "1", "si", "sí", "yes"].includes(v)) return "active";
+  return "inactive";
+}
+
+function rowToProduct(row: Record<string, unknown>) {
+  const zona = String(row.zona ?? "").trim();
+  const ubicacion = String(row.ubicacion ?? "").trim();
+  const ubicacionManual = String(row.ubicacion_manual ?? "").trim();
+
+  const locationParts = [zona, ubicacion].filter(Boolean);
+  const location = locationParts.length > 0 ? locationParts.join(" / ") : ubicacionManual || undefined;
+
+  const lote = String(row.lote ?? "").trim();
+  const observacion = String(row.observacion ?? "").trim();
+  const notesParts = [
+    lote ? `Lote: ${lote}` : "",
+    ubicacionManual && location !== ubicacionManual ? `Ubic. manual: ${ubicacionManual}` : "",
+    observacion,
+  ].filter(Boolean);
+  const notes = notesParts.join(" | ") || undefined;
+
+  return {
+    code: String(row.codigo ?? "").trim(),
+    name: String(row.descripcion ?? "").trim(),
+    unit: String(row.um ?? "").trim(),
+    minimumStock: String(row.cantidad ?? "0").trim() || "0",
+    category: String(row.familia ?? "General").trim() || "General",
+    location,
+    hazardClass: String(row.tipo_producto ?? "").trim() || undefined,
+    status: normalizeStatus(String(row.estado ?? "activo")),
+    notes,
+  };
+}
+
+router.get("/template", requireAuth, (_req, res) => {
+  const wb = XLSX.utils.book_new();
+  const exampleRow = {
+    codigo: "PROD-001",
+    descripcion: "Ácido Sulfúrico 98%",
+    um: "L",
+    cantidad: "100",
+    zona: "A",
+    ubicacion: "A-01",
+    familia: "Ácido",
+    lote: "LOT-2024-001",
+    tipo_producto: "Corrosivo",
+    estado: "activo",
+    ubicacion_manual: "Estante 1 Nivel 2",
+    observacion: "Almacenar en área ventilada",
+  };
+  const ws = XLSX.utils.json_to_sheet([exampleRow], { header: TEMPLATE_HEADERS });
+  ws["!cols"] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(h.length + 4, 20) }));
+  XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="plantilla_productos.xlsx"');
+  res.send(buf);
+});
+
+router.get("/export", requireAuth, async (_req, res) => {
+  const products = await db.select().from(productsTable).orderBy(productsTable.code);
+  const rows = products.map(p => {
+    const locationParts = (p.location ?? "").split(" / ");
+    return {
+      codigo: p.code,
+      descripcion: p.name,
+      um: p.unit,
+      cantidad: p.minimumStock,
+      zona: locationParts[0] ?? "",
+      ubicacion: locationParts[1] ?? (p.location ?? ""),
+      familia: p.category,
+      lote: "",
+      tipo_producto: p.hazardClass ?? "",
+      estado: p.status === "active" ? "activo" : "inactivo",
+      ubicacion_manual: p.storageConditions ?? "",
+      observacion: p.notes ?? "",
+    };
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(rows.length > 0 ? rows : [Object.fromEntries(TEMPLATE_HEADERS.map(h => [h, ""]))],
+    { header: TEMPLATE_HEADERS });
+  ws["!cols"] = TEMPLATE_HEADERS.map(() => ({ wch: 22 }));
+  XLSX.utils.book_append_sheet(wb, ws, "Productos");
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="maestro_productos.xlsx"');
+  res.send(buf);
+});
+
+router.post(
+  "/import",
+  requireAuth,
+  requireRole("supervisor", "admin", "operator"),
+  upload.single("file"),
+  async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: "No se recibió ningún archivo" });
+      return;
+    }
+
+    let workbook: XLSX.WorkBook;
+    try {
+      workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    } catch {
+      res.status(400).json({ error: "El archivo no es un Excel válido (.xlsx o .xls)" });
+      return;
+    }
+
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) {
+      res.status(400).json({ error: "El archivo no contiene hojas de cálculo" });
+      return;
+    }
+    const ws = workbook.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+
+    if (rawRows.length === 0) {
+      res.status(400).json({ error: "El archivo está vacío o no tiene filas de datos" });
+      return;
+    }
+
+    const headers = Object.keys(rawRows[0]).map(h => h.toLowerCase().trim().replace(/\s+/g, "_"));
+    const missingCols = REQUIRED_COLUMNS.filter(col => !headers.includes(col));
+    if (missingCols.length > 0) {
+      res.status(400).json({
+        error: `Columnas requeridas faltantes: ${missingCols.join(", ")}`,
+        missing: missingCols,
+      });
+      return;
+    }
+
+    const normalizedRows = rawRows.map(row => {
+      const normalized: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row)) {
+        normalized[k.toLowerCase().trim().replace(/\s+/g, "_")] = v;
+      }
+      return normalized;
+    });
+
+    const existing = await db.select({ id: productsTable.id, code: productsTable.code })
+      .from(productsTable);
+    const existingMap = new Map(existing.map(p => [p.code, p.id]));
+
+    let inserted = 0;
+    let updated = 0;
+    const errors: Array<{ row: number; code: string; error: string }> = [];
+
+    for (let i = 0; i < normalizedRows.length; i++) {
+      const row = normalizedRows[i];
+      const rowNum = i + 2;
+
+      try {
+        const mapped = rowToProduct(row);
+        if (!mapped.code) {
+          errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" });
+          continue;
+        }
+        if (!mapped.name) {
+          errors.push({ row: rowNum, code: mapped.code, error: "El campo 'descripcion' es obligatorio" });
+          continue;
+        }
+        if (!mapped.unit) {
+          errors.push({ row: rowNum, code: mapped.code, error: "El campo 'um' es obligatorio" });
+          continue;
+        }
+
+        const existingId = existingMap.get(mapped.code);
+        if (existingId) {
+          await db.update(productsTable)
+            .set({ ...mapped, updatedAt: new Date() })
+            .where(eq(productsTable.id, existingId));
+          updated++;
+        } else {
+          const id = generateId();
+          await db.insert(productsTable).values({ id, ...mapped });
+          existingMap.set(mapped.code, id);
+          inserted++;
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Error desconocido";
+        const code = String((row as Record<string, unknown>).codigo ?? "").trim() || `fila ${rowNum}`;
+        errors.push({ row: rowNum, code, error: msg });
+      }
+    }
+
+    res.json({ inserted, updated, errors, total: normalizedRows.length });
+  },
+);
 
 router.get("/", requireAuth, async (_req, res) => {
   const products = await db.select().from(productsTable).orderBy(productsTable.code);
@@ -57,7 +261,10 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
     return;
   }
-  const [updated] = await db.update(productsTable).set({ ...parsed.data, updatedAt: new Date() }).where(eq(productsTable.id, id as string)).returning();
+  const [updated] = await db.update(productsTable)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(eq(productsTable.id, id as string))
+    .returning();
   if (!updated) {
     res.status(404).json({ error: "Producto no encontrado" });
     return;

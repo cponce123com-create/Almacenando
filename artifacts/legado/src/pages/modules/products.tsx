@@ -48,6 +48,11 @@ import {
   Loader2,
   AlertCircle,
   FlaskConical,
+  Download,
+  Upload,
+  FileSpreadsheet,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 interface Product {
@@ -140,6 +145,127 @@ async function deleteProduct(id: string): Promise<void> {
     const err = await res.json();
     throw new Error(err.error || "Error al eliminar producto");
   }
+}
+
+function downloadFile(res: Response, fallbackName: string) {
+  res.blob().then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    a.href = url;
+    a.download = match?.[1] ?? fallbackName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
+async function downloadTemplate() {
+  const res = await fetch("/api/products/template", { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error("No se pudo descargar la plantilla");
+  downloadFile(res, "plantilla_productos.xlsx");
+}
+
+async function exportProducts() {
+  const res = await fetch("/api/products/export", { headers: getAuthHeaders() });
+  if (!res.ok) throw new Error("No se pudo exportar los productos");
+  downloadFile(res, "maestro_productos.xlsx");
+}
+
+interface ImportResult {
+  inserted: number;
+  updated: number;
+  errors: Array<{ row: number; code: string; error: string }>;
+  total: number;
+}
+
+async function importProducts(file: File): Promise<ImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/products/import", {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: form,
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Error al importar");
+  return json as ImportResult;
+}
+
+function ImportResultsModal({
+  open, onClose, result,
+}: {
+  open: boolean; onClose: () => void; result: ImportResult | null;
+}) {
+  if (!result) return null;
+  const hasErrors = result.errors.length > 0;
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5 text-blue-600" />
+            Resultado de la Importación
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-emerald-600">{result.inserted}</p>
+              <p className="text-xs text-emerald-700 mt-0.5">Insertados</p>
+            </div>
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-blue-600">{result.updated}</p>
+              <p className="text-xs text-blue-700 mt-0.5">Actualizados</p>
+            </div>
+            <div className={`border rounded-lg p-3 text-center ${hasErrors ? "bg-red-50 border-red-100" : "bg-slate-50 border-slate-100"}`}>
+              <p className={`text-2xl font-bold ${hasErrors ? "text-red-600" : "text-slate-400"}`}>{result.errors.length}</p>
+              <p className={`text-xs mt-0.5 ${hasErrors ? "text-red-700" : "text-slate-500"}`}>Errores</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <span>Total de filas procesadas: <strong className="text-slate-700">{result.total}</strong></span>
+            <span>·</span>
+            <span>Exitosos: <strong className="text-emerald-600">{result.inserted + result.updated}</strong></span>
+          </div>
+
+          {!hasErrors && (
+            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <p className="text-sm text-emerald-700 font-medium">
+                Importación completada sin errores
+              </p>
+            </div>
+          )}
+
+          {hasErrors && (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <XCircle className="w-4 h-4 text-red-500" />
+                Detalle de errores:
+              </p>
+              <div className="max-h-52 overflow-y-auto space-y-1.5">
+                {result.errors.map((e, i) => (
+                  <div key={i} className="bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                    <p className="text-xs font-semibold text-red-700">
+                      Fila {e.row} — Código: <span className="font-mono">{e.code}</span>
+                    </p>
+                    <p className="text-xs text-red-600 mt-0.5">{e.error}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button onClick={onClose}>Cerrar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -375,8 +501,54 @@ export default function MaestrodeProductosPage() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
 
+  const [isExporting, setIsExporting] = useState(false);
+  const [isTemplating, setIsTemplating] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [showImportResult, setShowImportResult] = useState(false);
+
   const canWrite = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
   const canDelete = user?.role && ["admin", "supervisor"].includes(user.role);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await exportProducts();
+    } catch (e: unknown) {
+      toast({ title: "Error al exportar", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleTemplate = async () => {
+    setIsTemplating(true);
+    try {
+      await downloadTemplate();
+    } catch (e: unknown) {
+      toast({ title: "Error", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setIsTemplating(false);
+    }
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    setIsImporting(true);
+    try {
+      const result = await importProducts(file);
+      setImportResult(result);
+      setShowImportResult(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/summary"] });
+    } catch (err: unknown) {
+      toast({ title: "Error al importar", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   const { data: products = [], isLoading, isError } = useQuery<Product[]>({
     queryKey: ["/api/products"],
@@ -451,12 +623,47 @@ export default function MaestrodeProductosPage() {
               <p className="text-slate-500 text-sm">Gestión de productos químicos del almacén</p>
             </div>
           </div>
-          {canWrite && (
-            <Button onClick={() => setShowForm(true)} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Nuevo Producto
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-slate-600"
+              onClick={handleTemplate}
+              disabled={isTemplating}
+            >
+              {isTemplating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileSpreadsheet className="w-3.5 h-3.5" />}
+              Plantilla
             </Button>
-          )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-slate-600"
+              onClick={handleExport}
+              disabled={isExporting}
+            >
+              {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              Exportar Excel
+            </Button>
+            {canWrite && (
+              <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors ${isImporting ? "opacity-50 pointer-events-none" : ""}`}>
+                {isImporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                Importar Excel
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="sr-only"
+                  onChange={handleImportFile}
+                  disabled={isImporting}
+                />
+              </label>
+            )}
+            {canWrite && (
+              <Button onClick={() => setShowForm(true)} className="gap-2" size="sm">
+                <Plus className="w-4 h-4" />
+                Nuevo Producto
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Stats row */}
@@ -716,6 +923,12 @@ export default function MaestrodeProductosPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <ImportResultsModal
+          open={showImportResult}
+          onClose={() => setShowImportResult(false)}
+          result={importResult}
+        />
       </div>
     </AppLayout>
   );
