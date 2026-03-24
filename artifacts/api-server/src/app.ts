@@ -7,6 +7,8 @@ import { generalApiLimiter } from "./lib/rate-limit.js";
 
 const app: Express = express();
 
+app.set("trust proxy", 1);
+
 function getAllowedOrigins(): string[] {
   const origins: string[] = [];
   if (process.env.APP_URL) origins.push(process.env.APP_URL.replace(/\/$/, ""));
