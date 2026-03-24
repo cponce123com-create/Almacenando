@@ -8,7 +8,14 @@ if (!jwtSecret) {
   throw new Error("SESSION_SECRET environment variable is required. Set it in your .env file.");
 }
 const JWT_SECRET = jwtSecret;
-const JWT_EXPIRES_IN = "30d";
+
+// ---------------------------------------------------------------------------
+// Duración del token reducida de 30d → 8h.
+// Un turno de trabajo típico dura 8 horas. Si un token es robado,
+// el atacante solo tiene una ventana de horas, no un mes entero.
+// El usuario simplemente vuelve a iniciar sesión al día siguiente.
+// ---------------------------------------------------------------------------
+const JWT_EXPIRES_IN = "8h";
 
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
