@@ -17,8 +17,12 @@ services:
     # (not the default "/legado/"), so all asset paths are correct when
     # served from the root of the Render domain.
     # -----------------------------------------------------------------------
+    # NOTA: se usa --no-frozen-lockfile porque package.json fue actualizado
+    # (se agregó helmet) y el pnpm-lock.yaml aún no refleja ese cambio.
+    # Una vez que hagas "pnpm install" localmente y subas el lock file
+    # actualizado, puedes volver a cambiar esto a --frozen-lockfile.
     buildCommand: >
-      pnpm install --frozen-lockfile &&
+      pnpm install --no-frozen-lockfile &&
       BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/legado build &&
       pnpm --filter @workspace/api-server build &&
       pnpm --filter @workspace/db migrate
