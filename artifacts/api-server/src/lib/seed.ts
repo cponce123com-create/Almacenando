@@ -10,7 +10,7 @@ import {
   personnelTable,
   eppMasterTable,
 } from "@workspace/db";
-import { count } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { hashPassword } from "./auth.js";
 import { generateId } from "./id.js";
 import { logger } from "./logger.js";
@@ -63,23 +63,18 @@ const demoEpp = [
 ];
 
 export async function seedWarehouseData() {
-  try {
-    const [existingCount] = await db.select({ total: count() }).from(usersTable);
-    if ((existingCount?.total ?? 0) > 0) {
-      logger.info("Warehouse data already seeded, skipping");
-      return;
-    }
-  } catch (err) {
-    logger.warn({ err }, "Could not check existing data, attempting seed anyway");
-  }
-
   logger.info("Starting warehouse data seed...");
 
   const userIds: Record<string, string> = {};
   for (const user of demoUsers) {
-    const id = generateId();
-    const passwordHash = await hashPassword(user.password);
     try {
+      const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, user.email)).limit(1);
+      if (existing.length > 0) {
+        userIds[user.email] = existing[0]!.id;
+        continue;
+      }
+      const id = generateId();
+      const passwordHash = await hashPassword(user.password);
       await db.insert(usersTable).values({
         id,
         email: user.email,
