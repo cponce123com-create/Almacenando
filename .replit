@@ -9,6 +9,8 @@ id = "artifacts/mockup-sandbox"
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+build = ["sh", "-c", "pnpm install && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/legado run build"]
+run = ["sh", "-c", "PORT=8080 node artifacts/api-server/dist/index.cjs"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
