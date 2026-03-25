@@ -30,34 +30,38 @@ function useSummary() {
   });
 }
 
+// Colores usando violet/emerald/orange/purple en lugar de blue
+// (más robustos en monitores con problemas de canal de color azul)
 const moduleColors = [
-  "bg-blue-50 border-blue-100 hover:border-blue-300",
+  "bg-violet-50 border-violet-100 hover:border-violet-300",
   "bg-emerald-50 border-emerald-100 hover:border-emerald-300",
   "bg-orange-50 border-orange-100 hover:border-orange-300",
   "bg-purple-50 border-purple-100 hover:border-purple-300",
   "bg-teal-50 border-teal-100 hover:border-teal-300",
   "bg-rose-50 border-rose-100 hover:border-rose-300",
-  "bg-violet-50 border-violet-100 hover:border-violet-300",
+  "bg-indigo-50 border-indigo-100 hover:border-indigo-300",
   "bg-amber-50 border-amber-100 hover:border-amber-300",
   "bg-cyan-50 border-cyan-100 hover:border-cyan-300",
   "bg-slate-50 border-slate-200 hover:border-slate-400",
   "bg-lime-50 border-lime-100 hover:border-lime-300",
   "bg-red-50 border-red-100 hover:border-red-300",
+  "bg-fuchsia-50 border-fuchsia-100 hover:border-fuchsia-300",
 ];
 
 const moduleIconColors = [
-  "text-blue-600",
+  "text-violet-600",
   "text-emerald-600",
   "text-orange-600",
   "text-purple-600",
   "text-teal-600",
   "text-rose-600",
-  "text-violet-600",
+  "text-indigo-600",
   "text-amber-600",
   "text-cyan-600",
   "text-slate-600",
   "text-lime-600",
   "text-red-600",
+  "text-fuchsia-600",
 ];
 
 export default function Dashboard() {
@@ -132,7 +136,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+        <div className="bg-violet-50 border border-violet-100 rounded-xl p-4">
           <div className="flex items-center gap-3">
             <div className={cn("px-3 py-1 rounded-full text-xs font-semibold", user?.role ? ROLE_COLORS[user.role] : "")}>
               {user?.role ? ROLE_LABELS[user.role] : ""}
