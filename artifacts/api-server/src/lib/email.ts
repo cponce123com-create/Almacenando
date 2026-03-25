@@ -293,14 +293,14 @@ Con cariño,
   </div>
 
   <p style="font-size: 15px; line-height: 1.6; color: #374151;">
-    Como <strong>${relationship}</strong> de ${ownerName}, tendrás un papel especial: si ocurre algo, 
-    se te pedirá que confirmes el acontecimiento para que su legado digital pueda ser 
+    Como <strong>${relationship}</strong> de ${ownerName}, tendrás un papel especial: si ocurre algo,
+    se te pedirá que confirmes el acontecimiento para que su legado digital pueda ser
     entregado a sus seres queridos según sus deseos.
   </p>
 
   <div style="background: #F9FAFB; border-radius: 12px; padding: 16px; margin: 24px 0; border-left: 4px solid #9d174d;">
     <p style="margin: 0; font-size: 14px; color: #6B7280; line-height: 1.6;">
-      <strong>No necesitas hacer nada por ahora.</strong> Cuando llegue el momento, recibirás 
+      <strong>No necesitas hacer nada por ahora.</strong> Cuando llegue el momento, recibirás
       un correo con un enlace personal y seguro para confirmar.
     </p>
   </div>
@@ -392,5 +392,138 @@ export async function sendTimeCapsuleEmail({
     subject: `🕰️ ${fromName} te dejó una cápsula del tiempo: "${capsuleTitle}"`,
     html,
     text: `Hola ${toName}, ${fromName} te dejó una cápsula del tiempo. Ábrela aquí: ${accessUrl}`,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notificación de cambio de lote — Almacén Químico
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function sendDyeLotNotificationEmail({
+  toEmail,
+  toName,
+  lotNumber,
+  productName,
+  changeType,
+  changedByName,
+  qualityStatus,
+  quantity,
+  supplier,
+  notes,
+  appUrl,
+}: {
+  toEmail: string;
+  toName: string;
+  lotNumber: string;
+  productName: string;
+  changeType: "created" | "updated" | "status_changed";
+  changedByName: string;
+  qualityStatus: string;
+  quantity: string;
+  supplier?: string;
+  notes?: string;
+  appUrl: string;
+}): Promise<void> {
+  const statusLabels: Record<string, { label: string; color: string; bg: string }> = {
+    pending:  { label: "Pendiente",  color: "#92400E", bg: "#FEF3C7" },
+    approved: { label: "Aprobado",   color: "#065F46", bg: "#D1FAE5" },
+    rejected: { label: "Rechazado",  color: "#991B1B", bg: "#FEE2E2" },
+  };
+  const changeLabels: Record<string, string> = {
+    created:        "Nuevo lote registrado",
+    updated:        "Lote actualizado",
+    status_changed: "Estado de lote modificado",
+  };
+
+  const status = statusLabels[qualityStatus] ?? statusLabels["pending"];
+  const changeLabel = changeLabels[changeType] ?? "Cambio en lote";
+
+  const text = `
+Hola ${toName},
+
+${changeLabel}: Lote ${lotNumber} — ${productName}
+
+Estado de calidad: ${status.label}
+Cantidad: ${quantity}
+${supplier ? `Proveedor: ${supplier}` : ""}
+Registrado/modificado por: ${changedByName}
+${notes ? `Notas: ${notes}` : ""}
+
+Accede al sistema para más detalles: ${appUrl}
+
+— Sistema de Gestión de Almacén Químico
+  `.trim();
+
+  const html = `
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 580px; margin: 0 auto; background: #f8fafc; padding: 0;">
+
+  <div style="background: #1e3a5f; padding: 28px 32px; border-radius: 12px 12px 0 0;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="width: 40px; height: 40px; background: #3b82f6; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px;">🧪</div>
+      <div>
+        <p style="margin: 0; color: #93c5fd; font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600;">Almacén Químico</p>
+        <p style="margin: 2px 0 0; color: #ffffff; font-size: 17px; font-weight: 700;">${changeLabel}</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="background: #ffffff; padding: 28px 32px; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;">
+    <p style="margin: 0 0 20px; font-size: 15px; color: #374151; line-height: 1.6;">
+      Hola <strong>${toName}</strong>, se ha registrado un cambio en el siguiente lote:
+    </p>
+
+    <div style="background: #f1f5f9; border-radius: 10px; padding: 20px 24px; margin-bottom: 20px; border-left: 4px solid #3b82f6;">
+      <p style="margin: 0 0 4px; font-size: 18px; font-weight: 700; color: #1e293b;">Lote ${lotNumber}</p>
+      <p style="margin: 0 0 16px; font-size: 14px; color: #64748b;">${productName}</p>
+
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #64748b; width: 45%;">Estado de calidad</td>
+          <td style="padding: 6px 0;">
+            <span style="background: ${status.bg}; color: ${status.color}; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;">${status.label}</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #64748b;">Cantidad</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1e293b; font-weight: 500;">${quantity}</td>
+        </tr>
+        ${supplier ? `
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #64748b;">Proveedor</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1e293b;">${supplier}</td>
+        </tr>` : ""}
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #64748b;">Modificado por</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1e293b;">${changedByName}</td>
+        </tr>
+        ${notes ? `
+        <tr>
+          <td style="padding: 6px 0; font-size: 13px; color: #64748b; vertical-align: top;">Notas</td>
+          <td style="padding: 6px 0; font-size: 13px; color: #1e293b; line-height: 1.5;">${notes}</td>
+        </tr>` : ""}
+      </table>
+    </div>
+
+    <div style="text-align: center; margin: 28px 0 8px;">
+      <a href="${appUrl}" style="background: #3b82f6; color: #ffffff; text-decoration: none; padding: 13px 32px; border-radius: 8px; font-size: 14px; font-weight: 600; display: inline-block; letter-spacing: 0.3px;">
+        Ver en el sistema →
+      </a>
+    </div>
+  </div>
+
+  <div style="background: #f1f5f9; padding: 16px 32px; border-radius: 0 0 12px 12px; border: 1px solid #e2e8f0; border-top: none;">
+    <p style="margin: 0; font-size: 12px; color: #94a3b8; text-align: center;">
+      Notificación automática del Sistema de Gestión de Almacén Químico.<br/>
+      Recibes este correo porque tienes habilitadas las notificaciones de lotes.
+    </p>
+  </div>
+</div>
+  `.trim();
+
+  await sendEmail({
+    to: toEmail,
+    subject: `[Almacén] ${changeLabel}: Lote ${lotNumber} — ${productName}`,
+    html,
+    text,
   });
 }
