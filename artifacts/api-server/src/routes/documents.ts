@@ -116,7 +116,7 @@ router.post(
     }).returning();
     const { fileData: _fd, ...safeDoc } = created;
     res.status(201).json(safeDoc);
-  },
+  })
 );
 
 router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), asyncHandler(async (req, res) => {

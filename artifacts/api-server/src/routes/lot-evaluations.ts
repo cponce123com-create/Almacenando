@@ -364,7 +364,7 @@ router.post(
       errors,
       message: `Importación completada: ${inserted} insertados, ${duplicates} duplicados omitidos, ${errors.length} errores.`,
     });
-  }
+  })
 );
 
 export default router;

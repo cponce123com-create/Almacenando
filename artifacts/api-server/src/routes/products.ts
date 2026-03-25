@@ -165,7 +165,7 @@ router.post(
       }
     }
     res.json({ inserted, updated, errors, total: normalizedRows.length });
-  },
+  })
 );
 
 async function checkProductDependencies(id: string) {
