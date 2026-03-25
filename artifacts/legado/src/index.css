@@ -157,6 +157,69 @@
  * `forced-color-adjust: none` le dice al navegador que NO sobreescriba
  * los colores definidos por la app en estos elementos.
  */
+/*
+ * FIX: Fondos de color claro no renderizan en algunos monitores corporativos.
+ *
+ * En ciertos equipos, los colores muy claros de Tailwind (escala -50, -100, -200)
+ * no se muestran porque el driver de video o el perfil de color del monitor
+ * elimina los tonos de baja saturación. Para forzar que se vean, se definen
+ * los valores hex exactos con !important, sobreescribiendo cualquier interferencia.
+ */
+.bg-slate-50  { background-color: #f8fafc !important; }
+.bg-slate-100 { background-color: #f1f5f9 !important; }
+.bg-slate-200 { background-color: #e2e8f0 !important; }
+.bg-gray-50   { background-color: #f9fafb !important; }
+.bg-gray-100  { background-color: #f3f4f6 !important; }
+.bg-gray-200  { background-color: #e5e7eb !important; }
+.bg-blue-50   { background-color: #eff6ff !important; }
+.bg-blue-100  { background-color: #dbeafe !important; }
+.bg-blue-200  { background-color: #bfdbfe !important; }
+.bg-violet-50  { background-color: #f5f3ff !important; }
+.bg-violet-100 { background-color: #ede9fe !important; }
+.bg-violet-200 { background-color: #ddd6fe !important; }
+.bg-purple-50  { background-color: #faf5ff !important; }
+.bg-purple-100 { background-color: #f3e8ff !important; }
+.bg-purple-200 { background-color: #e9d5ff !important; }
+.bg-indigo-50  { background-color: #eef2ff !important; }
+.bg-indigo-100 { background-color: #e0e7ff !important; }
+.bg-indigo-200 { background-color: #c7d2fe !important; }
+.bg-emerald-50  { background-color: #ecfdf5 !important; }
+.bg-emerald-100 { background-color: #d1fae5 !important; }
+.bg-emerald-200 { background-color: #a7f3d0 !important; }
+.bg-green-50  { background-color: #f0fdf4 !important; }
+.bg-green-100 { background-color: #dcfce7 !important; }
+.bg-green-200 { background-color: #bbf7d0 !important; }
+.bg-teal-50  { background-color: #f0fdfa !important; }
+.bg-teal-100 { background-color: #ccfbf1 !important; }
+.bg-teal-200 { background-color: #99f6e4 !important; }
+.bg-cyan-50  { background-color: #ecfeff !important; }
+.bg-cyan-100 { background-color: #cffafe !important; }
+.bg-cyan-200 { background-color: #a5f3fc !important; }
+.bg-orange-50  { background-color: #fff7ed !important; }
+.bg-orange-100 { background-color: #ffedd5 !important; }
+.bg-orange-200 { background-color: #fed7aa !important; }
+.bg-amber-50  { background-color: #fffbeb !important; }
+.bg-amber-100 { background-color: #fef3c7 !important; }
+.bg-amber-200 { background-color: #fde68a !important; }
+.bg-yellow-50  { background-color: #fefce8 !important; }
+.bg-yellow-100 { background-color: #fef9c3 !important; }
+.bg-yellow-200 { background-color: #fef08a !important; }
+.bg-red-50  { background-color: #fef2f2 !important; }
+.bg-red-100 { background-color: #fee2e2 !important; }
+.bg-red-200 { background-color: #fecaca !important; }
+.bg-rose-50  { background-color: #fff1f2 !important; }
+.bg-rose-100 { background-color: #ffe4e6 !important; }
+.bg-rose-200 { background-color: #fecdd3 !important; }
+.bg-pink-50  { background-color: #fdf2f8 !important; }
+.bg-pink-100 { background-color: #fce7f3 !important; }
+.bg-pink-200 { background-color: #fbcfe8 !important; }
+.bg-fuchsia-50  { background-color: #fdf4ff !important; }
+.bg-fuchsia-100 { background-color: #fae8ff !important; }
+.bg-fuchsia-200 { background-color: #f5d0fe !important; }
+.bg-lime-50  { background-color: #f7fee7 !important; }
+.bg-lime-100 { background-color: #ecfccb !important; }
+.bg-lime-200 { background-color: #d9f99d !important; }
+
 @media (forced-colors: active) {
   :root {
     forced-color-adjust: none;
