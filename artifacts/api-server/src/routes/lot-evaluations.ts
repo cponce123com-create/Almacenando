@@ -7,6 +7,7 @@ import { eq, desc, or, ilike, and } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -56,7 +57,7 @@ const evaluationSchema = z.object({
   interpretedStatus: z.string().optional(),
 });
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const { search, colorant, status, dateFrom, dateTo } = req.query as Record<string, string>;
 
   let query = db.select().from(lotEvaluationsTable).$dynamic();
@@ -88,17 +89,17 @@ router.get("/", requireAuth, async (req, res) => {
 
   const records = await query.orderBy(desc(lotEvaluationsTable.createdAt));
   res.json(records);
-});
+}));
 
-router.get("/colorants", requireAuth, async (_req, res) => {
+router.get("/colorants", requireAuth, asyncHandler(async (_req, res) => {
   const records = await db
     .selectDistinct({ colorantName: lotEvaluationsTable.colorantName })
     .from(lotEvaluationsTable)
     .orderBy(lotEvaluationsTable.colorantName);
   res.json(records.map((r) => r.colorantName));
-});
+}));
 
-router.get("/history/:colorantName", requireAuth, async (req, res) => {
+router.get("/history/:colorantName", requireAuth, asyncHandler(async (req, res) => {
   const { colorantName } = req.params;
   const records = await db
     .select()
@@ -106,9 +107,9 @@ router.get("/history/:colorantName", requireAuth, async (req, res) => {
     .where(ilike(lotEvaluationsTable.colorantName, `%${colorantName as string}%`))
     .orderBy(desc(lotEvaluationsTable.approvalDate), desc(lotEvaluationsTable.createdAt));
   res.json(records);
-});
+}));
 
-router.get("/compatibility", requireAuth, async (req, res) => {
+router.get("/compatibility", requireAuth, asyncHandler(async (req, res) => {
   const { colorant, usageLot, newLot } = req.query as Record<string, string>;
 
   if (!colorant || !newLot) {
@@ -161,7 +162,7 @@ router.get("/compatibility", requireAuth, async (req, res) => {
     record: latest,
     ...mapped,
   });
-});
+}));
 
 // NOTE: /template MUST be declared before /:id.
 // Express matches routes in registration order, so if /:id appears first,
@@ -183,7 +184,7 @@ router.get("/template", requireAuth, (_req, res) => {
   res.send(buf);
 });
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const records = await db
     .select()
@@ -195,9 +196,9 @@ router.get("/:id", requireAuth, async (req, res) => {
     return;
   }
   res.json(records[0]);
-});
+}));
 
-router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "operator"), async (req, res) => {
+router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "operator"), asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const parsed = evaluationSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -221,9 +222,9 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "ope
     })
     .returning();
   res.status(201).json(created);
-});
+}));
 
-router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const parsed = evaluationSchema.partial().safeParse(req.body);
   if (!parsed.success) {
@@ -254,9 +255,9 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), a
     return;
   }
   res.json(updated);
-});
+}));
 
-router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const [deactivated] = await db
     .update(lotEvaluationsTable)
@@ -268,14 +269,13 @@ router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (re
     return;
   }
   res.json({ message: "Evaluación desactivada", record: deactivated });
-});
+}));
 
 router.post(
   "/import",
   requireAuth,
   requireRole("supervisor", "admin", "operator"),
-  upload.single("file"),
-  async (req, res) => {
+  upload.single("file"), asyncHandler(async (req, res) => {
     if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
     let workbook: XLSX.WorkBook;
     try { workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: false }); }

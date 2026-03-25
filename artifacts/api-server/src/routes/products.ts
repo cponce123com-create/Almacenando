@@ -7,6 +7,7 @@ import { eq, count } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -87,7 +88,7 @@ router.get("/template", requireAuth, (_req, res) => {
   res.send(buf);
 });
 
-router.get("/export", requireAuth, async (_req, res) => {
+router.get("/export", requireAuth, asyncHandler(async (_req, res) => {
   const products = await db.select().from(productsTable).orderBy(productsTable.code);
   const rows = products.map(p => {
     const locationParts = (p.location ?? "").split(" / ");
@@ -110,14 +111,13 @@ router.get("/export", requireAuth, async (_req, res) => {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", 'attachment; filename="maestro_productos.xlsx"');
   res.send(buf);
-});
+}));
 
 router.post(
   "/import",
   requireAuth,
   requireRole("supervisor", "admin", "operator"),
-  upload.single("file"),
-  async (req, res) => {
+  upload.single("file"), asyncHandler(async (req, res) => {
     if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
     let workbook: XLSX.WorkBook;
     try { workbook = XLSX.read(req.file.buffer, { type: "buffer" }); }
@@ -183,27 +183,27 @@ async function checkProductDependencies(id: string) {
   return deps;
 }
 
-router.get("/", requireAuth, async (_req, res) => {
+router.get("/", requireAuth, asyncHandler(async (_req, res) => {
   const products = await db.select().from(productsTable).orderBy(productsTable.code);
   res.json(products);
-});
+}));
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const products = await db.select().from(productsTable).where(eq(productsTable.id, id as string)).limit(1);
   if (products.length === 0) { res.status(404).json({ error: "Producto no encontrado" }); return; }
   res.json(products[0]);
-});
+}));
 
-router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), async (req, res) => {
+router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
   const parsed = productSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const id = generateId();
   const [created] = await db.insert(productsTable).values({ id, ...parsed.data }).returning();
   res.status(201).json(created);
-});
+}));
 
-router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const parsed = productSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
@@ -212,9 +212,9 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
     .where(eq(productsTable.id, id as string)).returning();
   if (!updated) { res.status(404).json({ error: "Producto no encontrado" }); return; }
   res.json(updated);
-});
+}));
 
-router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const products = await db.select().from(productsTable).where(eq(productsTable.id, id as string)).limit(1);
   if (products.length === 0) { res.status(404).json({ error: "Producto no encontrado" }); return; }
@@ -235,6 +235,6 @@ router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (re
 
   await db.delete(productsTable).where(eq(productsTable.id, id as string));
   res.json({ message: "Producto eliminado permanentemente", soft: false });
-});
+}));
 
 export default router;

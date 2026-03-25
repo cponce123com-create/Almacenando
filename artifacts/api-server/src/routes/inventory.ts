@@ -5,6 +5,7 @@ import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 
@@ -18,12 +19,12 @@ const inventorySchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/", requireAuth, async (_req, res) => {
+router.get("/", requireAuth, asyncHandler(async (_req, res) => {
   const records = await db.select().from(inventoryRecordsTable).orderBy(desc(inventoryRecordsTable.recordDate));
   res.json(records);
-});
+}));
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const records = await db.select().from(inventoryRecordsTable).where(eq(inventoryRecordsTable.id, id as string)).limit(1);
   if (records.length === 0) {
@@ -31,9 +32,9 @@ router.get("/:id", requireAuth, async (req, res) => {
     return;
   }
   res.json(records[0]);
-});
+}));
 
-router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), async (req, res) => {
+router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const parsed = inventorySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -47,9 +48,9 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), as
     registeredBy: authedReq.userId,
   }).returning();
   res.status(201).json(created);
-});
+}));
 
-router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const parsed = inventorySchema.partial().safeParse(req.body);
   if (!parsed.success) {
@@ -62,9 +63,9 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
     return;
   }
   res.json(updated);
-});
+}));
 
-router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const [deleted] = await db.delete(inventoryRecordsTable).where(eq(inventoryRecordsTable.id, id as string)).returning();
   if (!deleted) {
@@ -72,6 +73,6 @@ router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (re
     return;
   }
   res.json({ message: "Registro eliminado" });
-});
+}));
 
 export default router;

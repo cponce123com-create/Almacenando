@@ -6,6 +6,7 @@ import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 const upload = multer({
@@ -35,7 +36,7 @@ const documentMetaSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/", requireAuth, async (_req, res) => {
+router.get("/", requireAuth, asyncHandler(async (_req, res) => {
   const records = await db.select({
     id: documentsTable.id,
     title: documentsTable.title,
@@ -55,9 +56,9 @@ router.get("/", requireAuth, async (_req, res) => {
     updatedAt: documentsTable.updatedAt,
   }).from(documentsTable).orderBy(desc(documentsTable.createdAt));
   res.json(records);
-});
+}));
 
-router.get("/:id/download", requireAuth, async (req, res) => {
+router.get("/:id/download", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const records = await db.select().from(documentsTable).where(eq(documentsTable.id, id as string)).limit(1);
   if (records.length === 0) { res.status(404).json({ error: "Documento no encontrado" }); return; }
@@ -70,21 +71,20 @@ router.get("/:id/download", requireAuth, async (req, res) => {
   res.setHeader("Content-Type", mime);
   res.setHeader("Content-Disposition", `attachment; filename="${doc.fileName ?? "document"}"`);
   res.send(buffer);
-});
+}));
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const records = await db.select().from(documentsTable).where(eq(documentsTable.id, id as string)).limit(1);
   if (records.length === 0) { res.status(404).json({ error: "Documento no encontrado" }); return; }
   res.json(records[0]);
-});
+}));
 
 router.post(
   "/",
   requireAuth,
   requireRole("supervisor", "admin", "quality"),
-  upload.single("file"),
-  async (req, res) => {
+  upload.single("file"), asyncHandler(async (req, res) => {
     const authedReq = req as AuthenticatedRequest;
     const body = typeof req.body === "object" ? req.body : {};
     const parsed = documentMetaSchema.safeParse(body);
@@ -119,7 +119,7 @@ router.post(
   },
 );
 
-router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const parsed = documentMetaSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Datos inválidos" }); return; }
@@ -129,13 +129,13 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), a
   if (!updated) { res.status(404).json({ error: "Documento no encontrado" }); return; }
   const { fileData: _fd, ...safeDoc } = updated;
   res.json(safeDoc);
-});
+}));
 
-router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const [deleted] = await db.delete(documentsTable).where(eq(documentsTable.id, id as string)).returning();
   if (!deleted) { res.status(404).json({ error: "Documento no encontrado" }); return; }
   res.json({ message: "Documento eliminado" });
-});
+}));
 
 export default router;

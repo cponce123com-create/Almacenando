@@ -5,6 +5,7 @@ import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 
@@ -24,19 +25,19 @@ const sampleSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/", requireAuth, async (_req, res) => {
+router.get("/", requireAuth, asyncHandler(async (_req, res) => {
   const records = await db.select().from(samplesTable).orderBy(desc(samplesTable.sampleDate));
   res.json(records);
-});
+}));
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const records = await db.select().from(samplesTable).where(eq(samplesTable.id, id as string)).limit(1);
   if (records.length === 0) { res.status(404).json({ error: "Muestra no encontrada" }); return; }
   res.json(records[0]);
-});
+}));
 
-router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "operator"), async (req, res) => {
+router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "operator"), asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const parsed = sampleSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -58,9 +59,9 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "ope
     takenBy: authedReq.userId,
   }).returning();
   res.status(201).json(created);
-});
+}));
 
-router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const parsed = sampleSchema.partial().safeParse(req.body);
   if (!parsed.success) {
@@ -72,13 +73,13 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), a
     .where(eq(samplesTable.id, id as string)).returning();
   if (!updated) { res.status(404).json({ error: "Muestra no encontrada" }); return; }
   res.json(updated);
-});
+}));
 
-router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const [deleted] = await db.delete(samplesTable).where(eq(samplesTable.id, id as string)).returning();
   if (!deleted) { res.status(404).json({ error: "Muestra no encontrada" }); return; }
   res.json({ message: "Muestra eliminada" });
-});
+}));
 
 export default router;

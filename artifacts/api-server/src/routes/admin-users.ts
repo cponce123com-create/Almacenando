@@ -6,6 +6,7 @@ import { requireAuth, requireRole, hashPassword, type AuthenticatedRequest } fro
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import type { WarehouseRole } from "@workspace/db";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 
@@ -24,7 +25,7 @@ const updateUserSchema = z.object({
   password: z.string().min(8).optional(),
 });
 
-router.get("/", requireAuth, requireRole("admin", "supervisor"), async (_req, res) => {
+router.get("/", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (_req, res) => {
   const users = await db.select({
     id: usersTable.id,
     email: usersTable.email,
@@ -34,9 +35,9 @@ router.get("/", requireAuth, requireRole("admin", "supervisor"), async (_req, re
     createdAt: usersTable.createdAt,
   }).from(usersTable).orderBy(usersTable.name);
   res.json(users);
-});
+}));
 
-router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
+router.post("/", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
   const parsed = createUserSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
@@ -66,9 +67,9 @@ router.post("/", requireAuth, requireRole("admin"), async (req, res) => {
     createdAt: usersTable.createdAt,
   });
   res.status(201).json(created);
-});
+}));
 
-router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const parsed = updateUserSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -93,9 +94,9 @@ router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     return;
   }
   res.json(updated);
-});
+}));
 
-router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+router.delete("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const { id } = req.params;
   if (id === authedReq.userId) {
@@ -108,6 +109,6 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     return;
   }
   res.json({ message: "Usuario eliminado" });
-});
+}));
 
 export default router;

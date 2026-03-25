@@ -5,6 +5,7 @@ import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 
@@ -37,12 +38,12 @@ const eppChecklistSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/", requireAuth, async (_req, res) => {
+router.get("/", requireAuth, asyncHandler(async (_req, res) => {
   const items = await db.select().from(eppMasterTable).orderBy(eppMasterTable.code);
   res.json(items);
-});
+}));
 
-router.post("/", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const parsed = eppMasterSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
@@ -50,9 +51,9 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), async (req, re
   }
   const [created] = await db.insert(eppMasterTable).values({ id: generateId(), ...parsed.data }).returning();
   res.status(201).json(created);
-});
+}));
 
-router.put("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, res) => {
+router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const parsed = eppMasterSchema.partial().safeParse(req.body);
   if (!parsed.success) {
@@ -65,14 +66,14 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), async (req, 
     return;
   }
   res.json(updated);
-});
+}));
 
-router.get("/deliveries", requireAuth, async (_req, res) => {
+router.get("/deliveries", requireAuth, asyncHandler(async (_req, res) => {
   const deliveries = await db.select().from(eppDeliveriesTable).orderBy(desc(eppDeliveriesTable.deliveryDate));
   res.json(deliveries);
-});
+}));
 
-router.post("/deliveries", requireAuth, requireRole("supervisor", "admin", "operator"), async (req, res) => {
+router.post("/deliveries", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const parsed = eppDeliverySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -85,14 +86,14 @@ router.post("/deliveries", requireAuth, requireRole("supervisor", "admin", "oper
     deliveredBy: authedReq.userId,
   }).returning();
   res.status(201).json(created);
-});
+}));
 
-router.get("/checklists", requireAuth, async (_req, res) => {
+router.get("/checklists", requireAuth, asyncHandler(async (_req, res) => {
   const checklists = await db.select().from(eppChecklistsTable).orderBy(desc(eppChecklistsTable.checkDate));
   res.json(checklists);
-});
+}));
 
-router.post("/checklists", requireAuth, requireRole("supervisor", "admin", "quality"), async (req, res) => {
+router.post("/checklists", requireAuth, requireRole("supervisor", "admin", "quality"), asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const parsed = eppChecklistSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -105,6 +106,6 @@ router.post("/checklists", requireAuth, requireRole("supervisor", "admin", "qual
     reviewedBy: authedReq.userId,
   }).returning();
   res.status(201).json(created);
-});
+}));
 
 export default router;

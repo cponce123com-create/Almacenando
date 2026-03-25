@@ -7,6 +7,7 @@ import {
 } from "@workspace/db";
 import { count, sql, and, gte, lte, eq, desc } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 
@@ -17,7 +18,7 @@ function buildDateFilter(col: unknown, from?: string, to?: string) {
   return filters.length > 0 ? and(...filters) : undefined;
 }
 
-router.get("/summary", requireAuth, async (_req, res) => {
+router.get("/summary", requireAuth, asyncHandler(async (_req, res) => {
   const [productCount] = await db.select({ total: count() }).from(productsTable);
   const [inventoryCount] = await db.select({ total: count() }).from(inventoryRecordsTable);
   const [immobilizedCount] = await db.select({ total: count() }).from(immobilizedProductsTable);
@@ -32,9 +33,9 @@ router.get("/summary", requireAuth, async (_req, res) => {
     samples: sampleCount?.total ?? 0,
     dispositions: dispositionCount?.total ?? 0,
   });
-});
+}));
 
-router.get("/inventory", requireAuth, async (req, res) => {
+router.get("/inventory", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, product } = req.query as Record<string, string | undefined>;
   const records = await db.select({
     productCode: productsTable.code,
@@ -60,9 +61,9 @@ router.get("/inventory", requireAuth, async (req, res) => {
     r.productName?.toLowerCase().includes(product.toLowerCase())
   );
   res.json(filtered);
-});
+}));
 
-router.get("/immobilized", requireAuth, async (req, res) => {
+router.get("/immobilized", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, status } = req.query as Record<string, string | undefined>;
   const records = await db.select({
     id: immobilizedProductsTable.id,
@@ -84,9 +85,9 @@ router.get("/immobilized", requireAuth, async (req, res) => {
   if (to) filtered = filtered.filter(r => !r.immobilizedDate || r.immobilizedDate <= to);
   if (status) filtered = filtered.filter(r => r.status === status);
   res.json(filtered);
-});
+}));
 
-router.get("/samples", requireAuth, async (req, res) => {
+router.get("/samples", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, status } = req.query as Record<string, string | undefined>;
   const records = await db.select().from(samplesTable).orderBy(desc(samplesTable.sampleDate));
   let filtered = records;
@@ -94,9 +95,9 @@ router.get("/samples", requireAuth, async (req, res) => {
   if (to) filtered = filtered.filter(r => !r.sampleDate || r.sampleDate <= to);
   if (status) filtered = filtered.filter(r => r.status === status);
   res.json(filtered);
-});
+}));
 
-router.get("/disposition", requireAuth, async (req, res) => {
+router.get("/disposition", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, status } = req.query as Record<string, string | undefined>;
   const records = await db.select({
     id: finalDispositionTable.id,
@@ -125,9 +126,9 @@ router.get("/disposition", requireAuth, async (req, res) => {
     ...r,
     productDisplayName: r.productName ?? r.productNameManual ?? "—",
   })));
-});
+}));
 
-router.get("/epp-deliveries", requireAuth, async (req, res) => {
+router.get("/epp-deliveries", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, personnelId } = req.query as Record<string, string | undefined>;
   const records = await db.select({
     id: eppDeliveriesTable.id,
@@ -171,9 +172,9 @@ router.get("/epp-deliveries", requireAuth, async (req, res) => {
     return { ...r, nextReplacementDate, daysUntilReplacement, alertLevel };
   });
   res.json(withAlerts);
-});
+}));
 
-router.get("/epp-alerts", requireAuth, async (_req, res) => {
+router.get("/epp-alerts", requireAuth, asyncHandler(async (_req, res) => {
   const records = await db.select({
     id: eppDeliveriesTable.id,
     eppId: eppDeliveriesTable.eppId,
@@ -210,9 +211,9 @@ router.get("/epp-alerts", requireAuth, async (_req, res) => {
     .sort((a, b) => a.daysUntilReplacement - b.daysUntilReplacement);
 
   res.json(alerts);
-});
+}));
 
-router.get("/export/:type", requireAuth, async (req, res) => {
+router.get("/export/:type", requireAuth, asyncHandler(async (req, res) => {
   const { type } = req.params;
   const { from, to, status, personnelId } = req.query as Record<string, string | undefined>;
 
@@ -320,6 +321,6 @@ router.get("/export/:type", requireAuth, async (req, res) => {
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="reporte_${type}.xlsx"`);
   res.send(buf);
-});
+}));
 
 export default router;
