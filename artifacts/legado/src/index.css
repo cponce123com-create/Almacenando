@@ -143,3 +143,34 @@
 .glass-panel {
   @apply bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-primary/5 dark:bg-black/50 dark:border-white/10;
 }
+
+/*
+ * FIX: Modo de alto contraste / forced-colors (Windows)
+ *
+ * En algunos equipos corporativos, Windows tiene activado el "Modo de alto
+ * contraste" o el navegador fuerza "forced-colors: active". Cuando esto ocurre,
+ * el sistema sobreescribe TODOS los colores CSS (backgrounds, textos, bordes)
+ * y los reduce a la paleta de sistema (blanco, negro y colores de acento del SO).
+ * Esto explica que la app se vea en blanco y negro en la PC del trabajo pero
+ * con colores normales en el celular o laptop personal.
+ *
+ * `forced-color-adjust: none` le dice al navegador que NO sobreescriba
+ * los colores definidos por la app en estos elementos.
+ */
+@media (forced-colors: active) {
+  :root {
+    forced-color-adjust: none;
+  }
+
+  /* Asegurar que los colores de fondo y texto se respeten */
+  body,
+  .bg-white,
+  .bg-slate-50,
+  [class*="bg-blue"],
+  [class*="bg-slate"],
+  [class*="text-slate"],
+  [class*="text-blue"],
+  [class*="border-slate"] {
+    forced-color-adjust: none;
+  }
+}
