@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
@@ -6,12 +6,11 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Search, X, ChevronsUpDown } from "lucide-react";
 
 interface Product { id: string; code: string; name: string; unit: string; }
 interface InventoryRecord {
@@ -28,6 +27,134 @@ const api = async (path: string, opts?: RequestInit) => {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+// ---------------------------------------------------------------------------
+// ProductCombobox — campo de búsqueda con dropdown filtrado
+// ---------------------------------------------------------------------------
+function ProductCombobox({
+  products,
+  value,
+  onChange,
+}: {
+  products: Product[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selected = products.find(p => p.id === value);
+
+  // Cerrar al hacer clic fuera
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        // Si no hay selección, limpiar el query
+        if (!value) setQuery("");
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [value]);
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return products;
+    return products.filter(
+      p =>
+        p.code.toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(q)
+    );
+  }, [products, query]);
+
+  const handleSelect = (p: Product) => {
+    onChange(p.id);
+    setQuery("");
+    setOpen(false);
+  };
+
+  const handleClear = () => {
+    onChange("");
+    setQuery("");
+    setOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* Input de búsqueda */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <input
+          ref={inputRef}
+          type="text"
+          className="w-full pl-9 pr-9 py-2 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0 placeholder:text-muted-foreground"
+          placeholder={selected ? "" : "Buscar por código o nombre..."}
+          value={open ? query : (selected ? "" : query)}
+          onFocus={() => {
+            setOpen(true);
+            setQuery("");
+          }}
+          onChange={e => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+        />
+        {/* Muestra el producto seleccionado cuando no está en foco */}
+        {selected && !open && (
+          <div className="absolute inset-0 flex items-center pl-9 pr-9 pointer-events-none">
+            <span className="text-sm text-slate-900 truncate">
+              <span className="font-mono text-slate-500 text-xs mr-1">{selected.code}</span>
+              {selected.name}
+            </span>
+          </div>
+        )}
+        {/* Botón limpiar o chevron */}
+        {selected ? (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        ) : (
+          <ChevronsUpDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        )}
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-4 py-3 text-sm text-slate-500 text-center">
+              No se encontraron productos
+            </div>
+          ) : (
+            filtered.map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => handleSelect(p)}
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-baseline gap-2 border-b border-slate-50 last:border-0"
+              >
+                <span className="font-mono text-xs text-slate-400 shrink-0">{p.code}</span>
+                <span className="text-slate-800 truncate">{p.name}</span>
+                <span className="ml-auto text-xs text-slate-400 shrink-0">{p.unit}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 export default function CuadredeInventarioPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -223,6 +350,7 @@ export default function CuadredeInventarioPage() {
           )}
         </div>
 
+        {/* ── Dialog Nuevo Registro ── */}
         <Dialog open={showForm} onOpenChange={setShowForm}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
@@ -230,22 +358,27 @@ export default function CuadredeInventarioPage() {
                 <ClipboardList className="w-5 h-5 text-emerald-600" /> Nuevo Cuadre de Inventario
               </DialogTitle>
             </DialogHeader>
-            <form onSubmit={e => { e.preventDefault(); createMutation.mutate(form); }} className="space-y-4">
+            <div className="space-y-4">
+              {/* Combobox de búsqueda de productos */}
               <div className="space-y-1.5">
                 <Label>Producto *</Label>
-                <Select value={form.productId} onValueChange={v => set("productId", v)} required>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar producto" /></SelectTrigger>
-                  <SelectContent>
-                    {products.filter(p => p).map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <ProductCombobox
+                  products={products}
+                  value={form.productId}
+                  onChange={v => set("productId", v)}
+                />
+                {form.productId && (
+                  <p className="text-xs text-slate-400 mt-1">
+                    Unidad: <span className="font-medium text-slate-600">{productMap[form.productId]?.unit}</span>
+                  </p>
+                )}
               </div>
+
               <div className="space-y-1.5">
                 <Label>Fecha del Registro *</Label>
                 <Input type="date" value={form.recordDate} onChange={e => set("recordDate", e.target.value)} required />
               </div>
+
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label>Saldo Anterior *</Label>
@@ -263,24 +396,30 @@ export default function CuadredeInventarioPage() {
                     onChange={e => set("outputs", e.target.value)} required />
                 </div>
               </div>
+
               <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-center justify-between">
                 <span className="text-sm font-medium text-emerald-700">Saldo Final (calculado)</span>
                 <span className="text-xl font-bold text-emerald-700">{form.finalBalance}</span>
               </div>
+
               <div className="space-y-1.5">
                 <Label>Notas</Label>
                 <Input placeholder="Observaciones del cuadre" value={form.notes}
                   onChange={e => set("notes", e.target.value)} />
               </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
-                <Button type="submit" disabled={createMutation.isPending || !form.productId}
-                  className="bg-emerald-600 hover:bg-emerald-700">
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Guardar Registro
-                </Button>
-              </DialogFooter>
-            </form>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+              <Button
+                onClick={() => createMutation.mutate(form)}
+                disabled={createMutation.isPending || !form.productId}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Guardar Registro
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
