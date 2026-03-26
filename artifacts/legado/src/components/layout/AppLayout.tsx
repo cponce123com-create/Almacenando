@@ -21,6 +21,7 @@ import {
   CalendarDays,
   User,
   Microscope,
+  UserCog,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -123,6 +124,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
             )}
           </div>
         </div>
+        <Link
+          href="/profile"
+          onClick={onNavClick}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-all duration-150 mb-2"
+        >
+          <UserCog className="w-4 h-4" />
+          Mi Perfil
+        </Link>
         <Button
           variant="ghost"
           size="sm"

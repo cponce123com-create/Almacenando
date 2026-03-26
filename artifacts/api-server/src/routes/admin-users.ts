@@ -25,6 +25,15 @@ const updateUserSchema = z.object({
   password: z.string().min(8).optional(),
 });
 
+function generateTemporaryPassword(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
+  let password = "";
+  for (let i = 0; i < 12; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
 router.get("/", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (_req, res) => {
   const users = await db.select({
     id: usersTable.id,
@@ -94,6 +103,27 @@ router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, r
     return;
   }
   res.json(updated);
+}));
+
+router.post("/:id/reset-password", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const users = await db.select().from(usersTable).where(eq(usersTable.id, id as string)).limit(1);
+  if (users.length === 0) {
+    res.status(404).json({ error: "Usuario no encontrado" });
+    return;
+  }
+  const temporaryPassword = generateTemporaryPassword();
+  const passwordHash = await hashPassword(temporaryPassword);
+  const [updated] = await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, id as string)).returning({
+    id: usersTable.id,
+    email: usersTable.email,
+    name: usersTable.name,
+  });
+  res.json({
+    message: "Contraseña temporal generada",
+    user: updated,
+    temporaryPassword,
+  });
 }));
 
 router.delete("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {

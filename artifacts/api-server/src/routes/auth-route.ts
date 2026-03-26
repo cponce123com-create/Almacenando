@@ -77,4 +77,68 @@ router.get("/me", requireAuth, asyncHandler(async (req, res) => {
   });
 }));
 
+const updateProfileSchema = z.object({
+  name: z.string().min(1, "El nombre es requerido").optional(),
+  email: z.string().email("Email inválido").optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(8, "La contraseña debe tener al menos 8 caracteres").optional(),
+});
+
+router.put("/me", requireAuth, asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
+  const { userId } = authedReq;
+  const parsed = updateProfileSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+  const { name, email, currentPassword, newPassword } = parsed.data;
+  const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (users.length === 0) {
+    res.status(401).json({ error: "Usuario no encontrado" });
+    return;
+  }
+  const user = users[0]!;
+  if (newPassword) {
+    if (!currentPassword) {
+      res.status(400).json({ error: "Debes proporcionar tu contraseña actual para cambiarla" });
+      return;
+    }
+    const valid = await comparePassword(currentPassword, user.passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: "Contraseña actual incorrecta" });
+      return;
+    }
+  }
+  if (email && email !== user.email) {
+    const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, email)).limit(1);
+    if (existing.length > 0) {
+      res.status(409).json({ error: "El correo ya está registrado" });
+      return;
+    }
+  }
+  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (name) updateData.name = name;
+  if (email) updateData.email = email;
+  if (newPassword) {
+    updateData.passwordHash = await hashPassword(newPassword);
+  }
+  const [updated] = await db.update(usersTable).set(updateData).where(eq(usersTable.id, userId)).returning({
+    id: usersTable.id,
+    email: usersTable.email,
+    name: usersTable.name,
+    role: usersTable.role,
+    status: usersTable.status,
+    createdAt: usersTable.createdAt,
+  });
+  res.json({
+    id: updated!.id,
+    email: updated!.email,
+    name: updated!.name,
+    role: updated!.role,
+    status: updated!.status,
+    createdAt: updated!.createdAt.toISOString(),
+  });
+}));
+
 export default router;
