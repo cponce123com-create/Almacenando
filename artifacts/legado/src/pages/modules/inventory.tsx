@@ -6,52 +6,56 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Search, X, ChevronsUpDown } from "lucide-react";
+import {
+  ClipboardList, Plus, Trash2, Loader2, AlertCircle,
+  TrendingUp, TrendingDown, Minus, Search, X, ChevronsUpDown,
+  Camera, ImageOff, Eye,
+} from "lucide-react";
 
 interface Product { id: string; code: string; name: string; unit: string; }
 interface InventoryRecord {
   id: string; productId: string; recordDate: string;
   previousBalance: string; inputs: string; outputs: string; finalBalance: string;
+  physicalCount?: string | null;
+  photoUrl?: string | null;
   notes?: string | null; registeredBy: string; createdAt: string;
 }
 
-const api = async (path: string, opts?: RequestInit) => {
+// ── API helper ───────────────────────────────────────────────────────────────
+const apiJson = async (path: string, opts?: RequestInit) => {
   const res = await fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
+  return res.json();
+};
+
+// Para subir con foto (multipart/form-data) — NO ponemos Content-Type, el browser lo pone solo
+const apiForm = async (path: string, formData: FormData, method = "POST") => {
+  const res = await fetch(path, { method, headers: getAuthHeaders(), body: formData });
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
   return res.json();
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-// ---------------------------------------------------------------------------
-// ProductCombobox — campo de búsqueda con dropdown filtrado
-// ---------------------------------------------------------------------------
-function ProductCombobox({
-  products,
-  value,
-  onChange,
-}: {
-  products: Product[];
-  value: string;
-  onChange: (id: string) => void;
+// ── ProductCombobox ──────────────────────────────────────────────────────────
+function ProductCombobox({ products, value, onChange }: {
+  products: Product[]; value: string; onChange: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
   const selected = products.find(p => p.id === value);
 
-  // Cerrar al hacer clic fuera
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
-        // Si no hay selección, limpiar el query
         if (!value) setQuery("");
       }
     };
@@ -62,29 +66,11 @@ function ProductCombobox({
   const filtered = useMemo(() => {
     const q = query.toLowerCase().trim();
     if (!q) return products;
-    return products.filter(
-      p =>
-        p.code.toLowerCase().includes(q) ||
-        p.name.toLowerCase().includes(q)
-    );
+    return products.filter(p => p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q));
   }, [products, query]);
-
-  const handleSelect = (p: Product) => {
-    onChange(p.id);
-    setQuery("");
-    setOpen(false);
-  };
-
-  const handleClear = () => {
-    onChange("");
-    setQuery("");
-    setOpen(false);
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
 
   return (
     <div ref={containerRef} className="relative">
-      {/* Input de búsqueda */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
         <input
@@ -93,16 +79,9 @@ function ProductCombobox({
           className="w-full pl-9 pr-9 py-2 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0 placeholder:text-muted-foreground"
           placeholder={selected ? "" : "Buscar por código o nombre..."}
           value={open ? query : (selected ? "" : query)}
-          onFocus={() => {
-            setOpen(true);
-            setQuery("");
-          }}
-          onChange={e => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
+          onFocus={() => { setOpen(true); setQuery(""); }}
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
         />
-        {/* Muestra el producto seleccionado cuando no está en foco */}
         {selected && !open && (
           <div className="absolute inset-0 flex items-center pl-9 pr-9 pointer-events-none">
             <span className="text-sm text-slate-900 truncate">
@@ -111,35 +90,24 @@ function ProductCombobox({
             </span>
           </div>
         )}
-        {/* Botón limpiar o chevron */}
         {selected ? (
-          <button
-            type="button"
-            onClick={handleClear}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-          >
+          <button type="button" onClick={() => { onChange(""); setQuery(""); setOpen(false); setTimeout(() => inputRef.current?.focus(), 0); }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
             <X className="w-4 h-4" />
           </button>
         ) : (
           <ChevronsUpDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
         )}
       </div>
-
-      {/* Dropdown */}
       {open && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-slate-500 text-center">
-              No se encontraron productos
-            </div>
+            <div className="px-4 py-3 text-sm text-slate-500 text-center">No se encontraron productos</div>
           ) : (
             filtered.map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => handleSelect(p)}
-                className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-baseline gap-2 border-b border-slate-50 last:border-0"
-              >
+              <button key={p.id} type="button"
+                onClick={() => { onChange(p.id); setQuery(""); setOpen(false); }}
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-baseline gap-2 border-b border-slate-50 last:border-0">
                 <span className="font-mono text-xs text-slate-400 shrink-0">{p.code}</span>
                 <span className="text-slate-800 truncate">{p.name}</span>
                 <span className="ml-auto text-xs text-slate-400 shrink-0">{p.unit}</span>
@@ -152,9 +120,23 @@ function ProductCombobox({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
+// ── PhotoViewer modal ────────────────────────────────────────────────────────
+function PhotoViewer({ url, onClose }: { url: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onClose}>
+      <div className="relative max-w-2xl w-full mx-4" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose}
+          className="absolute -top-3 -right-3 bg-white rounded-full p-1 shadow-lg text-slate-700 hover:text-red-600">
+          <X className="w-5 h-5" />
+        </button>
+        <img src={url} alt="Foto de etiqueta" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
+        <p className="text-center text-white text-xs mt-2 opacity-70">Foto de etiqueta / último lote</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default function CuadredeInventarioPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -165,53 +147,88 @@ export default function CuadredeInventarioPage() {
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InventoryRecord | null>(null);
   const [filterProduct, setFilterProduct] = useState("all");
+  const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
+  // Estado del formulario
   const [form, setForm] = useState({
-    productId: "", recordDate: today(),
-    previousBalance: "0", inputs: "0", outputs: "0", finalBalance: "0", notes: "",
+    productId: "",
+    recordDate: today(),
+    previousBalance: "",   // Saldo actual en sistema
+    physicalCount: "",     // Cantidad en físico
+    notes: "",
   });
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const set = (k: keyof typeof form, v: string) => {
-    setForm(f => {
-      const next = { ...f, [k]: v };
-      const prev = parseFloat(next.previousBalance) || 0;
-      const inp = parseFloat(next.inputs) || 0;
-      const out = parseFloat(next.outputs) || 0;
-      next.finalBalance = (prev + inp - out).toFixed(2);
-      return next;
-    });
+  // Diferencia calculada automáticamente
+  const difference = useMemo(() => {
+    const sys = parseFloat(form.previousBalance) || 0;
+    const phys = parseFloat(form.physicalCount) || 0;
+    if (!form.previousBalance || !form.physicalCount) return null;
+    return phys - sys;
+  }, [form.previousBalance, form.physicalCount]);
+
+  const setField = (k: keyof typeof form, v: string) =>
+    setForm(f => ({ ...f, [k]: v }));
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = ev => setPhotoPreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
   };
 
-  const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"], queryFn: () => api("/api/products"),
-  });
+  const resetForm = () => {
+    setForm({ productId: "", recordDate: today(), previousBalance: "", physicalCount: "", notes: "" });
+    setPhotoFile(null);
+    setPhotoPreview(null);
+  };
 
+  // Queries
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["/api/products"], queryFn: () => apiJson("/api/products"),
+  });
   const { data: records = [], isLoading, isError } = useQuery<InventoryRecord[]>({
-    queryKey: ["/api/inventory"], queryFn: () => api("/api/inventory"),
+    queryKey: ["/api/inventory"], queryFn: () => apiJson("/api/inventory"),
   });
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
-
   const filtered = useMemo(() =>
     filterProduct === "all" ? records : records.filter(r => r.productId === filterProduct),
     [records, filterProduct]);
 
+  // Mutations
   const createMutation = useMutation({
-    mutationFn: (data: typeof form) => api("/api/inventory", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
-    }),
+    mutationFn: () => {
+      const fd = new FormData();
+      fd.append("productId", form.productId);
+      fd.append("recordDate", form.recordDate);
+      fd.append("previousBalance", form.previousBalance || "0");
+      fd.append("inputs", "0");
+      fd.append("outputs", "0");
+      // finalBalance = physicalCount (lo que hay en físico ES el saldo final real)
+      const physVal = form.physicalCount || form.previousBalance || "0";
+      fd.append("finalBalance", physVal);
+      fd.append("physicalCount", form.physicalCount || "");
+      fd.append("notes", form.notes);
+      if (photoFile) fd.append("photo", photoFile);
+      return apiForm("/api/inventory", fd, "POST");
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
       qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
-      toast({ title: "Registro guardado", description: "El cuadre de inventario fue registrado." });
+      toast({ title: "Cuadre guardado", description: "El cuadre de inventario fue registrado correctamente." });
       setShowForm(false);
-      setForm({ productId: "", recordDate: today(), previousBalance: "0", inputs: "0", outputs: "0", finalBalance: "0", notes: "" });
+      resetForm();
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api(`/api/inventory/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => apiJson(`/api/inventory/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
       toast({ title: "Registro eliminado" });
@@ -220,15 +237,24 @@ export default function CuadredeInventarioPage() {
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); setDeleteTarget(null); },
   });
 
-  const diff = (r: InventoryRecord) => parseFloat(r.finalBalance) - parseFloat(r.previousBalance);
+  // Stats
+  const withDiff = records.filter(r => {
+    const sys = parseFloat(r.previousBalance) || 0;
+    const phys = r.physicalCount != null ? parseFloat(r.physicalCount) : null;
+    return phys !== null && Math.abs(phys - sys) >= 0.01;
+  }).length;
 
-  const pendingDiffs = records.filter(r => Math.abs(diff(r)) > 0).length;
-  const totalInputs = records.reduce((a, r) => a + (parseFloat(r.inputs) || 0), 0);
-  const totalOutputs = records.reduce((a, r) => a + (parseFloat(r.outputs) || 0), 0);
+  const getDiff = (r: InventoryRecord) => {
+    const sys = parseFloat(r.previousBalance) || 0;
+    const phys = r.physicalCount != null ? parseFloat(r.physicalCount) : null;
+    return phys !== null ? phys - sys : null;
+  };
 
   return (
     <AppLayout>
       <div className="space-y-6">
+
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
@@ -236,22 +262,23 @@ export default function CuadredeInventarioPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Cuadre de Inventario</h1>
-              <p className="text-slate-500 text-sm">Registro diario de entradas, salidas y balances</p>
+              <p className="text-slate-500 text-sm">Registro diario · Saldo en sistema vs. conteo físico</p>
             </div>
           </div>
           {canWrite && (
             <Button onClick={() => setShowForm(true)} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
-              <Plus className="w-4 h-4" /> Nuevo Registro
+              <Plus className="w-4 h-4" /> Nuevo Cuadre
             </Button>
           )}
         </div>
 
+        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Total Registros", val: records.length, color: "text-slate-900" },
-            { label: "Con Diferencias", val: pendingDiffs, color: "text-amber-600" },
-            { label: "Total Entradas", val: totalInputs.toFixed(0), color: "text-emerald-600" },
-            { label: "Total Salidas", val: totalOutputs.toFixed(0), color: "text-red-500" },
+            { label: "Con Diferencias", val: withDiff, color: "text-amber-600" },
+            { label: "Sin Diferencias", val: records.length - withDiff, color: "text-emerald-600" },
+            { label: "Con Foto", val: records.filter(r => r.photoUrl).length, color: "text-violet-600" },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl border border-slate-100 p-4">
               <p className="text-xs text-slate-500 mb-1">{s.label}</p>
@@ -260,6 +287,7 @@ export default function CuadredeInventarioPage() {
           ))}
         </div>
 
+        {/* Filtro */}
         <div className="bg-white rounded-xl border border-slate-100 p-4">
           <Select value={filterProduct} onValueChange={setFilterProduct}>
             <SelectTrigger className="w-72">
@@ -272,6 +300,7 @@ export default function CuadredeInventarioPage() {
           </Select>
         </div>
 
+        {/* Tabla */}
         <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
           {isLoading ? (
             <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
@@ -299,38 +328,63 @@ export default function CuadredeInventarioPage() {
                   <TableRow className="bg-slate-50">
                     <TableHead className="font-semibold text-slate-600">Fecha</TableHead>
                     <TableHead className="font-semibold text-slate-600">Producto</TableHead>
-                    <TableHead className="font-semibold text-slate-600 text-right">Saldo Ant.</TableHead>
-                    <TableHead className="font-semibold text-slate-600 text-right">Entradas</TableHead>
-                    <TableHead className="font-semibold text-slate-600 text-right">Salidas</TableHead>
-                    <TableHead className="font-semibold text-slate-600 text-right">Saldo Final</TableHead>
+                    <TableHead className="font-semibold text-slate-600 text-right">Saldo Sistema</TableHead>
+                    <TableHead className="font-semibold text-slate-600 text-right">Físico</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Diferencia</TableHead>
-                    {canDelete && <TableHead className="font-semibold text-slate-600 text-right w-16"></TableHead>}
+                    <TableHead className="font-semibold text-slate-600">Observaciones</TableHead>
+                    <TableHead className="font-semibold text-slate-600 text-center">Foto</TableHead>
+                    {canDelete && <TableHead className="w-12"></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map(r => {
-                    const d = diff(r);
+                    const d = getDiff(r);
                     const product = productMap[r.productId];
                     return (
                       <TableRow key={r.id} className="hover:bg-slate-50/70">
-                        <TableCell className="text-sm text-slate-700 font-medium">{r.recordDate}</TableCell>
+                        <TableCell className="text-sm text-slate-700 font-medium whitespace-nowrap">{r.recordDate}</TableCell>
                         <TableCell>
                           <div>
                             <p className="text-sm font-medium text-slate-900">{product?.name ?? r.productId}</p>
                             <p className="text-xs text-slate-400">{product?.code} · {product?.unit}</p>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm text-slate-600">{r.previousBalance}</TableCell>
-                        <TableCell className="text-right font-mono text-sm text-emerald-600 font-semibold">+{r.inputs}</TableCell>
-                        <TableCell className="text-right font-mono text-sm text-red-500 font-semibold">-{r.outputs}</TableCell>
-                        <TableCell className="text-right font-mono text-sm font-bold text-slate-900">{r.finalBalance}</TableCell>
+                        <TableCell className="text-right font-mono text-sm text-slate-600">
+                          {parseFloat(r.previousBalance).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm font-bold text-slate-900">
+                          {r.physicalCount != null
+                            ? parseFloat(r.physicalCount).toFixed(2)
+                            : <span className="text-slate-300">—</span>}
+                        </TableCell>
                         <TableCell className="text-center">
-                          {Math.abs(d) < 0.01 ? (
-                            <span className="flex items-center justify-center gap-1 text-slate-400 text-xs"><Minus className="w-3 h-3" /> Sin dif.</span>
+                          {d === null ? (
+                            <span className="text-slate-300 text-xs">—</span>
+                          ) : Math.abs(d) < 0.01 ? (
+                            <span className="flex items-center justify-center gap-1 text-emerald-600 text-xs font-semibold bg-emerald-50 rounded-full px-2 py-0.5">
+                              <Minus className="w-3 h-3" /> Exacto
+                            </span>
                           ) : d > 0 ? (
-                            <span className="flex items-center justify-center gap-1 text-emerald-600 text-xs font-semibold"><TrendingUp className="w-3 h-3" />+{d.toFixed(2)}</span>
+                            <span className="flex items-center justify-center gap-1 text-blue-600 text-xs font-semibold bg-blue-50 rounded-full px-2 py-0.5">
+                              <TrendingUp className="w-3 h-3" />+{d.toFixed(2)}
+                            </span>
                           ) : (
-                            <span className="flex items-center justify-center gap-1 text-red-500 text-xs font-semibold"><TrendingDown className="w-3 h-3" />{d.toFixed(2)}</span>
+                            <span className="flex items-center justify-center gap-1 text-red-500 text-xs font-semibold bg-red-50 rounded-full px-2 py-0.5">
+                              <TrendingDown className="w-3 h-3" />{d.toFixed(2)}
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm text-slate-500 max-w-[200px] truncate">
+                          {r.notes || <span className="text-slate-300">—</span>}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {r.photoUrl ? (
+                            <button onClick={() => setViewPhoto(r.photoUrl!)}
+                              className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-800 text-xs font-medium bg-violet-50 hover:bg-violet-100 rounded-full px-2 py-0.5 transition-colors">
+                              <Eye className="w-3 h-3" /> Ver
+                            </button>
+                          ) : (
+                            <ImageOff className="w-4 h-4 text-slate-200 mx-auto" />
                           )}
                         </TableCell>
                         {canDelete && (
@@ -350,23 +404,21 @@ export default function CuadredeInventarioPage() {
           )}
         </div>
 
-        {/* ── Dialog Nuevo Registro ── */}
-        <Dialog open={showForm} onOpenChange={setShowForm}>
-          <DialogContent className="max-w-lg">
+        {/* ── Dialog Nuevo Cuadre ── */}
+        <Dialog open={showForm} onOpenChange={v => { setShowForm(v); if (!v) resetForm(); }}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ClipboardList className="w-5 h-5 text-emerald-600" /> Nuevo Cuadre de Inventario
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
-              {/* Combobox de búsqueda de productos */}
+
+            <div className="space-y-5">
+
+              {/* 1. Producto */}
               <div className="space-y-1.5">
-                <Label>Producto *</Label>
-                <ProductCombobox
-                  products={products}
-                  value={form.productId}
-                  onChange={v => set("productId", v)}
-                />
+                <Label>Producto <span className="text-red-500">*</span></Label>
+                <ProductCombobox products={products} value={form.productId} onChange={v => setField("productId", v)} />
                 {form.productId && (
                   <p className="text-xs text-slate-400 mt-1">
                     Unidad: <span className="font-medium text-slate-600">{productMap[form.productId]?.unit}</span>
@@ -374,61 +426,136 @@ export default function CuadredeInventarioPage() {
                 )}
               </div>
 
+              {/* 2. Fecha */}
               <div className="space-y-1.5">
-                <Label>Fecha del Registro *</Label>
-                <Input type="date" value={form.recordDate} onChange={e => set("recordDate", e.target.value)} required />
+                <Label>Fecha del Cuadre <span className="text-red-500">*</span></Label>
+                <Input type="date" value={form.recordDate} onChange={e => setField("recordDate", e.target.value)} />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              {/* 3. Saldo actual en sistema + Físico */}
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label>Saldo Anterior *</Label>
-                  <Input type="number" step="0.01" min="0" value={form.previousBalance}
-                    onChange={e => set("previousBalance", e.target.value)} required />
+                  <Label>Saldo en Sistema <span className="text-red-500">*</span></Label>
+                  <p className="text-xs text-slate-400">Lo que dice el sistema</p>
+                  <Input type="number" step="0.01" min="0" placeholder="0.00"
+                    value={form.previousBalance}
+                    onChange={e => setField("previousBalance", e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Entradas *</Label>
-                  <Input type="number" step="0.01" min="0" value={form.inputs}
-                    onChange={e => set("inputs", e.target.value)} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Salidas *</Label>
-                  <Input type="number" step="0.01" min="0" value={form.outputs}
-                    onChange={e => set("outputs", e.target.value)} required />
+                  <Label>Cantidad en Físico <span className="text-red-500">*</span></Label>
+                  <p className="text-xs text-slate-400">Lo que encontraste en almacén</p>
+                  <Input type="number" step="0.01" min="0" placeholder="0.00"
+                    value={form.physicalCount}
+                    onChange={e => setField("physicalCount", e.target.value)} />
                 </div>
               </div>
 
-              <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-center justify-between">
-                <span className="text-sm font-medium text-emerald-700">Saldo Final (calculado)</span>
-                <span className="text-xl font-bold text-emerald-700">{form.finalBalance}</span>
-              </div>
+              {/* 4. Diferencia calculada */}
+              {difference !== null && (
+                <div className={`rounded-lg p-3 flex items-center justify-between border ${
+                  Math.abs(difference) < 0.01
+                    ? "bg-emerald-50 border-emerald-100"
+                    : difference > 0
+                    ? "bg-blue-50 border-blue-100"
+                    : "bg-red-50 border-red-100"
+                }`}>
+                  <div>
+                    <p className="text-xs font-medium text-slate-500">Diferencia encontrada</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {Math.abs(difference) < 0.01
+                        ? "El físico coincide con el sistema ✓"
+                        : difference > 0
+                        ? "Hay más producto del que indica el sistema"
+                        : "Falta producto respecto al sistema"}
+                    </p>
+                  </div>
+                  <span className={`text-xl font-bold ${
+                    Math.abs(difference) < 0.01 ? "text-emerald-700"
+                    : difference > 0 ? "text-blue-700"
+                    : "text-red-600"
+                  }`}>
+                    {difference > 0 ? "+" : ""}{difference.toFixed(2)}
+                    {form.productId && ` ${productMap[form.productId]?.unit ?? ""}`}
+                  </span>
+                </div>
+              )}
 
+              {/* 5. Observaciones */}
               <div className="space-y-1.5">
-                <Label>Notas</Label>
-                <Input placeholder="Observaciones del cuadre" value={form.notes}
-                  onChange={e => set("notes", e.target.value)} />
+                <Label>Observaciones</Label>
+                <Textarea
+                  placeholder="Anota cualquier detalle: lote que estás usando, condiciones del almacén, motivo de diferencia, etc."
+                  value={form.notes}
+                  onChange={e => setField("notes", e.target.value)}
+                  rows={3}
+                  className="resize-none"
+                />
               </div>
+
+              {/* 6. Foto de etiqueta */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-violet-500" />
+                  Foto de Etiqueta
+                  <span className="text-xs text-slate-400 font-normal">(opcional — muestra el lote que estás usando)</span>
+                </Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handlePhotoChange}
+                />
+                {photoPreview ? (
+                  <div className="relative">
+                    <img src={photoPreview} alt="Vista previa" className="w-full h-40 object-cover rounded-lg border border-slate-200" />
+                    <button
+                      type="button"
+                      onClick={() => { setPhotoFile(null); setPhotoPreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                      className="absolute top-2 right-2 bg-white rounded-full p-1 shadow-md text-slate-600 hover:text-red-600">
+                      <X className="w-4 h-4" />
+                    </button>
+                    <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur rounded-full px-2 py-0.5 text-xs text-slate-600">
+                      {photoFile?.name}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full h-24 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-violet-300 hover:text-violet-500 transition-colors">
+                    <Camera className="w-6 h-6" />
+                    <span className="text-xs">Toca para tomar foto o elegir imagen</span>
+                  </button>
+                )}
+              </div>
+
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancelar</Button>
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" onClick={() => { setShowForm(false); resetForm(); }}>
+                Cancelar
+              </Button>
               <Button
-                onClick={() => createMutation.mutate(form)}
-                disabled={createMutation.isPending || !form.productId}
+                onClick={() => createMutation.mutate()}
+                disabled={createMutation.isPending || !form.productId || !form.previousBalance || !form.physicalCount}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Guardar Registro
+                Guardar Cuadre
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
+        {/* ── AlertDialog Eliminar ── */}
         <AlertDialog open={!!deleteTarget} onOpenChange={o => { if (!o) setDeleteTarget(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>¿Eliminar registro?</AlertDialogTitle>
               <AlertDialogDescription>
-                Se eliminará el cuadre de inventario del {deleteTarget?.recordDate}. Esta acción no se puede deshacer.
+                Se eliminará el cuadre del {deleteTarget?.recordDate}. Esta acción no se puede deshacer.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -440,6 +567,10 @@ export default function CuadredeInventarioPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* ── Visor de foto ── */}
+        {viewPhoto && <PhotoViewer url={viewPhoto} onClose={() => setViewPhoto(null)} />}
+
       </div>
     </AppLayout>
   );
