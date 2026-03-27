@@ -1,0 +1,200 @@
+Necesito que ajustes mi app de inventarios con esta nueva lógica. Quiero que hagas los cambios de forma estructurada y sin romper lo que ya funciona.
+
+## 1. Maestra de productos
+
+En la pestaña **Maestra de Productos** agrega una nueva columna llamada **ALMACÉN**.
+
+En esa columna se podrá asignar el almacén al que pertenece cada producto, por ejemplo:
+
+* QA
+* Q1
+* QP
+* QL
+* QD
+* otros que yo agregue después
+
+Importante:
+
+* Puede haber productos con el mismo nombre o misma descripción, porque pertenecen a distintos almacenes.
+* La combinación correcta debe ser por almacén + código + producto.
+
+También en la maestra quiero poder registrar campos como:
+
+* ALMACÉN
+* TIPO
+* CÓDIGO
+* DESCRIPCIÓN PRODUCTO
+* UM
+* MSDS (sí/no)
+* PRODUCTO CONTROLADO (sí/no)
+* otros campos que ya existan actualmente
+
+## 2. Filtro general por almacén
+
+En el encabezado principal de la app quiero un selector de almacén.
+
+Ejemplo:
+
+* QA
+* Q1
+* QP
+* QL
+* QD
+
+Cuando yo seleccione un almacén, por ejemplo **Q1**, entonces:
+
+* en la maestra solo quiero ver los productos de Q1
+* en reportes solo quiero ver los productos de Q1
+* en inventarios solo quiero trabajar con Q1
+* en cuadre solo quiero trabajar con Q1
+* toda la app debe filtrar la información según el almacén seleccionado
+
+## 3. Botón de editar en todos los módulos
+
+Necesito que agregues botón de **Editar** en todos los módulos o tablas donde corresponda.
+
+Quiero que se pueda editar fácilmente:
+
+* productos de la maestra
+* registros de saldos
+* inventarios
+* cuadres
+* cualquier registro administrativo relevante
+
+## 4. Separar Inventario y Cuadre
+
+Creo que hubo una confusión en la estructura actual.
+
+Necesito que existan pestañas separadas:
+
+### Pestaña Inventarios
+
+Esta pestaña será usada por los operarios.
+Aquí ellos deben poder registrar la toma física de inventario.
+
+### Pestaña Cuadre
+
+Esta pestaña será usada por el administrador.
+Aquí se debe revisar, comparar, ajustar y cuadrar la información.
+
+No deben estar mezcladas como si fueran lo mismo.
+
+## 5. Responsable del inventario y del cuadre
+
+En los registros necesito guardar el nombre del responsable.
+
+Debe existir un campo para:
+
+* **Responsable del inventario**
+* **Responsable del cuadre**
+
+Esto debe quedar guardado en cada registro realizado.
+
+## 6. Pestaña de saldo actualizado
+
+Además de la maestra, necesito una pestaña aparte llamada algo como **Saldo Actualizado**.
+
+Esta pestaña no es la maestra.
+La maestra solo contiene el listado base de productos del sistema.
+
+La pestaña de saldo actualizado debe permitir cargar y manejar los saldos reales de los productos.
+
+Debe manejar esta estructura mínima:
+
+* ALMACÉN
+* TIPO
+* CÓDIGO
+* DESCRIPCIÓN PRODUCTO
+* UM
+* CANTIDAD
+* FECHA
+
+## 7. Plantilla descargable para carga de saldos
+
+En la pestaña de saldo actualizado quiero un botón para **descargar plantilla**.
+
+La plantilla debe tener estas columnas:
+
+ALMACÉN | TIPO | CÓDIGO | DESCRIPCIÓN PRODUCTO | UM | CANTIDAD | FECHA
+
+Luego debe existir la opción para importar esa plantilla ya llena.
+
+## 8. Historial de saldos por fecha
+
+Esto es muy importante:
+No quiero que al importar nuevos saldos simplemente se reemplace todo sin historial.
+
+Quiero que los saldos se guarden por fecha, para poder tener trazabilidad.
+
+Ejemplo:
+
+* hoy hago toma de inventario del almacén Q1 y cargo todos los productos con fecha de hoy
+* mañana vuelvo a tomar inventario y cargo otra plantilla con nueva fecha
+* ambos registros deben quedar guardados en historial
+* la app debe poder identificar cuál es el saldo más reciente por producto según almacén y fecha
+
+## 9. Uso de esos saldos en inventario y cuadre
+
+Los saldos cargados deben servir como base para:
+
+* la toma de inventario
+* el proceso de cuadre
+* los reportes
+
+Es decir, inventario y cuadre deben apoyarse en el saldo actualizado más reciente del almacén seleccionado.
+
+## 10. Comportamiento esperado
+
+Resumen funcional:
+
+### Maestra de productos
+
+* listado general de productos del sistema
+* incluye columna ALMACÉN
+* puede haber productos repetidos si pertenecen a distintos almacenes
+* permite marcar MSDS, producto controlado, etc.
+
+### Selector superior de almacén
+
+* al seleccionar un almacén, toda la app se filtra con ese almacén
+
+### Saldo actualizado
+
+* permite descargar plantilla
+* permite importar plantilla llena
+* guarda historial por fecha
+* no borra el historial anterior
+* muestra el saldo más reciente
+
+### Inventarios
+
+* módulo operativo para toma física
+* usado por operarios
+* debe guardar responsable y fecha
+
+### Cuadre
+
+* módulo administrativo
+* usado por admin
+* debe guardar responsable y fecha
+* debe basarse en los saldos e inventarios registrados
+
+## 11. Lo que necesito que desarrolles
+
+Quiero que implementes:
+
+1. la nueva columna ALMACÉN en la maestra
+2. el filtro global por almacén
+3. el botón Editar en todos los módulos
+4. la separación clara entre Inventarios y Cuadre
+5. el registro del responsable
+6. la pestaña de Saldo Actualizado
+7. la descarga e importación de plantilla
+8. el historial de saldos por fecha
+9. que los demás reportes trabajen solo con el almacén seleccionado
+
+## 12. Importante para el desarrollo
+
+Antes de programar, revisa la estructura actual de la app y adapta estos cambios respetando lo que ya funciona.
+Si hace falta modificar base de datos, modelos, formularios, tablas, filtros y reportes, hazlo de forma consistente.
+Quiero que todo quede integrado y funcional, no solo visual.

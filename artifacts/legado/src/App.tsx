@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { WarehouseProvider } from "@/contexts/WarehouseContext";
 
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/auth/login";
@@ -12,6 +13,8 @@ import Dashboard from "@/pages/dashboard";
 
 import ProductsPage from "@/pages/modules/products";
 import InventoryPage from "@/pages/modules/inventory";
+import BalancesPage from "@/pages/modules/balances";
+import CuadrePage from "@/pages/modules/cuadre";
 import ImmobilizedPage from "@/pages/modules/immobilized";
 import SamplesPage from "@/pages/modules/samples";
 import DyeLotsPage from "@/pages/modules/dye-lots";
@@ -81,6 +84,8 @@ function Router() {
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
       <Route path="/products"><ProtectedRoute component={ProductsPage} /></Route>
       <Route path="/inventory"><ProtectedRoute component={InventoryPage} /></Route>
+      <Route path="/balances"><ProtectedRoute component={BalancesPage} /></Route>
+      <Route path="/cuadre"><ProtectedRoute component={CuadrePage} /></Route>
       <Route path="/immobilized"><ProtectedRoute component={ImmobilizedPage} /></Route>
       <Route path="/samples"><ProtectedRoute component={SamplesPage} /></Route>
       <Route path="/dye-lots"><ProtectedRoute component={DyeLotsPage} /></Route>
@@ -102,14 +107,13 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        {/* ErrorBoundary wraps the entire router so that any module-level
-            render crash (e.g. Radix SelectItem value="" throws) shows a
-            recovery UI instead of blanking the full page. */}
-        <ErrorBoundary moduleName="la aplicación">
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Router />
-          </WouterRouter>
-        </ErrorBoundary>
+        <WarehouseProvider>
+          <ErrorBoundary moduleName="la aplicación">
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+              <Router />
+            </WouterRouter>
+          </ErrorBoundary>
+        </WarehouseProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

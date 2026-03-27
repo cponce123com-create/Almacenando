@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { db } from "@workspace/db";
 import { productsTable, inventoryRecordsTable, immobilizedProductsTable, samplesTable, dyeLotsTable, finalDispositionTable } from "@workspace/db";
-import { eq, count } from "drizzle-orm";
+import { eq, count, and } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
@@ -13,6 +13,8 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const productSchema = z.object({
+  warehouse: z.string().min(1).default("General"),
+  type: z.string().optional(),
   code: z.string().min(1),
   name: z.string().min(1),
   casNumber: z.string().optional(),
@@ -20,6 +22,8 @@ const productSchema = z.object({
   unit: z.string().min(1),
   minimumStock: z.string().default("0"),
   maximumStock: z.string().optional(),
+  msds: z.boolean().default(false),
+  controlled: z.boolean().default(false),
   location: z.string().optional(),
   supplier: z.string().optional(),
   hazardClass: z.string().optional(),
@@ -28,15 +32,12 @@ const productSchema = z.object({
   status: z.enum(["active", "inactive"]).default("active"),
 });
 
-const REQUIRED_COLUMNS = [
-  "codigo", "descripcion", "um", "cantidad", "zona", "ubicacion",
-  "familia", "lote", "tipo_producto", "estado", "ubicacion_manual", "observacion",
+const TEMPLATE_HEADERS = [
+  "almacen", "tipo", "codigo", "descripcion", "um", "cantidad", "zona", "ubicacion",
+  "familia", "lote", "tipo_producto", "estado", "msds", "controlado", "observacion",
 ];
 
-const TEMPLATE_HEADERS = [
-  "codigo", "descripcion", "um", "cantidad", "zona", "ubicacion",
-  "familia", "lote", "tipo_producto", "estado", "ubicacion_manual", "observacion",
-];
+const REQUIRED_COLUMNS = ["codigo", "descripcion", "um"];
 
 function normalizeStatus(val: string): "active" | "inactive" {
   const v = String(val ?? "").toLowerCase().trim();
@@ -44,21 +45,26 @@ function normalizeStatus(val: string): "active" | "inactive" {
   return "inactive";
 }
 
-function rowToProduct(row: Record<string, unknown>) {
+function normalizeBool(val: unknown): boolean {
+  const v = String(val ?? "").toLowerCase().trim();
+  return ["si", "sí", "yes", "1", "true"].includes(v);
+}
+
+function rowToProduct(row: Record<string, unknown>, defaultWarehouse = "General") {
   const zona = String(row.zona ?? "").trim();
   const ubicacion = String(row.ubicacion ?? "").trim();
-  const ubicacionManual = String(row.ubicacion_manual ?? "").trim();
   const locationParts = [zona, ubicacion].filter(Boolean);
-  const location = locationParts.length > 0 ? locationParts.join(" / ") : ubicacionManual || undefined;
+  const location = locationParts.join(" / ") || undefined;
   const lote = String(row.lote ?? "").trim();
   const observacion = String(row.observacion ?? "").trim();
   const notesParts = [
     lote ? `Lote: ${lote}` : "",
-    ubicacionManual && location !== ubicacionManual ? `Ubic. manual: ${ubicacionManual}` : "",
     observacion,
   ].filter(Boolean);
   const notes = notesParts.join(" | ") || undefined;
   return {
+    warehouse: String(row.almacen ?? defaultWarehouse).trim() || defaultWarehouse,
+    type: String(row.tipo ?? "").trim() || undefined,
     code: String(row.codigo ?? "").trim(),
     name: String(row.descripcion ?? "").trim(),
     unit: String(row.um ?? "").trim(),
@@ -66,6 +72,8 @@ function rowToProduct(row: Record<string, unknown>) {
     category: String(row.familia ?? "General").trim() || "General",
     location,
     hazardClass: String(row.tipo_producto ?? "").trim() || undefined,
+    msds: normalizeBool(row.msds),
+    controlled: normalizeBool(row.controlado),
     status: normalizeStatus(String(row.estado ?? "activo")),
     notes,
   };
@@ -74,10 +82,10 @@ function rowToProduct(row: Record<string, unknown>) {
 router.get("/template", requireAuth, (_req, res) => {
   const wb = XLSX.utils.book_new();
   const exampleRow = {
-    codigo: "PROD-001", descripcion: "Ácido Sulfúrico 98%", um: "L", cantidad: "100",
-    zona: "A", ubicacion: "A-01", familia: "Ácido", lote: "LOT-2024-001",
-    tipo_producto: "Corrosivo", estado: "activo", ubicacion_manual: "Estante 1 Nivel 2",
-    observacion: "Almacenar en área ventilada",
+    almacen: "QA", tipo: "Reactivo", codigo: "PROD-001", descripcion: "Ácido Sulfúrico 98%",
+    um: "L", cantidad: "100", zona: "A", ubicacion: "A-01", familia: "Ácido",
+    lote: "LOT-2024-001", tipo_producto: "Corrosivo", estado: "activo",
+    msds: "si", controlado: "no", observacion: "Almacenar en área ventilada",
   };
   const ws = XLSX.utils.json_to_sheet([exampleRow], { header: TEMPLATE_HEADERS });
   ws["!cols"] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(h.length + 4, 20) }));
@@ -88,16 +96,22 @@ router.get("/template", requireAuth, (_req, res) => {
   res.send(buf);
 });
 
-router.get("/export", requireAuth, asyncHandler(async (_req, res) => {
-  const products = await db.select().from(productsTable).orderBy(productsTable.code);
+router.get("/export", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+  let query = db.select().from(productsTable).$dynamic();
+  if (warehouse && warehouse !== "all") {
+    query = query.where(eq(productsTable.warehouse, warehouse));
+  }
+  const products = await query.orderBy(productsTable.code);
   const rows = products.map(p => {
     const locationParts = (p.location ?? "").split(" / ");
     return {
-      codigo: p.code, descripcion: p.name, um: p.unit, cantidad: p.minimumStock,
-      zona: locationParts[0] ?? "", ubicacion: locationParts[1] ?? (p.location ?? ""),
-      familia: p.category, lote: "", tipo_producto: p.hazardClass ?? "",
-      estado: p.status === "active" ? "activo" : "inactivo",
-      ubicacion_manual: p.storageConditions ?? "", observacion: p.notes ?? "",
+      almacen: p.warehouse, tipo: p.type ?? "", codigo: p.code, descripcion: p.name,
+      um: p.unit, cantidad: p.minimumStock, zona: locationParts[0] ?? "",
+      ubicacion: locationParts[1] ?? (p.location ?? ""), familia: p.category,
+      lote: "", tipo_producto: p.hazardClass ?? "", estado: p.status === "active" ? "activo" : "inactivo",
+      msds: p.msds ? "si" : "no", controlado: p.controlled ? "si" : "no",
+      observacion: p.notes ?? "",
     };
   });
   const wb = XLSX.utils.book_new();
@@ -119,6 +133,7 @@ router.post(
   requireRole("supervisor", "admin", "operator"),
   upload.single("file"), asyncHandler(async (req, res) => {
     if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
+    const defaultWarehouse = (req.query.warehouse as string) || "General";
     let workbook: XLSX.WorkBook;
     try { workbook = XLSX.read(req.file.buffer, { type: "buffer" }); }
     catch { res.status(400).json({ error: "El archivo no es un Excel válido (.xlsx o .xls)" }); return; }
@@ -138,25 +153,26 @@ router.post(
       for (const [k, v] of Object.entries(row)) n[k.toLowerCase().trim().replace(/\s+/g, "_")] = v;
       return n;
     });
-    const existing = await db.select({ id: productsTable.id, code: productsTable.code }).from(productsTable);
-    const existingMap = new Map(existing.map(p => [p.code, p.id]));
+    const existing = await db.select({ id: productsTable.id, code: productsTable.code, warehouse: productsTable.warehouse }).from(productsTable);
+    const existingMap = new Map(existing.map(p => [`${p.warehouse}::${p.code}`, p.id]));
     let inserted = 0, updated = 0;
     const errors: Array<{ row: number; code: string; error: string }> = [];
     for (let i = 0; i < normalizedRows.length; i++) {
       const row = normalizedRows[i]; const rowNum = i + 2;
       try {
-        const mapped = rowToProduct(row);
+        const mapped = rowToProduct(row, defaultWarehouse);
         if (!mapped.code) { errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" }); continue; }
         if (!mapped.name) { errors.push({ row: rowNum, code: mapped.code, error: "El campo 'descripcion' es obligatorio" }); continue; }
         if (!mapped.unit) { errors.push({ row: rowNum, code: mapped.code, error: "El campo 'um' es obligatorio" }); continue; }
-        const existingId = existingMap.get(mapped.code);
+        const key = `${mapped.warehouse}::${mapped.code}`;
+        const existingId = existingMap.get(key);
         if (existingId) {
           await db.update(productsTable).set({ ...mapped, updatedAt: new Date() }).where(eq(productsTable.id, existingId));
           updated++;
         } else {
           const id = generateId();
           await db.insert(productsTable).values({ id, ...mapped });
-          existingMap.set(mapped.code, id); inserted++;
+          existingMap.set(key, id); inserted++;
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Error desconocido";
@@ -171,7 +187,7 @@ router.post(
 async function checkProductDependencies(id: string) {
   const deps: string[] = [];
   const [inv] = await db.select({ n: count() }).from(inventoryRecordsTable).where(eq(inventoryRecordsTable.productId, id));
-  if ((inv?.n ?? 0) > 0) deps.push(`Cuadre de Inventario (${inv?.n} registros)`);
+  if ((inv?.n ?? 0) > 0) deps.push(`Inventario (${inv?.n} registros)`);
   const [imm] = await db.select({ n: count() }).from(immobilizedProductsTable).where(eq(immobilizedProductsTable.productId, id));
   if ((imm?.n ?? 0) > 0) deps.push(`Productos Inmovilizados (${imm?.n} registros)`);
   const [sam] = await db.select({ n: count() }).from(samplesTable).where(eq(samplesTable.productId, id));
@@ -183,8 +199,13 @@ async function checkProductDependencies(id: string) {
   return deps;
 }
 
-router.get("/", requireAuth, asyncHandler(async (_req, res) => {
-  const products = await db.select().from(productsTable).orderBy(productsTable.code);
+router.get("/", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+  let query = db.select().from(productsTable).$dynamic();
+  if (warehouse && warehouse !== "all") {
+    query = query.where(eq(productsTable.warehouse, warehouse));
+  }
+  const products = await query.orderBy(productsTable.warehouse, productsTable.code);
   res.json(products);
 }));
 

@@ -55,33 +55,47 @@ All use password: `Almacen2024!`
 | quality | calidad@almacen.com |
 | readonly | consulta@almacen.com |
 
+## Multi-Warehouse Support
+
+Warehouses: `QA`, `Q1`, `QP`, `QL`, `QD`. A global warehouse selector in the header (persisted to localStorage) filters all data. Products have a composite unique constraint on `(warehouse, code)`.
+
 ## Database Schema
 
-Tables: `users`, `products`, `inventory_records`, `immobilized_products`, `samples`, `dye_lots`, `final_disposition`, `documents`, `personnel`, `epp_master`, `epp_deliveries`, `epp_checklists`, `audit_logs`, `lot_evaluations`
+Tables: `users`, `products`, `inventory_records`, `immobilized_products`, `samples`, `dye_lots`, `final_disposition`, `documents`, `personnel`, `epp_master`, `epp_deliveries`, `epp_checklists`, `audit_logs`, `lot_evaluations`, `balance_records`, `cuadre_records`, `cuadre_items`
 
-## Modules (13 total)
+### New product fields (migration 0002)
+- `warehouse` — which warehouse the product belongs to
+- `type` — product type classification
+- `msds` — boolean, whether MSDS sheet is available
+- `controlled` — boolean, whether product is controlled/regulated
+
+## Modules (15 total)
 
 1. **Dashboard** — Overview, quick stats, module grid
-2. **Maestro de Productos** — Chemical product catalog (code, CAS, category, location, storage)
-3. **Cuadre de Inventario** — Daily inventory balance records (input/output tracking)
-4. **Productos Inmovilizados** — Products blocked from use with reason and release workflow
-5. **Muestras** — Sample tracking for lab analysis
-6. **Lotes / Tinturas** — Lot/batch management with quality approval
-7. **Control de Lotes** — Lab lot evaluation module: register evaluations (colorant, usage lot, new lot, approval date, comments), auto-interpret status (CONFORME / CONFORME NO MEZCLAR / NO CONFORME / FALTA ETIQUETAR / OBSERVACION / REVISAR), view chronological history per colorant, and query compatibility between lots
-8. **Disposición Final** — Waste disposal records with contractor and manifests
-9. **Documentos** — Safety documents and certificates
-10. **EPP** — Personal protective equipment catalog, deliveries, and checklists
-11. **Personal** — Personnel directory
-12. **Reportes** — Summary reports and stats
-13. **Administración** — User management (admin only)
+2. **Maestro de Productos** — Chemical product catalog; new fields: warehouse, type, msds, controlled
+3. **Saldo Actualizado** — Balance records per warehouse/date with Excel import/export (new)
+4. **Inventarios** — Daily inventory balance records (input/output tracking)
+5. **Cuadre** — Admin reconciliation module: physical count vs system balance with items (new)
+6. **Productos Inmovilizados** — Products blocked from use with reason and release workflow
+7. **Muestras** — Sample tracking for lab analysis
+8. **Lotes / Tinturas** — Lot/batch management with quality approval
+9. **Control de Lotes** — Lab lot evaluation module
+10. **Disposición Final** — Waste disposal records with contractor and manifests
+11. **Documentos** — Safety documents and certificates
+12. **EPP** — Personal protective equipment catalog, deliveries, and checklists
+13. **Personal** — Personnel directory
+14. **Reportes** — Summary reports and stats
+15. **Administración** — User management (admin only)
 
 ## API Routes
 
 All routes under `/api/`:
 
 - Auth: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`
-- Products: `/products` (CRUD)
-- Inventory: `/inventory` (CRUD)
+- Products: `/products` (CRUD + `?warehouse=` filter, Excel template/import/export)
+- Inventory: `/inventory` (CRUD + `?warehouse=` filter)
+- Balances: `/balances` (CRUD + dates, latest, Excel template/import)
+- Cuadre: `/cuadre` (CRUD + detail with items)
 - Immobilized: `/immobilized` (CRUD + release workflow)
 - Samples: `/samples` (CRUD)
 - Dye lots: `/dye-lots` (CRUD + quality approval)

@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
+import { useWarehouse, WAREHOUSES } from "@/contexts/WarehouseContext";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,8 +59,10 @@ import {
 
 interface Product {
   id: string;
+  warehouse: string;
   code: string;
   name: string;
+  type?: string | null;
   casNumber?: string | null;
   category: string;
   unit: string;
@@ -70,6 +74,8 @@ interface Product {
   storageConditions?: string | null;
   notes?: string | null;
   status: "active" | "inactive";
+  msds?: boolean | null;
+  controlled?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,9 +94,11 @@ const HAZARD_CLASSES = [
   "Inflamable/Tóxico", "Corrosivo/Oxidante", "Nocivo", "No peligroso",
 ];
 
-const emptyForm = (): ProductFormData => ({
+const emptyForm = (warehouse = "General"): ProductFormData => ({
+  warehouse,
   code: "",
   name: "",
+  type: "",
   casNumber: "",
   category: "",
   unit: "",
@@ -102,16 +110,21 @@ const emptyForm = (): ProductFormData => ({
   storageConditions: "",
   notes: "",
   status: "active",
+  msds: false,
+  controlled: false,
 });
 
-async function fetchProducts(): Promise<Product[]> {
-  const res = await fetch("/api/products", { headers: getAuthHeaders() });
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+async function fetchProducts(warehouse?: string): Promise<Product[]> {
+  const params = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
+  const res = await fetch(`${BASE}/api/products${params}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("Error al cargar productos");
   return res.json();
 }
 
 async function createProduct(data: ProductFormData): Promise<Product> {
-  const res = await fetch("/api/products", {
+  const res = await fetch(`${BASE}/api/products`, {
     method: "POST",
     headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -124,7 +137,7 @@ async function createProduct(data: ProductFormData): Promise<Product> {
 }
 
 async function updateProduct(id: string, data: Partial<ProductFormData>): Promise<Product> {
-  const res = await fetch(`/api/products/${id}`, {
+  const res = await fetch(`${BASE}/api/products/${id}`, {
     method: "PUT",
     headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -137,7 +150,7 @@ async function updateProduct(id: string, data: Partial<ProductFormData>): Promis
 }
 
 async function deleteProduct(id: string): Promise<{ soft: boolean; message: string; reason?: string }> {
-  const res = await fetch(`/api/products/${id}`, {
+  const res = await fetch(`${BASE}/api/products/${id}`, {
     method: "DELETE",
     headers: getAuthHeaders(),
   });
@@ -164,13 +177,14 @@ function downloadFile(res: Response, fallbackName: string) {
 }
 
 async function downloadTemplate() {
-  const res = await fetch("/api/products/template", { headers: getAuthHeaders() });
+  const res = await fetch(`${BASE}/api/products/template`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("No se pudo descargar la plantilla");
   downloadFile(res, "plantilla_productos.xlsx");
 }
 
-async function exportProducts() {
-  const res = await fetch("/api/products/export", { headers: getAuthHeaders() });
+async function exportProducts(warehouse?: string) {
+  const params = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
+  const res = await fetch(`${BASE}/api/products/export${params}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("No se pudo exportar los productos");
   downloadFile(res, "maestro_productos.xlsx");
 }
@@ -182,10 +196,11 @@ interface ImportResult {
   total: number;
 }
 
-async function importProducts(file: File): Promise<ImportResult> {
+async function importProducts(file: File, warehouse?: string): Promise<ImportResult> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/products/import", {
+  const params = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
+  const res = await fetch(`${BASE}/api/products/import${params}`, {
     method: "POST",
     headers: getAuthHeaders(),
     body: form,
@@ -312,7 +327,7 @@ interface ProductFormProps {
 function ProductForm({ initial, onSubmit, onCancel, isLoading, isEdit }: ProductFormProps) {
   const [form, setForm] = useState<ProductFormData>(initial);
 
-  const set = (key: keyof ProductFormData, value: string) =>
+  const set = (key: keyof ProductFormData, value: string | boolean) =>
     setForm(f => ({ ...f, [key]: value }));
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -322,6 +337,30 @@ function ProductForm({ initial, onSubmit, onCancel, isLoading, isEdit }: Product
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <Label>Almacén *</Label>
+          <Select value={form.warehouse || "General"} onValueChange={v => set("warehouse", v)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Almacén" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="General">General</SelectItem>
+              {WAREHOUSES.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="type">Tipo</Label>
+          <Input
+            id="type"
+            placeholder="Tipo de producto"
+            value={form.type ?? ""}
+            onChange={e => set("type", e.target.value)}
+          />
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label htmlFor="code">Código *</Label>
@@ -354,6 +393,25 @@ function ProductForm({ initial, onSubmit, onCancel, isLoading, isEdit }: Product
           onChange={e => set("name", e.target.value)}
           required
         />
+      </div>
+
+      <div className="flex items-center gap-6">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="msds"
+            checked={!!form.msds}
+            onCheckedChange={v => set("msds", v)}
+          />
+          <Label htmlFor="msds">Tiene MSDS</Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id="controlled"
+            checked={!!form.controlled}
+            onCheckedChange={v => set("controlled", v)}
+          />
+          <Label htmlFor="controlled">Controlado</Label>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -497,6 +555,7 @@ function ProductForm({ initial, onSubmit, onCancel, isLoading, isEdit }: Product
 
 export default function MaestrodeProductosPage() {
   const { user } = useAuth();
+  const { warehouse } = useWarehouse();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -520,7 +579,7 @@ export default function MaestrodeProductosPage() {
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      await exportProducts();
+      await exportProducts(warehouse);
     } catch (e: unknown) {
       toast({ title: "Error al exportar", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -545,7 +604,7 @@ export default function MaestrodeProductosPage() {
     e.target.value = "";
     setIsImporting(true);
     try {
-      const result = await importProducts(file);
+      const result = await importProducts(file, warehouse);
       setImportResult(result);
       setShowImportResult(true);
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
@@ -558,8 +617,8 @@ export default function MaestrodeProductosPage() {
   };
 
   const { data: products = [], isLoading, isError } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
-    queryFn: fetchProducts,
+    queryKey: ["/api/products", warehouse],
+    queryFn: () => fetchProducts(warehouse),
   });
 
   const createMutation = useMutation({
@@ -767,6 +826,7 @@ export default function MaestrodeProductosPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
+                    <TableHead className="font-semibold text-slate-600 w-20">Almacén</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-28">Código</TableHead>
                     <TableHead className="font-semibold text-slate-600">Nombre</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-28">Categoría</TableHead>
@@ -774,6 +834,7 @@ export default function MaestrodeProductosPage() {
                     <TableHead className="font-semibold text-slate-600 w-24">Ubicación</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-32">Clase Peligro</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-28 text-right">Stock Min/Max</TableHead>
+                    <TableHead className="font-semibold text-slate-600 w-16 text-center">MSDS</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-24">Estado</TableHead>
                     {(canWrite || canDelete) && (
                       <TableHead className="font-semibold text-slate-600 w-24 text-right">Acciones</TableHead>
@@ -784,6 +845,11 @@ export default function MaestrodeProductosPage() {
                   {filtered.map(product => (
                     <TableRow key={product.id} className="hover:bg-slate-50/70 transition-colors">
                       <TableCell>
+                        <span className="px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded text-xs font-medium">
+                          {product.warehouse || "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
                         <span className="font-mono text-xs font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded">
                           {product.code}
                         </span>
@@ -791,11 +857,17 @@ export default function MaestrodeProductosPage() {
                       <TableCell>
                         <div>
                           <p className="font-medium text-slate-900 text-sm">{product.name}</p>
+                          {product.type && (
+                            <p className="text-xs text-violet-500 mt-0.5">{product.type}</p>
+                          )}
                           {product.casNumber && (
                             <p className="text-xs text-slate-400 mt-0.5">CAS: {product.casNumber}</p>
                           )}
                           {product.supplier && (
                             <p className="text-xs text-slate-400">{product.supplier}</p>
+                          )}
+                          {product.controlled && (
+                            <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Controlado</span>
                           )}
                         </div>
                       </TableCell>
@@ -822,6 +894,12 @@ export default function MaestrodeProductosPage() {
                           {product.minimumStock}
                           {product.maximumStock ? ` / ${product.maximumStock}` : ""}
                         </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {product.msds
+                          ? <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" />
+                          : <XCircle className="w-4 h-4 text-slate-200 mx-auto" />
+                        }
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={product.status} />
@@ -870,7 +948,7 @@ export default function MaestrodeProductosPage() {
               </DialogTitle>
             </DialogHeader>
             <ProductForm
-              initial={emptyForm()}
+              initial={emptyForm(warehouse === "all" ? "General" : warehouse)}
               onSubmit={data => createMutation.mutate(data)}
               onCancel={() => setShowForm(false)}
               isLoading={createMutation.isPending}
@@ -891,6 +969,8 @@ export default function MaestrodeProductosPage() {
             {editProduct && (
               <ProductForm
                 initial={{
+                  warehouse: editProduct.warehouse || "General",
+                  type: editProduct.type ?? "",
                   code: editProduct.code,
                   name: editProduct.name,
                   casNumber: editProduct.casNumber ?? "",
@@ -904,6 +984,8 @@ export default function MaestrodeProductosPage() {
                   storageConditions: editProduct.storageConditions ?? "",
                   notes: editProduct.notes ?? "",
                   status: editProduct.status,
+                  msds: editProduct.msds ?? false,
+                  controlled: editProduct.controlled ?? false,
                 }}
                 onSubmit={data => updateMutation.mutate({ id: editProduct.id, data })}
                 onCancel={() => setEditProduct(null)}

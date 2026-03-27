@@ -21,10 +21,20 @@ import {
   CalendarDays,
   User,
   Microscope,
+  Scale,
+  Warehouse,
   UserCog,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
+import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -35,7 +45,9 @@ function cn(...inputs: ClassValue[]) {
 export const modules = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, short: "Inicio" },
   { name: "Maestro de Productos", href: "/products", icon: Package, short: "Productos" },
-  { name: "Cuadre de Inventario", href: "/inventory", icon: ClipboardList, short: "Inventario" },
+  { name: "Saldo Actualizado", href: "/balances", icon: Scale, short: "Saldos" },
+  { name: "Inventarios", href: "/inventory", icon: ClipboardList, short: "Inventario" },
+  { name: "Cuadre", href: "/cuadre", icon: Warehouse, short: "Cuadre" },
   { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle, short: "Inmovilizados" },
   { name: "Muestras", href: "/samples", icon: TestTube, short: "Muestras" },
   { name: "Lotes / Tinturas", href: "/dye-lots", icon: Layers, short: "Lotes" },
@@ -72,6 +84,7 @@ function NavItem({ item, onClick }: { item: typeof modules[0]; onClick?: () => v
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
+  const { warehouse, setWarehouse } = useWarehouse();
   const [_, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -184,6 +197,21 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </div>
 
             <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Warehouse className="w-4 h-4 text-violet-600 shrink-0" />
+                <Select value={warehouse} onValueChange={(v) => setWarehouse(v as WarehouseType)}>
+                  <SelectTrigger className="h-8 w-36 text-xs border-violet-200 focus:ring-violet-500">
+                    <SelectValue placeholder="Almacén" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los almacenes</SelectItem>
+                    {WAREHOUSES.map(w => (
+                      <SelectItem key={w} value={w}>{w}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {user?.role && (
                 <span className={cn("hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full font-medium", ROLE_COLORS[user.role])}>
                   {ROLE_LABELS[user.role]}
