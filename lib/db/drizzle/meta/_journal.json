@@ -8,6 +8,13 @@
       "when": 1774386039282,
       "tag": "0000_magical_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774386039999,
+      "tag": "0001_inventory_photo_fields",
+      "breakpoints": true
     }
   ]
 }
