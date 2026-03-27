@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   ClipboardList, Plus, Trash2, Loader2, AlertCircle,
   TrendingUp, TrendingDown, Minus, Search, X, ChevronsUpDown,
-  Camera, ImageOff, Eye,
+  Camera, ImageOff, Eye, PackageX, CheckCircle2, AlertTriangle,
 } from "lucide-react";
 
 interface Product { id: string; code: string; name: string; unit: string; }
@@ -24,6 +24,14 @@ interface InventoryRecord {
   physicalCount?: string | null;
   photoUrl?: string | null;
   notes?: string | null; registeredBy: string; createdAt: string;
+}
+interface InventoryStats {
+  totalProducts: number;
+  withoutRecords: number;
+  exact: number;
+  withDifference: number;
+  surplus: number;
+  shortage: number;
 }
 
 // ── API helper ───────────────────────────────────────────────────────────────
@@ -136,6 +144,92 @@ function PhotoViewer({ url, onClose }: { url: string; onClose: () => void }) {
   );
 }
 
+// ── CoverageStats ─────────────────────────────────────────────────────────────
+function CoverageStats({ stats, isLoading }: { stats: InventoryStats | undefined; isLoading: boolean }) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="bg-white rounded-xl border border-slate-100 p-4 animate-pulse">
+            <div className="h-3 bg-slate-100 rounded w-2/3 mb-3" />
+            <div className="h-8 bg-slate-100 rounded w-1/3" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (!stats) return null;
+
+  const pctCovered = stats.totalProducts > 0
+    ? Math.round(((stats.totalProducts - stats.withoutRecords) / stats.totalProducts) * 100)
+    : 0;
+
+  const cards = [
+    {
+      label: "Sin cuadre registrado",
+      sublabel: `${stats.totalProducts} productos en total · ${pctCovered}% cubiertos`,
+      value: stats.withoutRecords,
+      icon: <PackageX className="w-5 h-5 text-slate-400" />,
+      bg: stats.withoutRecords === 0 ? "bg-emerald-50 border-emerald-100" : "bg-amber-50 border-amber-100",
+      valueColor: stats.withoutRecords === 0 ? "text-emerald-700" : "text-amber-600",
+      badge: stats.withoutRecords === 0
+        ? <span className="text-xs font-medium text-emerald-600 bg-emerald-100 rounded-full px-2 py-0.5">✓ Todos cubiertos</span>
+        : <span className="text-xs font-medium text-amber-600 bg-amber-100 rounded-full px-2 py-0.5">Pendientes</span>,
+    },
+    {
+      label: "Exacto en último cuadre",
+      sublabel: "Físico coincide con sistema",
+      value: stats.exact,
+      icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
+      bg: "bg-white border-slate-100",
+      valueColor: "text-emerald-600",
+      badge: null,
+    },
+    {
+      label: "Con diferencia",
+      sublabel: stats.withDifference > 0
+        ? `${stats.surplus} sobrante${stats.surplus !== 1 ? "s" : ""} · ${stats.shortage} faltante${stats.shortage !== 1 ? "s" : ""}`
+        : "Sin diferencias detectadas",
+      value: stats.withDifference,
+      icon: <AlertTriangle className="w-5 h-5 text-red-400" />,
+      bg: stats.withDifference > 0 ? "bg-red-50 border-red-100" : "bg-white border-slate-100",
+      valueColor: stats.withDifference > 0 ? "text-red-600" : "text-slate-400",
+      badge: stats.withDifference > 0 ? (
+        <span className="flex gap-2 text-xs">
+          {stats.surplus > 0 && (
+            <span className="font-medium text-blue-600 bg-blue-100 rounded-full px-2 py-0.5 flex items-center gap-1">
+              <TrendingUp className="w-3 h-3" /> +{stats.surplus}
+            </span>
+          )}
+          {stats.shortage > 0 && (
+            <span className="font-medium text-red-600 bg-red-100 rounded-full px-2 py-0.5 flex items-center gap-1">
+              <TrendingDown className="w-3 h-3" /> -{stats.shortage}
+            </span>
+          )}
+        </span>
+      ) : null,
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {cards.map(card => (
+        <div key={card.label} className={`rounded-xl border p-4 ${card.bg}`}>
+          <div className="flex items-start justify-between mb-2">
+            <div className="flex items-center gap-2">
+              {card.icon}
+              <p className="text-xs font-semibold text-slate-600">{card.label}</p>
+            </div>
+            {card.badge}
+          </div>
+          <p className={`text-3xl font-bold ${card.valueColor}`}>{card.value}</p>
+          <p className="text-xs text-slate-400 mt-1">{card.sublabel}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function CuadredeInventarioPage() {
   const { user } = useAuth();
@@ -194,6 +288,9 @@ export default function CuadredeInventarioPage() {
   const { data: records = [], isLoading, isError } = useQuery<InventoryRecord[]>({
     queryKey: ["/api/inventory"], queryFn: () => apiJson("/api/inventory"),
   });
+  const { data: stats, isLoading: statsLoading } = useQuery<InventoryStats>({
+    queryKey: ["/api/inventory/stats"], queryFn: () => apiJson("/api/inventory/stats"),
+  });
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() =>
@@ -219,6 +316,7 @@ export default function CuadredeInventarioPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
+      qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
       qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
       toast({ title: "Cuadre guardado", description: "El cuadre de inventario fue registrado correctamente." });
       setShowForm(false);
@@ -231,13 +329,14 @@ export default function CuadredeInventarioPage() {
     mutationFn: (id: string) => apiJson(`/api/inventory/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
+      qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
       toast({ title: "Registro eliminado" });
       setDeleteTarget(null);
     },
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); setDeleteTarget(null); },
   });
 
-  // Stats
+  // Stats de la tabla (registros totales, con foto, etc.)
   const withDiff = records.filter(r => {
     const sys = parseFloat(r.previousBalance) || 0;
     const phys = r.physicalCount != null ? parseFloat(r.physicalCount) : null;
@@ -272,19 +371,32 @@ export default function CuadredeInventarioPage() {
           )}
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { label: "Total Registros", val: records.length, color: "text-slate-900" },
-            { label: "Con Diferencias", val: withDiff, color: "text-amber-600" },
-            { label: "Sin Diferencias", val: records.length - withDiff, color: "text-emerald-600" },
-            { label: "Con Foto", val: records.filter(r => r.photoUrl).length, color: "text-violet-600" },
-          ].map(s => (
-            <div key={s.label} className="bg-white rounded-xl border border-slate-100 p-4">
-              <p className="text-xs text-slate-500 mb-1">{s.label}</p>
-              <p className={`text-2xl font-bold ${s.color}`}>{s.val}</p>
-            </div>
-          ))}
+        {/* ── Cobertura por producto (nuevo) ── */}
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 ml-1">
+            Estado actual por producto
+          </p>
+          <CoverageStats stats={stats} isLoading={statsLoading} />
+        </div>
+
+        {/* ── Stats de registros ── */}
+        <div>
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 ml-1">
+            Registros de cuadres
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Total Registros", val: records.length, color: "text-slate-900" },
+              { label: "Con Diferencias", val: withDiff, color: "text-amber-600" },
+              { label: "Sin Diferencias", val: records.length - withDiff, color: "text-emerald-600" },
+              { label: "Con Foto", val: records.filter(r => r.photoUrl).length, color: "text-violet-600" },
+            ].map(s => (
+              <div key={s.label} className="bg-white rounded-xl border border-slate-100 p-4">
+                <p className="text-xs text-slate-500 mb-1">{s.label}</p>
+                <p className={`text-2xl font-bold ${s.color}`}>{s.val}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Filtro */}
