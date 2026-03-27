@@ -12,7 +12,7 @@ import { asyncHandler } from "../lib/async-handler.js";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-const TEMPLATE_HEADERS = ["almacen", "tipo", "codigo", "descripcion_producto", "um", "cantidad", "fecha"];
+const TEMPLATE_HEADERS = ["almacen", "tipo", "codigo", "descripcion_producto", "um", "cantidad", "ultimo_consumo"];
 
 const balanceSchema = z.object({
   warehouse: z.string().min(1),
@@ -25,21 +25,56 @@ const balanceSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/template", requireAuth, (_req, res) => {
+router.get("/template", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+
+  // Fetch latest SA per warehouse+code
+  const latestRows = await db.execute(sql`
+    SELECT DISTINCT ON (br.warehouse, br.code)
+      br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity
+    FROM balance_records br
+    ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
+    ORDER BY br.warehouse, br.code, br.balance_date DESC, br.created_at DESC
+  `);
+
+  // Fetch last consumption date per product code
+  const lcRows = await db.execute(sql`
+    SELECT p.code, MAX(ir.record_date) AS last_consumption_date
+    FROM inventory_records ir
+    JOIN products p ON ir.product_id = p.id
+    WHERE ir.outputs::numeric > 0
+    GROUP BY p.code
+  `);
+  const lcMap = new Map<string, string>();
+  for (const row of lcRows.rows as { code: string; last_consumption_date: string | null }[]) {
+    if (row.last_consumption_date) lcMap.set(row.code, row.last_consumption_date);
+  }
+
   const wb = XLSX.utils.book_new();
-  const today = new Date().toISOString().slice(0, 10);
-  const exampleRow = {
-    almacen: "QA", tipo: "Reactivo", codigo: "PROD-001",
-    descripcion_producto: "Ácido Sulfúrico 98%", um: "L", cantidad: "100", fecha: today,
-  };
-  const ws = XLSX.utils.json_to_sheet([exampleRow], { header: TEMPLATE_HEADERS });
+  const rows = (latestRows.rows as { warehouse: string; type: string | null; code: string; product_description: string; unit: string; quantity: string }[])
+    .map(r => ({
+      almacen: r.warehouse,
+      tipo: r.type ?? "",
+      codigo: r.code,
+      descripcion_producto: r.product_description,
+      um: r.unit,
+      cantidad: r.quantity,
+      ultimo_consumo: lcMap.get(r.code) ?? "",
+    }));
+
+  // If no existing data, show one example row
+  if (rows.length === 0) {
+    rows.push({ almacen: "QA", tipo: "Reactivo", codigo: "PROD-001", descripcion_producto: "Ácido Sulfúrico 98%", um: "L", cantidad: "100", ultimo_consumo: "" });
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows, { header: TEMPLATE_HEADERS });
   ws["!cols"] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(h.length + 6, 22) }));
   XLSX.utils.book_append_sheet(wb, ws, "Saldo Actualizado");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", 'attachment; filename="plantilla_saldo.xlsx"');
   res.send(buf);
-});
+}));
 
 router.post(
   "/import",
@@ -63,6 +98,8 @@ router.post(
       return n;
     });
 
+    // Auto-fill today's date — no longer required in the template
+    const todayDate = new Date().toISOString().slice(0, 10);
     const batchId = generateId();
     const userId = req.userId;
     let inserted = 0;
@@ -76,14 +113,15 @@ router.post(
         const productDescription = String(row.descripcion_producto ?? "").trim();
         const unit = String(row.um ?? "").trim();
         const warehouse = String(row.almacen ?? "General").trim();
-        const balanceDate = String(row.fecha ?? "").trim();
+        // Use date from row if present (backward compat), otherwise use today
+        const balanceDate = String(row.fecha ?? row.fecha_de_hoy ?? "").trim() || todayDate;
         const quantity = String(row.cantidad ?? "0").trim() || "0";
         const type = String(row.tipo ?? "").trim() || undefined;
+        // ultimo_consumo is informational only — ignored on import
 
         if (!code) { errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" }); continue; }
         if (!productDescription) { errors.push({ row: rowNum, code, error: "El campo 'descripcion_producto' es obligatorio" }); continue; }
         if (!unit) { errors.push({ row: rowNum, code, error: "El campo 'um' es obligatorio" }); continue; }
-        if (!balanceDate) { errors.push({ row: rowNum, code, error: "El campo 'fecha' es obligatorio" }); continue; }
 
         // Upsert: si ya existe registro con mismo almacén+código+fecha, actualizar en vez de duplicar
         const existing = await db.select({ id: balanceRecordsTable.id })

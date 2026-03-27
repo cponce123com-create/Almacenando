@@ -268,12 +268,14 @@ export default function BalancesPage() {
   });
 
   const downloadTemplate = async () => {
-    const res = await fetch(`${BASE}/api/balances/template`, { headers: getAuthHeaders() });
+    const qs = selectedWarehouse && selectedWarehouse !== "all" ? `?warehouse=${selectedWarehouse}` : "";
+    const res = await fetch(`${BASE}/api/balances/template${qs}`, { headers: getAuthHeaders() });
     if (!res.ok) return;
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "plantilla_saldo.xlsx";
+    const wLabel = selectedWarehouse && selectedWarehouse !== "all" ? `_${selectedWarehouse}` : "";
+    a.href = url; a.download = `plantilla_saldo${wLabel}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };
 
