@@ -66,6 +66,7 @@ router.post(
     const batchId = generateId();
     const userId = req.userId;
     let inserted = 0;
+    let updated = 0;
     const errors: Array<{ row: number; code: string; error: string }> = [];
 
     for (let i = 0; i < normalizedRows.length; i++) {
@@ -84,19 +85,36 @@ router.post(
         if (!unit) { errors.push({ row: rowNum, code, error: "El campo 'um' es obligatorio" }); continue; }
         if (!balanceDate) { errors.push({ row: rowNum, code, error: "El campo 'fecha' es obligatorio" }); continue; }
 
-        const id = generateId();
-        await db.insert(balanceRecordsTable).values({
-          id, warehouse, type, code, productDescription, unit, quantity,
-          balanceDate, batchId, registeredBy: userId,
-        });
-        inserted++;
+        // Upsert: si ya existe registro con mismo almacén+código+fecha, actualizar en vez de duplicar
+        const existing = await db.select({ id: balanceRecordsTable.id })
+          .from(balanceRecordsTable)
+          .where(and(
+            eq(balanceRecordsTable.warehouse, warehouse),
+            eq(balanceRecordsTable.code, code),
+            eq(balanceRecordsTable.balanceDate, balanceDate)
+          ))
+          .limit(1);
+
+        if (existing.length > 0) {
+          await db.update(balanceRecordsTable)
+            .set({ productDescription, unit, quantity, type, batchId, registeredBy: userId, updatedAt: new Date() })
+            .where(eq(balanceRecordsTable.id, existing[0]!.id));
+          updated++;
+        } else {
+          const id = generateId();
+          await db.insert(balanceRecordsTable).values({
+            id, warehouse, type, code, productDescription, unit, quantity,
+            balanceDate, batchId, registeredBy: userId,
+          });
+          inserted++;
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Error desconocido";
         const code = String(row.codigo ?? "").trim() || `fila ${rowNum}`;
         errors.push({ row: rowNum, code, error: msg });
       }
     }
-    res.json({ inserted, errors, total: normalizedRows.length, batchId });
+    res.json({ inserted, updated, errors, total: normalizedRows.length, batchId });
   })
 );
 
