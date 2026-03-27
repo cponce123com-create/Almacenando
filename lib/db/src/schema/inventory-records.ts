@@ -12,6 +12,10 @@ export const inventoryRecordsTable = pgTable("inventory_records", {
   inputs: numeric("inputs").notNull().default("0"),
   outputs: numeric("outputs").notNull().default("0"),
   finalBalance: numeric("final_balance").notNull().default("0"),
+  // ── NUEVOS CAMPOS ──────────────────────────────────────────────
+  physicalCount: numeric("physical_count"),   // Cantidad encontrada en físico
+  photoUrl: text("photo_url"),                // URL de la foto de la etiqueta (Cloudinary)
+  // ───────────────────────────────────────────────────────────────
   notes: text("notes"),
   registeredBy: text("registered_by").notNull().references(() => usersTable.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
