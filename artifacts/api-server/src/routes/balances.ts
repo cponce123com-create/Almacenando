@@ -25,43 +25,73 @@ const balanceSchema = z.object({
   notes: z.string().optional(),
 });
 
+/** Parse a date value from Excel import into YYYY-MM-DD.
+ *  Handles: JS Date objects, "DD/MM/YYYY", "YYYY-MM-DD", Excel serials, empty → "2013-01-01". */
+function parseImportDate(val: unknown): string {
+  if (val === null || val === undefined || val === "") return "2013-01-01";
+
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return "2013-01-01";
+    return val.toISOString().slice(0, 10);
+  }
+
+  const s = String(val).trim();
+  if (!s) return "2013-01-01";
+
+  // ISO format already: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY (Spanish Excel)
+  const dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  if (dmy) {
+    const d = dmy[1]!.padStart(2, "0");
+    const m = dmy[2]!.padStart(2, "0");
+    const y = dmy[3]!;
+    return `${y}-${m}-${d}`;
+  }
+
+  // Excel serial number (days since 1899-12-30)
+  const num = parseFloat(s);
+  if (!isNaN(num) && num > 40000 && num < 70000) {
+    const date = new Date((num - 25569) * 86400 * 1000);
+    return date.toISOString().slice(0, 10);
+  }
+
+  // Try generic JS date parse
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+
+  return "2013-01-01";
+}
+
 router.get("/template", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
 
-  // Fetch latest SA per warehouse+code
+  // Fetch latest SA per warehouse+code (including stored ultimo_consumo)
   const latestRows = await db.execute(sql`
     SELECT DISTINCT ON (br.warehouse, br.code)
-      br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity
+      br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
+      br.ultimo_consumo
     FROM balance_records br
     ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
     ORDER BY br.warehouse, br.code, br.balance_date DESC, br.created_at DESC
   `);
 
-  // Fetch last inventory record date per product code
-  const lcRows = await db.execute(sql`
-    SELECT p.code, MAX(ir.record_date) AS last_consumption_date
-    FROM inventory_records ir
-    JOIN products p ON ir.product_id = p.id
-    GROUP BY p.code
-  `);
-  const lcMap = new Map<string, string>();
-  for (const row of lcRows.rows as { code: string; last_consumption_date: string | null }[]) {
-    if (row.last_consumption_date) lcMap.set(row.code, row.last_consumption_date);
-  }
-
   const wb = XLSX.utils.book_new();
-  const rows = (latestRows.rows as { warehouse: string; type: string | null; code: string; product_description: string; unit: string; quantity: string }[])
-    .map(r => ({
-      almacen: r.warehouse,
-      tipo: r.type ?? "",
-      codigo: r.code,
-      descripcion_producto: r.product_description,
-      um: r.unit,
-      cantidad: r.quantity,
-      ultimo_consumo: lcMap.get(r.code) ?? "",
-    }));
+  const rows = (latestRows.rows as {
+    warehouse: string; type: string | null; code: string;
+    product_description: string; unit: string; quantity: string;
+    ultimo_consumo: string | null;
+  }[]).map(r => ({
+    almacen: r.warehouse,
+    tipo: r.type ?? "",
+    codigo: r.code,
+    descripcion_producto: r.product_description,
+    um: r.unit,
+    cantidad: r.quantity,
+    ultimo_consumo: r.ultimo_consumo ?? "",
+  }));
 
-  // If no existing data, show one example row
   if (rows.length === 0) {
     rows.push({ almacen: "QA", tipo: "Reactivo", codigo: "PROD-001", descripcion_producto: "Ácido Sulfúrico 98%", um: "L", cantidad: "100", ultimo_consumo: "" });
   }
@@ -83,7 +113,7 @@ router.post(
   asyncHandler(async (req: AuthenticatedRequest, res) => {
     if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
     let workbook: XLSX.WorkBook;
-    try { workbook = XLSX.read(req.file.buffer, { type: "buffer" }); }
+    try { workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: true }); }
     catch { res.status(400).json({ error: "El archivo no es un Excel válido" }); return; }
     const sheetName = workbook.SheetNames[0];
     if (!sheetName) { res.status(400).json({ error: "El archivo no contiene hojas" }); return; }
@@ -97,7 +127,6 @@ router.post(
       return n;
     });
 
-    // Auto-fill today's date — no longer required in the template
     const todayDate = new Date().toISOString().slice(0, 10);
     const batchId = generateId();
     const userId = req.userId;
@@ -112,17 +141,17 @@ router.post(
         const productDescription = String(row.descripcion_producto ?? "").trim();
         const unit = String(row.um ?? "").trim();
         const warehouse = String(row.almacen ?? "General").trim();
-        // Use date from row if present (backward compat), otherwise use today
         const balanceDate = String(row.fecha ?? row.fecha_de_hoy ?? "").trim() || todayDate;
         const quantity = String(row.cantidad ?? "0").trim() || "0";
         const type = String(row.tipo ?? "").trim() || undefined;
-        // ultimo_consumo is informational only — ignored on import
+
+        // Parse and store ultimo_consumo from ERP — default to 2013-01-01 if empty
+        const ultimoConsumo = parseImportDate(row.ultimo_consumo);
 
         if (!code) { errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" }); continue; }
         if (!productDescription) { errors.push({ row: rowNum, code, error: "El campo 'descripcion_producto' es obligatorio" }); continue; }
         if (!unit) { errors.push({ row: rowNum, code, error: "El campo 'um' es obligatorio" }); continue; }
 
-        // Upsert: si ya existe registro con mismo almacén+código+fecha, actualizar en vez de duplicar
         const existing = await db.select({ id: balanceRecordsTable.id })
           .from(balanceRecordsTable)
           .where(and(
@@ -134,14 +163,14 @@ router.post(
 
         if (existing.length > 0) {
           await db.update(balanceRecordsTable)
-            .set({ productDescription, unit, quantity, type, batchId, registeredBy: userId, updatedAt: new Date() })
+            .set({ productDescription, unit, quantity, type, ultimoConsumo, batchId, registeredBy: userId, updatedAt: new Date() })
             .where(eq(balanceRecordsTable.id, existing[0]!.id));
           updated++;
         } else {
           const id = generateId();
           await db.insert(balanceRecordsTable).values({
             id, warehouse, type, code, productDescription, unit, quantity,
-            balanceDate, batchId, registeredBy: userId,
+            balanceDate, ultimoConsumo, batchId, registeredBy: userId,
           });
           inserted++;
         }
@@ -162,14 +191,8 @@ router.get("/latest", requireAuth, asyncHandler(async (req, res) => {
     SELECT DISTINCT ON (br.warehouse, br.code)
       br.id, br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
       br.balance_date, br.batch_id, br.notes, br.registered_by, br.created_at, br.updated_at,
-      lc.last_consumption_date
+      br.ultimo_consumo AS "ultimoConsumo"
     FROM balance_records br
-    LEFT JOIN (
-      SELECT p.code, MAX(ir.record_date) AS last_consumption_date
-      FROM inventory_records ir
-      JOIN products p ON ir.product_id = p.id
-      GROUP BY p.code
-    ) lc ON lc.code = br.code
     ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
     ORDER BY br.warehouse, br.code, br.balance_date DESC, br.created_at DESC
   `);
@@ -201,20 +224,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
   if (conditions.length > 0) query = query.where(and(...conditions));
   const records = await query.orderBy(desc(balanceRecordsTable.balanceDate), balanceRecordsTable.code);
 
-  if (records.length > 0) {
-    const lcRows = await db.execute(sql`
-      SELECT p.code, MAX(ir.record_date) AS last_consumption_date
-      FROM inventory_records ir
-      JOIN products p ON ir.product_id = p.id
-      GROUP BY p.code
-    `);
-    const lcMap = new Map<string, string>();
-    for (const row of lcRows.rows as { code: string; last_consumption_date: string | null }[]) {
-      if (row.last_consumption_date) lcMap.set(row.code, row.last_consumption_date);
-    }
-    res.json(records.map(r => ({ ...r, lastConsumptionDate: lcMap.get(r.code) ?? null })));
-    return;
-  }
+  // ultimoConsumo is now a stored field on balance_records — return directly
   res.json(records);
 }));
 

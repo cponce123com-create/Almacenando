@@ -28,7 +28,7 @@ interface BalanceRecord {
   notes?: string | null;
   registeredBy: string;
   createdAt: string;
-  lastConsumptionDate?: string | null;
+  ultimoConsumo?: string | null;
 }
 
 interface ImportResult {
@@ -419,9 +419,9 @@ export default function BalancesPage() {
                       <TableCell className="text-slate-500">{r.unit}</TableCell>
                       <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
-                      <TableCell className="text-sm">
-                        {r.lastConsumptionDate
-                          ? <span className="text-slate-700 font-medium">{r.lastConsumptionDate}</span>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {r.ultimoConsumo
+                          ? <span className="text-slate-700 font-medium">{r.ultimoConsumo}</span>
                           : <span className="text-slate-300">—</span>}
                       </TableCell>
                       <TableCell>

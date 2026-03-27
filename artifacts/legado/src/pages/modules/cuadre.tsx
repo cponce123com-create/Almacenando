@@ -19,7 +19,22 @@ import {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface Product { id: string; code: string; name: string; unit: string; warehouse: string; }
-interface BalanceRecord { code: string; quantity: string; }
+interface BalanceRecord { code: string; quantity: string; ultimoConsumo?: string | null; }
+
+function sinMovimiento(dateStr: string | null | undefined): { label: string; color: string } {
+  if (!dateStr) return { label: "—", color: "text-slate-300" };
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return { label: "—", color: "text-slate-300" };
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days < 0) return { label: "—", color: "text-slate-300" };
+  const months = days / 30.44;
+  if (months < 6) return { label: `${Math.round(months)}m`, color: "text-emerald-600" };
+  if (months < 12) return { label: `${Math.round(months)}m`, color: "text-amber-500" };
+  const years = Math.floor(months / 12);
+  const rem = Math.floor(months % 12);
+  const label = rem > 0 ? `${years}a ${rem}m` : `${years}a`;
+  return { label, color: "text-red-500" };
+}
 interface InventoryRecord { productId: string; physicalCount?: string | null; recordDate: string; }
 interface CuadreItem {
   id: string; cuadreId: string; code: string; productDescription: string; unit: string;
@@ -185,7 +200,7 @@ export default function CuadrePage() {
 
   // Build lookup maps
   const balanceByCode = useMemo(
-    () => Object.fromEntries(latestBalances.map(b => [b.code, b.quantity])),
+    () => Object.fromEntries(latestBalances.map(b => [b.code, b])),
     [latestBalances]
   );
 
@@ -206,7 +221,8 @@ export default function CuadrePage() {
   );
 
   const product = productMap[selectedProduct];
-  const saBalance = product ? (balanceByCode[product.code] ?? null) : null;
+  const saBalanceRecord = product ? (balanceByCode[product.code] ?? null) : null;
+  const saBalance = saBalanceRecord?.quantity ?? null;
   const lastPhysical = product ? (latestPhysicalByProduct[product.id] ?? null) : null;
   const difference = saBalance !== null && lastPhysical !== null
     ? parseFloat(lastPhysical) - parseFloat(saBalance)
@@ -353,6 +369,7 @@ export default function CuadrePage() {
                     <TableHead className="font-semibold text-slate-600 text-right">Último Físico</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Diferencia</TableHead>
                     <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Últ. Consumo</TableHead>
+                    <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Sin movimiento</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Estado</TableHead>
                     <TableHead className="font-semibold text-slate-600">Observaciones</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center w-36">Acciones</TableHead>
@@ -386,9 +403,19 @@ export default function CuadrePage() {
                           {item ? <DiffBadge diff={diff} /> : <span className="text-slate-300 text-xs">—</span>}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
-                          {item?.lastConsumptionDate
-                            ? <span className="text-slate-700 font-medium">{item.lastConsumptionDate}</span>
-                            : <span className="text-slate-300">—</span>}
+                          {(() => {
+                            const uc = balanceByCode[item?.code ?? ""]?.ultimoConsumo;
+                            return uc
+                              ? <span className="text-slate-700 font-medium">{uc}</span>
+                              : <span className="text-slate-300">—</span>;
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-center whitespace-nowrap">
+                          {(() => {
+                            const uc = balanceByCode[item?.code ?? ""]?.ultimoConsumo;
+                            const sm = sinMovimiento(uc);
+                            return <span className={`text-xs font-semibold ${sm.color}`}>{sm.label}</span>;
+                          })()}
                         </TableCell>
                         <TableCell className="text-center">
                           {isPending ? (

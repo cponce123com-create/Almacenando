@@ -12,6 +12,7 @@ export const balanceRecordsTable = pgTable("balance_records", {
   unit: text("unit").notNull(),
   quantity: numeric("quantity").notNull().default("0"),
   balanceDate: date("balance_date").notNull(),
+  ultimoConsumo: date("ultimo_consumo"),
   batchId: text("batch_id"),
   notes: text("notes"),
   registeredBy: text("registered_by").notNull().references(() => usersTable.id),

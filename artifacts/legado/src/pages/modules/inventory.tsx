@@ -38,6 +38,22 @@ interface InventoryStats {
 }
 interface BalanceRecord {
   id: string; code: string; quantity: string; productDescription: string; unit: string; balanceDate: string;
+  ultimoConsumo?: string | null;
+}
+
+function sinMovimiento(dateStr: string | null | undefined): { label: string; color: string } {
+  if (!dateStr) return { label: "—", color: "text-slate-300" };
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return { label: "—", color: "text-slate-300" };
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days < 0) return { label: "—", color: "text-slate-300" };
+  const months = days / 30.44;
+  if (months < 6) return { label: `${Math.round(months)}m`, color: "text-emerald-600" };
+  if (months < 12) return { label: `${Math.round(months)}m`, color: "text-amber-500" };
+  const years = Math.floor(months / 12);
+  const rem = Math.floor(months % 12);
+  const label = rem > 0 ? `${years}a ${rem}m` : `${years}a`;
+  return { label, color: "text-red-500" };
 }
 interface BoxEntry { weight: string; lot: string; }
 
@@ -568,6 +584,7 @@ export default function TomaDeInventarioPage() {
                     <TableHead className="font-semibold text-slate-600 text-center">Diferencia</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Cajas</TableHead>
                     <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Últ. Consumo</TableHead>
+                    <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Sin movimiento</TableHead>
                     <TableHead className="font-semibold text-slate-600">Observaciones</TableHead>
                     {canDelete && <TableHead className="w-12" />}
                   </TableRow>
@@ -623,9 +640,19 @@ export default function TomaDeInventarioPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
-                          {r.lastConsumptionDate
-                            ? <span className="text-slate-700 font-medium">{r.lastConsumptionDate}</span>
-                            : <span className="text-slate-300">—</span>}
+                          {(() => {
+                            const uc = balanceByCode[product?.code ?? ""]?.ultimoConsumo;
+                            return uc
+                              ? <span className="text-slate-700 font-medium">{uc}</span>
+                              : <span className="text-slate-300">—</span>;
+                          })()}
+                        </TableCell>
+                        <TableCell className="text-center whitespace-nowrap">
+                          {(() => {
+                            const uc = balanceByCode[product?.code ?? ""]?.ultimoConsumo;
+                            const sm = sinMovimiento(uc);
+                            return <span className={`text-xs font-semibold ${sm.color}`}>{sm.label}</span>;
+                          })()}
                         </TableCell>
                         <TableCell className="text-sm text-slate-500 max-w-[180px] truncate">
                           {r.notes || <span className="text-slate-300">—</span>}
