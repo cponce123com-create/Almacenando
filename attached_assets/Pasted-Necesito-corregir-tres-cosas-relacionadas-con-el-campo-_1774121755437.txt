@@ -1,0 +1,118 @@
+Necesito corregir tres cosas relacionadas con el campo DNI y la consulta a RENIEC. Lee cada archivo antes de modificarlo.
+CAMBIO 1 — Quitar el campo DNI del formulario de registro
+Archivo: artifacts/legado/src/pages/auth/register.tsx
+Eliminar completamente el campo DNI del formulario de registro. El usuario no debe ingresar su DNI al crear una cuenta. Quitar también cualquier estado dni o setDni que se haya agregado, y quitar el componente DniInput si fue agregado ahí. El registro debe pedir solo: nombre completo, email y contraseña — nada más.
+Si el schema Zod del registro tiene el campo dni, quitarlo también.
+
+CAMBIO 2 — Diagnosticar y corregir el autocompletado en el perfil
+Archivo: artifacts/legado/src/pages/profile/index.tsx
+El problema más probable es uno de estos tres — verificar cuál aplica y corregirlo:
+Problema A: El endpoint /api/trusted-contacts/verify-dni requiere autenticación con requireAuth, pero el fetch desde el perfil no está enviando el header Authorization. Verificar que el fetch incluye:
+typescriptheaders: {
+  ...getAuthHeaders(),
+  "Content-Type": "application/json",
+}
+Importar getAuthHeaders desde @/hooks/use-auth si no está importado.
+Problema B: El componente DniInput usa getAuthHeaders() pero el token en ese momento es null porque el hook se ejecuta antes de que la sesión esté lista. Agregar un guard:
+typescriptconst token = getAuthHeaders();
+if (!token.Authorization) {
+  setResult({ status: "error", message: "Debes estar logueado para verificar" });
+  return null;
+}
+Problema C: El debounce de 600ms en use-dni-lookup.ts no está disparando la llamada. Agregar un console.log temporal para verificar:
+typescriptconsole.log("[DNI lookup] llamando con:", digits);
+Verificar en la consola del browser que aparece ese log cuando se escriben 8 dígitos.
+También verificar que el campo DNI en el perfil realmente usa el componente DniInput y no un Input normal sin la lógica de lookup.
+
+CAMBIO 3 — Diagnosticar y corregir el autocompletado en contactos de confianza
+Archivo: artifacts/legado/src/pages/trusted-contacts/index.tsx
+Verificar estos puntos uno por uno:
+Punto 1: Que el campo DNI usa el componente DniInput importado desde @/components/ui/dni-input y no un Input normal.
+Punto 2: Que el componente DniInput está correctamente implementado en artifacts/legado/src/components/ui/dni-input.tsx con el hook useDniLookup y el debounce de 600ms.
+Punto 3: Que el hook use-dni-lookup.ts en artifacts/legado/src/hooks/use-dni-lookup.ts existe y hace el fetch a /api/trusted-contacts/verify-dni.
+Punto 4: Hacer una prueba directa — agregar temporalmente un botón "Test RENIEC" en la página de contactos que haga este fetch directamente y muestre el resultado en un console.log:
+typescriptconst testReniec = async () => {
+  const res = await fetch("/api/trusted-contacts/verify-dni", {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ dni: "12345678" }),
+  });
+  const data = await res.json();
+  console.log("[RENIEC test]", res.status, data);
+};
+Esto permite ver exactamente qué responde el servidor.
+
+CAMBIO 4 — Verificar el endpoint backend
+Archivo: artifacts/api-server/src/routes/trusted-contacts.ts
+Verificar que existe el endpoint POST /verify-dni y que:
+
+Lee el token correctamente: process.env.RENIEC_API_TOKEN
+La URL es exactamente: https://api.decolecta.com/v1/reniec/dni?numero=${dni}
+El header de autorización es: Bearer ${token} — no Token, no APIKey, sino Bearer
+Si el endpoint no existe, crearlo completo:
+
+typescriptrouter.post("/verify-dni", requireAuth, async (req, res) => {
+  const { dni } = req.body;
+
+  if (!dni || dni.replace(/\D/g, "").length !== 8) {
+    res.status(400).json({ error: "El DNI debe tener exactamente 8 dígitos" });
+    return;
+  }
+
+  const token = process.env.RENIEC_API_TOKEN;
+  if (!token) {
+    res.status(503).json({ error: "Verificación de DNI no disponible" });
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.decolecta.com/v1/reniec/dni?numero=${dni.trim()}`,
+      {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (response.status === 404) {
+      res.status(404).json({ error: "DNI no encontrado en RENIEC" });
+      return;
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error("[RENIEC] error response:", response.status, errBody);
+      res.status(500).json({ error: "Error al consultar RENIEC" });
+      return;
+    }
+
+    const data = await response.json();
+
+    res.json({
+      valid: true,
+      firstName: data.first_name,
+      firstLastName: data.first_last_name,
+      secondLastName: data.second_last_name,
+      fullName: data.full_name,
+      documentNumber: data.document_number,
+    });
+  } catch (err) {
+    console.error("[RENIEC]", err);
+    res.status(500).json({ error: "Error interno al verificar DNI" });
+  }
+});
+
+Agregar un console.log al inicio del endpoint para confirmar que se está ejecutando:
+
+typescriptconsole.log("[RENIEC] verificando DNI:", req.body.dni, "token presente:", !!process.env.RENIEC_API_TOKEN);
+
+CAMBIO 5 — Verificar que RENIEC_API_TOKEN está siendo leído
+En artifacts/api-server/src/index.ts, agregar después del app.listen:
+typescriptif (!process.env.RENIEC_API_TOKEN) {
+  console.warn("⚠️  RENIEC_API_TOKEN no configurado — verificación de DNI deshabilitada");
+} else {
+  console.log("✓ RENIEC_API_TOKEN configurado");
+}
+Esto permite confirmar en los logs de Replit que el Secret está siendo leído correctamente por el servidor.

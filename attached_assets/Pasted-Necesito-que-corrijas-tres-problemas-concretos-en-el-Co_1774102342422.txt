@@ -1,0 +1,107 @@
+Necesito que corrijas tres problemas concretos en el Constructor de Testamento. Lee el archivo artifacts/legado/src/pages/legacy/form.tsx completo antes de tocar nada.
+PROBLEMA 1 — Botón de generar IA invisible (fondo blanco, letra blanca)
+Busca el botón que dice "Generar mis últimos deseos con IA" o similar. El problema es que tiene clases de color que lo hacen invisible sobre fondo claro.
+Reemplaza las clases de ese botón por estas explícitas:
+tsxclassName="w-full h-12 rounded-xl font-semibold text-white bg-fuchsia-700 hover:bg-fuchsia-800 flex items-center justify-center gap-2 shadow-md"
+Si el botón tiene un spinner de carga, asegurarse de que también sea visible:
+tsx{isGenerating ? (
+  <><Loader2 className="w-5 h-5 animate-spin text-white" /> Redactando tu documento...</>
+) : (
+  <><Sparkles className="w-5 h-5 text-white" /> Generar mis últimos deseos con IA</>
+)}
+Importar Sparkles desde lucide-react si no está importado.
+
+PROBLEMA 2 — El texto generado por la IA no aparece en el textarea
+El problema está en cómo se maneja la respuesta de la IA. Busca la función que hace el fetch a /api/ai/generate-will y verifica que después de recibir la respuesta hace lo siguiente:
+
+Lee el campo correcto de la respuesta. La API devuelve { document: string }. El código debe hacer:
+
+typescriptconst data = await response.json();
+const text = data.document || "";
+
+Guarda ese texto en el estado correcto. Busca el estado que controla el textarea del documento generado. Puede llamarse generatedDocument, willContent, documentText, contentText o similar. Asegurarse de que después del fetch hace:
+
+typescriptsetGeneratedDocument(text); // o el nombre del estado que corresponda
+
+También debe actualizar el campo contentText del formulario para que se guarde cuando el usuario hace submit:
+
+typescriptform.setValue("contentText", text);
+
+Si el textarea del documento generado tiene readOnly o disabled, quitarlo para que el usuario pueda editar.
+El textarea debe estar siempre visible cuando hay contenido generado. Verificar que no está dentro de un condicional que lo oculte. Si el textarea solo aparece cuando generatedDocument tiene valor, cambiarlo para que siempre esté visible cuando type === "funeral_note" pero vacío hasta que se genere.
+
+El bloque completo de la función de generación debe verse así:
+typescriptconst handleGenerateWill = async () => {
+  if (beneficiaries.length === 0) {
+    toast({ title: "Agrega al menos un beneficiario", variant: "destructive" });
+    return;
+  }
+  setIsGenerating(true);
+  try {
+    const response = await fetch("/api/ai/generate-will", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${sessionStorage.getItem("legado_token") || localStorage.getItem("legado_token")}`,
+      },
+      body: JSON.stringify({ beneficiaries }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      toast({ title: "Error al generar", description: data.error || "Intenta de nuevo", variant: "destructive" });
+      return;
+    }
+    const text = data.document || "";
+    setGeneratedDocument(text);
+    form.setValue("contentText", text);
+    toast({ title: "¡Documento generado!", description: "Puedes editarlo antes de guardar." });
+  } catch (err) {
+    console.error("[generate-will]", err);
+    toast({ title: "Error de conexión", variant: "destructive" });
+  } finally {
+    setIsGenerating(false);
+  }
+};
+
+PROBLEMA 3 — No se ve el botón de descargar PDF ni la vista previa
+El problema es que los botones de "Vista previa" y "Descargar como PDF" solo aparecen cuando generatedDocument tiene valor, pero ese estado nunca se llena por el problema anterior. Una vez que el Problema 2 esté resuelto los botones aparecerán solos.
+Pero además verificar que el bloque condicional que muestra los botones está correctamente escrito. Busca el bloque y asegúrate de que sea exactamente así, justo debajo del textarea del documento generado:
+tsx{generatedDocument && generatedDocument.trim().length > 0 && (
+  <div className="flex flex-col sm:flex-row gap-3 mt-4">
+    <Button
+      type="button"
+      onClick={() => setShowPreview(true)}
+      variant="outline"
+      className="flex items-center gap-2 border-amber-700 text-amber-800 hover:bg-amber-50 rounded-xl px-6 h-11"
+    >
+      <Eye className="w-4 h-4" />
+      Vista previa
+    </Button>
+    <Button
+      type="button"
+      onClick={exportToPDF}
+      className="flex items-center gap-2 bg-amber-800 hover:bg-amber-900 text-white rounded-xl px-6 h-11"
+    >
+      <FileDown className="w-4 h-4" />
+      Descargar como PDF
+    </Button>
+  </div>
+)}
+Si el estado se llama diferente a generatedDocument, usar el nombre correcto que corresponda al estado donde se guarda el texto generado.
+Verificar también que setShowPreview y showPreview están declarados como estado:
+typescriptconst [showPreview, setShowPreview] = useState(false);
+const [generatedDocument, setGeneratedDocument] = useState("");
+Y que exportToPDF es una función declarada dentro del componente que usa generatedDocument.
+Importar Eye y FileDown desde lucide-react si no están importados.
+
+VERIFICACIÓN FINAL
+Después de hacer todos los cambios, leer el componente completo y verificar que el flujo es:
+
+Usuario elige tipo funeral_note → aparece el Constructor de Testamento
+Usuario agrega beneficiarios → se guardan en el estado beneficiaries
+Usuario hace click en el botón fuxia "Generar mis últimos deseos con IA"
+Se muestra el spinner mientras carga
+La respuesta de la API llena el estado generatedDocument y también form.setValue("contentText", text)
+El textarea del documento generado muestra el texto y es editable
+Aparecen los botones "Vista previa" y "Descargar como PDF"
+Al hacer click en "Descargar como PDF" se genera el PDF con fondo de pergamino

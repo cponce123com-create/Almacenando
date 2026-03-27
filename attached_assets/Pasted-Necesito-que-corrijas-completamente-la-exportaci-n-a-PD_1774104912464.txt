@@ -1,0 +1,136 @@
+Necesito que corrijas completamente la exportación a PDF del testamento. El problema actual es que el PDF muestra el texto con símbolos de markdown crudos (#, **, ---) en lugar de formato real. Hay que cambiar el enfoque completamente.
+ELIMINAR el fondo de pergamino — quitar completamente el uso de parchment-bg.png en el PDF. El PDF debe tener fondo blanco limpio, profesional, como un documento legal real.
+NUEVO ENFOQUE — Generar el PDF renderizando HTML
+En lugar de usar jsPDF.text() que no entiende markdown, usar html2canvas para capturar un div HTML formateado y convertirlo a PDF. Reemplazar completamente la función exportToPDF por esta:
+typescriptconst exportToPDF = async () => {
+  const { jsPDF } = await import("jspdf");
+  const html2canvas = (await import("html2canvas")).default;
+
+  // Crear un div oculto con el contenido formateado como HTML real
+  const container = document.createElement("div");
+  container.style.cssText = `
+    position: fixed;
+    top: -9999px;
+    left: -9999px;
+    width: 794px;
+    padding: 60px 70px;
+    background: #ffffff;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    color: #1a1a1a;
+    font-size: 13px;
+    line-height: 1.8;
+    box-sizing: border-box;
+  `;
+
+  // Convertir el markdown del documento a HTML limpio
+  const htmlContent = (generatedDocument || "")
+    // Títulos H1
+    .replace(/^# (.+)$/gm, '<h1 style="font-size:20px;font-weight:bold;text-align:center;margin:0 0 8px;color:#1a1a1a;letter-spacing:1px;">$1</h1>')
+    // Títulos H2
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:15px;font-weight:bold;margin:24px 0 8px;color:#1a1a1a;border-bottom:1px solid #ccc;padding-bottom:4px;">$1</h2>')
+    // Títulos H3
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:13px;font-weight:bold;margin:16px 0 6px;color:#1a1a1a;">$1</h3>')
+    // Separadores ---
+    .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #cccccc;margin:16px 0;" />')
+    // Negrita **texto**
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Cursiva *texto*
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Líneas de tabla | dato | valor |
+    .replace(/^\|(.+)\|$/gm, (match) => {
+      const cells = match.split("|").filter(c => c.trim() !== "").map(c => `<td style="padding:4px 12px;border:1px solid #ddd;">${c.trim()}</td>`).join("");
+      return `<tr>${cells}</tr>`;
+    })
+    // Envolver filas de tabla en tabla
+    .replace(/(<tr>.*<\/tr>\n?)+/gs, (match) => `<table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:12px;">${match}</table>`)
+    // Ítems de lista con números: 1. texto
+    .replace(/^\d+\. (.+)$/gm, '<li style="margin:4px 0;">$1</li>')
+    // Envolver li en ol
+    .replace(/(<li.*<\/li>\n?)+/gs, (match) => `<ol style="margin:8px 0;padding-left:24px;">${match}</ol>`)
+    // Blockquote >
+    .replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid #999;padding:8px 16px;margin:12px 0;color:#444;font-style:italic;background:#f9f9f9;">$1</blockquote>')
+    // Saltos de línea normales
+    .replace(/\n\n/g, '</p><p style="margin:8px 0;">')
+    .replace(/\n/g, '<br/>');
+
+  container.innerHTML = `
+    <div style="max-width:654px;margin:0 auto;">
+      <p style="margin:8px 0;">${htmlContent}</p>
+    </div>
+  `;
+
+  document.body.appendChild(container);
+
+  try {
+    // Capturar el div como imagen
+    const canvas = await html2canvas(container, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      width: 794,
+      windowWidth: 794,
+    });
+
+    const imgData = canvas.toDataURL("image/jpeg", 0.95);
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();   // 210mm
+    const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
+
+    const imgWidthMm = pageWidth;
+    const imgHeightMm = (canvas.height * pageWidth) / canvas.width;
+
+    let heightLeft = imgHeightMm;
+    let position = 0;
+
+    // Primera página
+    pdf.addImage(imgData, "JPEG", 0, position, imgWidthMm, imgHeightMm);
+    heightLeft -= pageHeight;
+
+    // Páginas adicionales si el contenido es largo
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeightMm;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgWidthMm, imgHeightMm);
+      heightLeft -= pageHeight;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    pdf.save(`mis-ultimos-deseos-${today}.pdf`);
+  } finally {
+    document.body.removeChild(container);
+  }
+};
+TAMBIÉN actualizar la Vista Previa para que muestre el mismo HTML formateado en lugar del texto crudo. En el Dialog de vista previa, reemplazar el <pre> por un <div> que renderice el markdown como HTML usando la misma función de conversión:
+tsx<div
+  className="relative z-10 prose prose-sm max-w-none"
+  style={{ 
+    fontFamily: "Georgia, 'Times New Roman', serif",
+    color: "#1a1a1a",
+    lineHeight: "1.8",
+  }}
+  dangerouslySetInnerHTML={{ 
+    __html: convertMarkdownToHtml(generatedDocument) 
+  }}
+/>
+Extraer la función de conversión de markdown a HTML como una función separada llamada convertMarkdownToHtml fuera del componente para reutilizarla tanto en la vista previa como en el PDF:
+typescriptfunction convertMarkdownToHtml(text: string): string {
+  return text
+    .replace(/^# (.+)$/gm, '<h1 style="font-size:20px;font-weight:bold;text-align:center;margin:0 0 8px;letter-spacing:1px;">$1</h1>')
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:15px;font-weight:bold;margin:24px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px;">$1</h2>')
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:13px;font-weight:bold;margin:16px 0 6px;">$1</h3>')
+    .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #ccc;margin:16px 0;" />')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^> (.+)$/gm, '<blockquote style="border-left:3px solid #999;padding:8px 16px;margin:12px 0;color:#555;font-style:italic;background:#f9f9f9;">$1</blockquote>')
+    .replace(/^\d+\. (.+)$/gm, '<li style="margin:4px 0 4px 24px;list-style:decimal;">$1</li>')
+    .replace(/\n\n/g, '</p><p style="margin:10px 0;">')
+    .replace(/\n/g, '<br/>');
+}
+QUITAR completamente cualquier referencia a parchment-bg.png en el PDF y en la vista previa. El fondo del Dialog de vista previa debe ser blanco #ffffff con un borde sutil:
+tsx<div
+  className="relative min-h-[600px] p-10 bg-white"
+  style={{ fontFamily: "Georgia, serif" }}
+>
+VERIFICAR que html2canvas está instalado. Si no, ejecutar:
+bashpnpm --filter @workspace/legado add html2canvas

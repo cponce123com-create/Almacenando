@@ -1,0 +1,35 @@
+CRÍTICO
+CRÍTICO
+Token de admin guardado en localStorage — vulnerable a XSS
+El token del usuario normal ya usa sessionStorage correctamente (resuelto). Pero el token de admin todavía usa localStorage en login.tsx: localStorage.setItem(ADMIN_TOKEN_KEY, adminToken). El admin puede liberar legados — si un atacante roba ese token via XSS, tiene control total sobre todos los legados de la plataforma. El daño potencial es máximo.
+Fix: En artifacts/legado/src/pages/auth/login.tsx, cambiar las dos líneas que dicen localStorage.setItem(ADMIN_TOKEN_KEY, ...) por sessionStorage.setItem(ADMIN_TOKEN_KEY, ...). El hook use-auth.ts ya lee de sessionStorage — solo falta que el login también escriba ahí.
+ALTOS
+ALTO
+XSS potencial en vista previa del testamento con dangerouslySetInnerHTML
+En legacy/form.tsx, el documento generado por la IA se inyecta directamente como HTML sin sanitizar: dangerouslySetInnerHTML={{ __html: convertMarkdownToHtml(generatedDocument) }}. Si la API de Anthropic devolviera contenido malicioso, o si hubiera un bug en el endpoint, podría ejecutar scripts en el browser del usuario.
+Fix: Instalar dompurify con pnpm --filter @workspace/legado add dompurify @types/dompurify y envolver el HTML generado: DOMPurify.sanitize(convertMarkdownToHtml(generatedDocument)) antes de pasarlo al dangerouslySetInnerHTML.
+ALTO
+Nodemailer + Gmail sigue siendo frágil para producción
+El sistema de email todavía usa Gmail con Nodemailer. El .env.example ya documenta que se necesita App Password (bien), pero el problema de fondo persiste: Gmail bloquea este uso con frecuencia, tiene límite de 500 emails/día, y los emails de liberación de legado son irrecuperables si fallan. Para un producto donde el email es la entrega final del producto, esto es demasiado frágil.
+Fix: Migrar a Resend. Plan gratuito: 3.000 emails/mes. Instalación: pnpm add resend, una variable RESEND_API_KEY, y reemplazar el transporter de nodemailer por resend.emails.send(). La migración es menos de 30 minutos de trabajo.
+MEJORAS
+MEJORA
+La URL de Spotify se guarda en localStorage — debería estar en la base de datos
+En media/index.tsx: localStorage.getItem("legado_spotify_url"). La playlist de Spotify del usuario se guarda solo en el browser. Si el usuario cambia de dispositivo, borra el cache, o accede desde otro navegador, pierde esa configuración. Además, los destinatarios que accedan al legado nunca verán la playlist.
+Fix: Guardar la URL de Spotify en el campo musicNotes de funeral_preferences en la base de datos, con el prefijo spotify: ya implementado en la página de funeral. O agregar un campo dedicado spotifyPlaylistUrl al schema de funeral_preferences.
+MEJORA
+La variable ANTHROPIC_API_KEY no está en el .env.example
+El endpoint /api/ai/generate-will lee process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY y AI_INTEGRATIONS_ANTHROPIC_BASE_URL, pero estas variables no están documentadas en .env.example. Cualquier desarrollador que clone el repo no sabrá que necesita configurarlas para que el generador de testamentos funcione.
+Fix: Agregar al .env.example: AI_INTEGRATIONS_ANTHROPIC_API_KEY=sk-ant-... y AI_INTEGRATIONS_ANTHROPIC_BASE_URL=https://api.anthropic.com con comentario explicativo.
+MEJORA
+El useEffect de preferencias funerarias no incluye spotifyPlaylistUrl en las dependencias
+En funeral/index.tsx, el array de dependencias del useEffect no incluye prefs?.spotifyPlaylistUrl. Si la URL de Spotify se carga después, el reset no la va a capturar y el campo quedará vacío aunque haya datos guardados.
+Fix: Agregar prefs?.spotifyPlaylistUrl al array de dependencias del useEffect en funeral/index.tsx.
+MEJORA
+Sin página de "Preguntas Frecuentes" ni "Contacto" — links del footer rotos
+En el footer del landing, los links "Preguntas frecuentes" y "Contacto" apuntan a href="#". Para un producto que maneja datos tan sensibles, los usuarios necesitan poder contactar al equipo y resolver dudas antes de registrarse. Estos links rotos generan desconfianza.
+Fix: Crear una página /faq con las preguntas más comunes (¿Qué pasa si mis contactos no confirman? ¿Puedo borrar mi cuenta? ¿Cómo se protegen mis archivos?) y un link de contacto real — puede ser un email o un formulario simple.
+MEJORA
+Sin validación de contraseña fuerte en el registro
+En auth.ts, el registro solo valida password: z.string().min(8). Una contraseña como "12345678" es válida. Para una plataforma con datos tan sensibles como un testamento digital, contraseñas débiles son un riesgo real.
+Fix: Cambiar la validación a z.string().min(8).regex(/[A-Z]/, "Debe tener al menos una mayúscula").regex(/[0-9]/, "Debe tener al menos un número"). Mostrar los requisitos en el formulario de registro del frontend.

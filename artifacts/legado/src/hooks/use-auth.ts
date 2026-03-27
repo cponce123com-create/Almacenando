@@ -1,0 +1,108 @@
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+const TOKEN_KEY = "almacen_token";
+
+export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: WarehouseRole;
+  status: string;
+  createdAt: string;
+}
+
+export function getAuthToken() {
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function getAuthHeaders(): Record<string, string> {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export function useAuth() {
+  const queryClient = useQueryClient();
+  const [token, setToken] = useState<string | null>(getAuthToken());
+
+  useEffect(() => {
+    const handleStorage = () => setToken(getAuthToken());
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  const { data: user, isLoading, error } = useQuery<AuthUser | null>({
+    queryKey: ["/api/auth/me"],
+    queryFn: async () => {
+      const currentToken = getAuthToken();
+      if (!currentToken) return null;
+
+      const res = await fetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${currentToken}` }
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          sessionStorage.removeItem(TOKEN_KEY);
+          setToken(null);
+        }
+        return null;
+      }
+      return res.json();
+    },
+    enabled: !!token,
+    retry: false,
+  });
+
+  const login = async (email: string, password: string): Promise<AuthUser> => {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Error al iniciar sesión");
+    }
+
+    const result = await res.json();
+    sessionStorage.setItem(TOKEN_KEY, result.token);
+    setToken(result.token);
+    queryClient.setQueryData(["/api/auth/me"], result.user);
+    return result.user;
+  };
+
+  const logout = () => {
+    sessionStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+    queryClient.setQueryData(["/api/auth/me"], null);
+    queryClient.clear();
+  };
+
+  return {
+    user,
+    isLoading: isLoading && !!token,
+    isAuthenticated: !!user,
+    login,
+    logout,
+  };
+}
+
+export const ROLE_LABELS: Record<WarehouseRole, string> = {
+  supervisor: "Supervisor",
+  operator: "Operario",
+  quality: "Calidad",
+  admin: "Administrador",
+  readonly: "Solo Lectura",
+};
+
+export const ROLE_COLORS: Record<WarehouseRole, string> = {
+  supervisor: "bg-blue-100 text-blue-800",
+  operator: "bg-green-100 text-green-800",
+  quality: "bg-purple-100 text-purple-800",
+  admin: "bg-red-100 text-red-800",
+  readonly: "bg-gray-100 text-gray-700",
+};

@@ -1,0 +1,391 @@
+Quiero que construyas una aplicación web moderna y funcional para gestión integral de un almacén de productos químicos. La app debe estar pensada para uso operativo real de un supervisor de almacén, con enfoque en trazabilidad, control diario, seguridad y seguimiento histórico.
+
+OBJETIVO GENERAL
+La aplicación debe centralizar mi trabajo diario en el almacén. No necesito módulo de abastecimiento porque eso ya lo hago con macros de Excel. La app debe enfocarse en control interno, inventario progresivo, historial, seguridad, EPP, inmovilizados, muestras, lotes y reportes.
+
+ENFOQUE DEL SISTEMA
+- Sistema web responsive, moderno y rápido
+- Diseño profesional tipo dashboard industrial / logístico
+- Orientado a escritorio, pero usable en tablet o celular
+- Interfaz limpia, minimalista y muy visual
+- Debe verse como un software real de operación interna
+
+TECNOLOGÍA RECOMENDADA
+Usa este stack si te parece correcto:
+- Frontend: React + TypeScript + Tailwind
+- Backend: Node.js o el framework que mejor encaje en Replit
+- Base de datos: PostgreSQL o equivalente
+- ORM si lo consideras necesario
+- Arquitectura modular y escalable
+- Preparado para conectar luego una base de datos externa o importar datos desde Excel/CSV
+
+ESTRUCTURA GENERAL DE LA APP
+Quiero menú lateral con estos módulos:
+
+1. Inicio / Dashboard
+2. Cuadre diario
+3. Historial de inventarios
+4. Maestro de productos
+5. Productos inmovilizados
+6. Muestras
+7. Lotes de colorantes
+8. Disposición final
+9. Seguridad y documentos
+10. Control de EPP
+11. Reportes
+12. Administración
+
+IMPORTANTE
+- No crear módulo de abastecimiento
+- La app sí debe estar preparada para jalar datos desde una base de datos externa o desde archivos Excel/CSV
+- Debe existir una separación clara entre:
+  - stock normal
+  - productos inmovilizados
+  - muestras
+  - productos para disposición final
+
+HOME / DASHBOARD
+Quiero que el home sea el centro de control del sistema. Debe incluir:
+
+- Header superior con:
+  - nombre del sistema
+  - fecha
+  - usuario
+  - botón rápido “Nuevo cuadre”
+
+- Tarjetas KPI:
+  - Productos totales
+  - Cuadrados este mes
+  - Pendientes
+  - Con diferencias
+  - Alertas EPP
+  - Inmovilizados
+  - Muestras activas
+
+- Panel de alertas críticas:
+  - productos con diferencias
+  - productos no inventariados hace tiempo
+  - lotes observados
+  - EPP vencido
+  - documentos por vencer
+  - inmovilizados antiguos
+
+- Gráficos:
+  - avance mensual de inventario
+  - productos con mayores diferencias
+  - estado general del almacén
+
+- Sección de cuadre rápido del día:
+  tabla con productos pendientes por revisar, saldo sistema, último cuadre y botón de acción
+
+- Mini paneles:
+  - Control EPP
+  - Lotes
+  - Inmovilizados
+  - Muestras
+  - Disposición final
+
+- Accesos rápidos:
+  - registrar cuadre
+  - registrar lote
+  - registrar EPP
+  - registrar inmovilizado
+  - registrar muestra
+  - subir documento
+  - ver reportes
+
+MÓDULO: MAESTRO DE PRODUCTOS
+Crear un módulo con tabla principal de aproximadamente 500 productos.
+
+Campos sugeridos:
+- código interno
+- nombre del producto
+- nombre comercial
+- categoría
+- tipo
+- unidad de medida
+- presentación
+- proveedor
+- ubicación
+- stock mínimo
+- stock máximo
+- estado
+- observaciones
+
+Debe tener:
+- buscador
+- filtros
+- vista de detalle
+- edición
+- estado activo/inactivo
+
+MÓDULO: CUADRE DIARIO
+Este es el núcleo del sistema.
+
+Flujo:
+- seleccionar fecha
+- seleccionar producto
+- mostrar saldo sistema
+- mostrar último cuadre
+- ingresar stock real
+- calcular diferencia automáticamente
+- guardar observación y responsable
+
+Campos:
+- fecha
+- producto
+- saldo sistema
+- stock real
+- diferencia
+- observación
+- responsable
+- turno
+
+Debe poder registrar aprox. 5 productos diarios y dejar historial.
+
+MÓDULO: HISTORIAL DE INVENTARIOS
+Debe permitir buscar un producto y ver toda su trazabilidad:
+
+- fecha de cada cuadre
+- saldo sistema
+- stock real
+- diferencia
+- observaciones
+- responsable
+
+Agregar filtros por producto, fecha, diferencia y responsable.
+
+MÓDULO: PRODUCTOS INMOVILIZADOS
+Necesito un módulo específico para productos inmovilizados.
+
+Campos:
+- producto
+- lote
+- cantidad
+- unidad
+- ubicación manual
+- motivo de inmovilización
+- fecha de inmovilización
+- responsable
+- estado
+- observaciones
+
+IMPORTANTE:
+La ubicación debe poder ingresarse manualmente.
+Ejemplos:
+- Rack B / nivel 2 / zona roja
+- estante lateral QA
+- pallet 3
+- área temporal de observados
+
+Estados sugeridos:
+- inmovilizado
+- en evaluación
+- liberado
+- enviado a disposición final
+
+MÓDULO: MUESTRAS
+Crear una lista independiente para muestras.
+
+Campos:
+- código de muestra
+- producto relacionado
+- nombre de muestra
+- lote
+- fecha de ingreso
+- cantidad
+- unidad
+- ubicación
+- estado
+- observación
+
+Estados sugeridos:
+- disponible
+- en evaluación
+- agotada
+- retenida
+- descartada
+
+Debe haber vista de listado y detalle.
+
+MÓDULO: LOTES DE COLORANTES
+Registrar historial de evaluación de lotes.
+
+Campos:
+- fecha
+- producto
+- proveedor
+- lote
+- cantidad recibida
+- resultado de evaluación
+- estado
+- responsable
+- comentarios
+- documentos adjuntos
+
+Estados:
+- aprobado
+- observado
+- rechazado
+- pendiente
+
+MÓDULO: DISPOSICIÓN FINAL
+Para productos en mal estado o listos para eliminar.
+
+Campos:
+- producto
+- lote
+- cantidad
+- motivo
+- fecha de detección
+- estado
+- ubicación temporal
+- responsable
+- evidencia
+- observaciones
+
+MÓDULO: SEGURIDAD Y DOCUMENTOS
+Necesito una sección documental para:
+- hojas de seguridad
+- procedimientos
+- instructivos
+- formatos
+- checklists
+- actas
+- registros
+
+Campos:
+- nombre del documento
+- tipo
+- fecha de emisión
+- fecha de vencimiento
+- versión
+- responsable
+- archivo adjunto
+- estado
+
+Debe alertar si un documento está por vencer.
+
+MÓDULO: CONTROL DE EPP
+Agregar control de EPP del personal.
+
+Submódulos:
+1. Maestro de EPP
+2. Maestro de personal
+3. Entrega de EPP
+4. Checklist de cumplimiento
+5. Alertas y reportes
+
+Campos del maestro de EPP:
+- código
+- nombre
+- tipo
+- vida útil
+- reposición periódica
+- observaciones
+
+Campos del personal:
+- ID
+- nombre
+- DNI
+- área
+- cargo
+- turno
+- estado
+
+Campos de entrega de EPP:
+- trabajador
+- EPP
+- fecha de entrega
+- fecha de vencimiento
+- estado
+- responsable
+- observación
+
+Checklist de cumplimiento:
+- fecha
+- trabajador
+- área
+- EPP requerido
+- cumple sí/no
+- observación
+- evidencia opcional
+
+Alertas:
+- EPP vencido
+- EPP por vencer
+- trabajador sin EPP completo
+
+MÓDULO: REPORTES
+Crear reportes visuales y exportables.
+
+Quiero al menos:
+- avance de inventario
+- productos con más diferencias
+- productos no inventariados hace más tiempo
+- inmovilizados activos
+- muestras activas
+- lotes observados/rechazados
+- EPP vencido o incumplido
+- documentos por vencer
+- productos para disposición final
+
+Agregar gráficos y filtros por fecha.
+
+MÓDULO: ADMINISTRACIÓN
+Debe incluir:
+- usuarios
+- roles
+- permisos
+- parámetros generales
+- catálogos básicos
+
+ROLES
+Crear roles como:
+- supervisor
+- operador
+- calidad
+- administrador
+- solo lectura
+
+DATOS Y CARGA INICIAL
+Quiero que dejes preparada la app para:
+- importar productos desde Excel o CSV
+- importar saldos o datos base
+- futura conexión a una base de datos externa
+- usar datos demo iniciales para visualizar el sistema
+
+DISEÑO VISUAL
+Quiero un diseño:
+- moderno
+- industrial
+- minimalista
+- dashboard oscuro o sobrio
+- con tarjetas, tablas limpias, filtros y gráficos
+- estilo software premium interno de operaciones
+
+ENTREGABLES QUE QUIERO
+1. La app funcional base
+2. Navegación completa entre módulos
+3. Dashboard visual real
+4. Formularios CRUD por módulo
+5. Base de datos estructurada
+6. Datos demo coherentes
+7. Código ordenado y escalable
+
+IMPORTANTE
+No me des solo un prototipo visual.
+Quiero que construyas una primera versión funcional del sistema, aunque sea MVP, pero real.
+Empieza por:
+- crear la arquitectura del proyecto
+- modelar la base de datos
+- construir el dashboard
+- crear navegación y módulos base
+- dejar datos demo cargados
+- luego seguir con CRUDs esenciales
+
+Además, al finalizar, explícame:
+- la estructura del proyecto
+- cómo está modelada la base de datos
+- qué partes quedaron listas
+- qué faltaría para conectar mi fuente real de datos

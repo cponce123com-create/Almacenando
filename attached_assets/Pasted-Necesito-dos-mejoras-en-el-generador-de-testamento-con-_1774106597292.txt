@@ -1,0 +1,124 @@
+Necesito dos mejoras en el generador de testamento con IA. Lee el archivo artifacts/api-server/src/routes/ai.ts antes de modificarlo.
+MEJORA 1 — Corregir el formato del PDF: firma al fondo y numeración reiniciada
+En artifacts/legado/src/pages/legacy/form.tsx, en la función convertMarkdownToHtml, corregir el problema de numeración de listas. El problema es que las listas numeradas de distintas cláusulas se tratan como una sola lista continua y los números no reinician.
+Reemplazar la línea que maneja los ítems numerados por esta lógica que convierte cada grupo separado de items en su propia lista <ol> independiente:
+typescriptfunction convertMarkdownToHtml(text: string): string {
+  const lines = text.split("\n");
+  let html = "";
+  let inOrderedList = false;
+  let inUnorderedList = false;
+
+  for (const line of lines) {
+    // Títulos
+    if (/^# (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += line.replace(/^# (.+)$/, '<h1 style="font-size:20px;font-weight:bold;text-align:center;margin:0 0 6px;letter-spacing:1px;">$1</h1>');
+    } else if (/^## (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += line.replace(/^## (.+)$/, '<h2 style="font-size:14px;font-weight:bold;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:3px;">$1</h2>');
+    } else if (/^### (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += line.replace(/^### (.+)$/, '<h3 style="font-size:13px;font-weight:bold;margin:14px 0 4px;">$1</h3>');
+    // Separador ---
+    } else if (/^---$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += '<hr style="border:none;border-top:1px solid #ccc;margin:14px 0;" />';
+    // Lista numerada — reinicia por cada bloque separado
+    } else if (/^\d+\. (.+)$/.test(line)) {
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      if (!inOrderedList) {
+        html += '<ol style="margin:8px 0;padding-left:28px;" start="1">';
+        inOrderedList = true;
+      }
+      const content = line.replace(/^\d+\. (.+)$/, "$1").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+      html += `<li style="margin:5px 0;line-height:1.7;">${content}</li>`;
+    // Lista con guión
+    } else if (/^- (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (!inUnorderedList) { html += '<ul style="margin:8px 0;padding-left:28px;">'; inUnorderedList = true; }
+      const content = line.replace(/^- (.+)$/, "$1").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+      html += `<li style="margin:5px 0;line-height:1.7;">${content}</li>`;
+    // Blockquote
+    } else if (/^> (.+)$/.test(line)) {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      const content = line.replace(/^> (.+)$/, "$1").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+      html += `<blockquote style="border-left:3px solid #999;padding:6px 14px;margin:10px 0;color:#444;font-style:italic;background:#f9f9f9;">${content}</blockquote>`;
+    // Línea vacía — cierra listas abiertas
+    } else if (line.trim() === "") {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      html += '<div style="margin:6px 0;"></div>';
+    // Párrafo normal
+    } else {
+      if (inOrderedList) { html += "</ol>"; inOrderedList = false; }
+      if (inUnorderedList) { html += "</ul>"; inUnorderedList = false; }
+      const content = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+      html += `<p style="margin:7px 0;line-height:1.8;">${content}</p>`;
+    }
+  }
+
+  if (inOrderedList) html += "</ol>";
+  if (inUnorderedList) html += "</ul>";
+  return html;
+}
+Para que la firma quede al final de la última página y no a mitad de página, agregar en la función exportToPDF un bloque de espaciado antes de la sección de firma. En el div del contenedor que se crea para html2canvas, al final del HTML agregar:
+typescript// Detectar si el contenido es corto y agregar padding inferior para empujar la firma al fondo
+container.style.minHeight = "1123px"; // Alto de A4 a 96dpi
+container.style.display = "flex";
+container.style.flexDirection = "column";
+
+// El div interior del contenido debe tener flex-grow
+const innerDiv = container.querySelector("div") as HTMLElement;
+if (innerDiv) {
+  innerDiv.style.flexGrow = "1";
+}
+Y en el CSS del div del contenedor cambiar el padding inferior a 80px para dar más espacio antes del borde.
+
+MEJORA 2 — Testamento más extenso y detallado
+Archivo: artifacts/api-server/src/routes/ai.ts
+Reemplazar el prompt completo por esta versión mejorada que genera un documento más extenso, formal y completo:
+typescriptconst prompt = `Eres un abogado especialista en derecho sucesorio peruano con 20 años de experiencia notarial. 
+Redacta un documento completo de "Últimas Voluntades" en español formal para Perú. 
+Usa EXACTAMENTE los datos proporcionados — ningún campo debe quedar en blanco.
+
+DATOS DEL TESTADOR (usar literalmente, sin modificar):
+- Nombre completo: ${testatorData?.fullName}
+- DNI: ${testatorData?.dni}
+- Estado civil: ${testatorData?.civilStatus}
+- Ciudad: ${testatorData?.city}
+- Domicilio: ${testatorData?.address}
+- Fecha actual: ${today}
+- Albacea: ${testatorData?.executor ? testatorData.executor : "será designado en el instrumento notarial definitivo"}
+- Testamento anterior: ${testatorData?.hasPreviousWill === "si" ? "Sí tiene y lo revoca expresamente" : "No tiene testamento anterior"}
+
+BENEFICIARIOS Y BIENES (detallar extensamente cada uno):
+${beneficiariesText}
+
+INSTRUCCIONES ESTRICTAS DE REDACCIÓN:
+1. El documento debe tener entre 1500 y 2000 palabras
+2. Usar exclusivamente markdown con estos elementos: # para título principal, ## para cláusulas, ### para subcláusulas, **negrita** para nombres y conceptos clave, > para el aviso legal, - o 1. para listas, --- para separadores
+3. Estructura OBLIGATORIA con estas secciones en este orden exacto:
+   - Título: # DOCUMENTO DE ÚLTIMAS VOLUNTADES
+   - Subtítulo en blockquote con aviso legal orientativo
+   - Fecha y ciudad centrada en negrita
+   - ## ENCABEZADO E IDENTIFICACIÓN DEL TESTADOR (párrafo formal con todos los datos)
+   - ## PRIMERA CLÁUSULA — DECLARACIONES GENERALES (2 párrafos extensos sobre capacidad mental, libertad de voluntad, revocación de testamentos anteriores si aplica)
+   - ## SEGUNDA CLÁUSULA — DE LA LEGÍTIMA Y LA CUOTA DE LIBRE DISPOSICIÓN (explicar artículos 723-727 del CC, mencionar a los herederos forzosos con sus nombres reales)
+   - Una cláusula numerada por cada beneficiario: ## [NÚMERO EN ROMANO] CLÁUSULA — DESIGNACIÓN DE BIENES A FAVOR DE [NOMBRE EN MAYÚSCULAS] (2-3 párrafos extensos describiendo los bienes con detalle legal, mencionar SUNARP si son inmuebles, entidades financieras si es dinero, derechos de autor si es propiedad intelectual)
+   - ## CLÁUSULA SOBRE EL ALBACEA (mencionar artículos 787 y siguientes, describir sus facultades)
+   - ## CLÁUSULA SOBRE DEUDAS Y CARGAS (artículo 661 del CC)
+   - ## CLÁUSULA FINAL — DISPOSICIONES GENERALES (2 párrafos sobre resolución de controversias, buena fe)
+   - ## NOTA LEGAL IMPORTANTE (blockquote con aviso notarial detallado)
+   - ## FIRMA Y SUSCRIPCIÓN (con nombre real, DNI real, ciudad real, fecha real)
+4. Para cada bien legado, redactar al menos 3-4 líneas describiendo el bien, su naturaleza jurídica, y cómo debe realizarse la transferencia
+5. Citar artículos específicos del Código Civil Peruano en cada cláusula
+6. Usar lenguaje notarial formal: "lego y transfiero", "a título de herencia", "con todos los derechos reales", "conforme al ordenamiento jurídico"
+7. Los nombres de personas siempre en MAYÚSCULAS
+8. NO dejar espacios en blanco, guiones o campos por completar — todo debe estar lleno con los datos reales
+
+Redacta el documento completo ahora:`;

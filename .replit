@@ -1,0 +1,80 @@
+modules = ["nodejs-24", "postgresql-16"]
+
+[[artifacts]]
+id = "artifacts/api-server"
+
+[[artifacts]]
+id = "artifacts/mockup-sandbox"
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+build = ["sh", "-c", "pnpm install && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/legado run build"]
+run = ["sh", "-c", "pnpm --filter @workspace/db run push-force && PORT=8080 node artifacts/api-server/dist/index.cjs"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "API Server"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "API Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+waitForPort = 8080
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=19854 pnpm --filter @workspace/legado run dev"
+waitForPort = 19854
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.production]
+ADMIN_EMAIL = "cponce123.com@gmail.com"
+ADMIN_NAME = "Administrador"
+ADMIN_PASSWORD = "Hadrones456%"
+
+[userenv.shared]
+EMAIL_USER = "cponce123.com@gmail.com"
+EMAIL_PASS = "qfbqaqbbwrmrtbjv"
+APP_URL = "https://legadoapp.replit.app"

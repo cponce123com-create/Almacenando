@@ -1,0 +1,62 @@
+services:
+  - type: web
+    name: almacenando-api
+    runtime: node
+    region: oregon
+    plan: free
+
+    # -----------------------------------------------------------------------
+    # Build Command
+    #
+    # Builds BOTH the frontend (legado) and the backend (api-server).
+    # The backend (app.ts) serves the frontend static files from:
+    #   artifacts/legado/dist/public/
+    # which is produced by the legado build step.
+    #
+    # BASE_PATH=/ ensures Vite builds the frontend with "/" as the base URL
+    # (not the default "/legado/"), so all asset paths are correct when
+    # served from the root of the Render domain.
+    # -----------------------------------------------------------------------
+    # NOTA: se usa --no-frozen-lockfile porque package.json fue actualizado
+    # (se agregó helmet) y el pnpm-lock.yaml aún no refleja ese cambio.
+    # Una vez que hagas "pnpm install" localmente y subas el lock file
+    # actualizado, puedes volver a cambiar esto a --frozen-lockfile.
+    buildCommand: >
+      pnpm install --no-frozen-lockfile &&
+      BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/legado build &&
+      pnpm --filter @workspace/api-server build &&
+      pnpm --filter @workspace/db migrate
+
+    # -----------------------------------------------------------------------
+    # Start Command
+    #
+    # Las migraciones se movieron al buildCommand para que corran UNA SOLA VEZ
+    # por deploy, no en cada cold-start (arranque tras inactividad en plan Free).
+    # Esto evita condiciones de carrera si Render despierta el servicio
+    # en múltiples instancias simultáneamente.
+    # -----------------------------------------------------------------------
+    startCommand: node artifacts/api-server/dist/index.cjs
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false          # Configura en el dashboard de Render (PostgreSQL internal URL)
+      - key: SESSION_SECRET
+        generateValue: true  # Render genera automáticamente un valor seguro
+      - key: APP_URL
+        sync: false          # Ej: https://almacenando-api.onrender.com (usado para CORS)
+      - key: LOG_LEVEL
+        value: info          # Opciones: trace | debug | info | warn | error
+      # Opcional — solo necesario si se usan funciones de email
+      - key: RESEND_API_KEY
+        sync: false
+      # Opcional — solo necesario si se usa almacenamiento de archivos con Cloudinary
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

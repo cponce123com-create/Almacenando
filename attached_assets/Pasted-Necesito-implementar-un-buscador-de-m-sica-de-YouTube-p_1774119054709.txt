@@ -1,0 +1,621 @@
+Necesito implementar un buscador de música de YouTube para las preferencias funerarias. El usuario puede buscar canciones y guardarlas como su lista de música para el sepelio. Lee todos los archivos antes de modificarlos.
+PASO 1 — Agregar tabla de canciones al schema de base de datos
+Crear archivo nuevo lib/db/src/schema/funeral-songs.ts:
+typescriptimport { pgTable, text, timestamp, integer } from "drizzle-orm/pg-core";
+
+export const funeralSongsTable = pgTable("funeral_songs", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  youtubeVideoId: text("youtube_video_id").notNull(),
+  title: text("title").notNull(),
+  artist: text("artist").notNull(),
+  thumbnailUrl: text("thumbnail_url").notNull(),
+  durationSeconds: integer("duration_seconds"),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type FuneralSong = typeof funeralSongsTable.$inferSelect;
+En lib/db/src/schema/index.ts agregar:
+typescriptexport * from "./funeral-songs";
+Ejecutar en el shell:
+bashpnpm db:push
+
+PASO 2 — Endpoint backend para buscar en YouTube y gestionar canciones
+Crear archivo nuevo artifacts/api-server/src/routes/funeral-songs.ts:
+typescriptimport { Router } from "express";
+import { db } from "@workspace/db";
+import { funeralSongsTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
+import { requireAuth } from "../lib/auth.js";
+import { generateId } from "../lib/id.js";
+
+const router = Router();
+
+function parseDuration(iso: string): number {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  const h = parseInt(match[1] || "0");
+  const m = parseInt(match[2] || "0");
+  const s = parseInt(match[3] || "0");
+  return h * 3600 + m * 60 + s;
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Buscar canciones en YouTube — la API key nunca llega al frontend
+router.get("/search", requireAuth, async (req, res) => {
+  const { q } = req.query;
+  if (!q || typeof q !== "string" || q.trim().length < 2) {
+    res.status(400).json({ error: "Término de búsqueda requerido" });
+    return;
+  }
+
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) {
+    res.status(503).json({ error: "YouTube no está configurado en este servidor" });
+    return;
+  }
+
+  try {
+    const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
+    searchUrl.searchParams.set("part", "snippet");
+    searchUrl.searchParams.set("q", q.trim());
+    searchUrl.searchParams.set("type", "video");
+    searchUrl.searchParams.set("videoCategoryId", "10"); // Música
+    searchUrl.searchParams.set("maxResults", "10");
+    searchUrl.searchParams.set("key", apiKey);
+
+    const searchRes = await fetch(searchUrl.toString());
+    const searchData = await searchRes.json();
+
+    if (!searchRes.ok) {
+      res.status(500).json({ error: "Error al buscar en YouTube" });
+      return;
+    }
+
+    const videoIds = searchData.items
+      ?.map((item: any) => item.id?.videoId)
+      .filter(Boolean)
+      .join(",");
+
+    if (!videoIds) {
+      res.json({ results: [] });
+      return;
+    }
+
+    // Obtener duración de los videos
+    const detailUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+    detailUrl.searchParams.set("part", "contentDetails,snippet");
+    detailUrl.searchParams.set("id", videoIds);
+    detailUrl.searchParams.set("key", apiKey);
+
+    const detailRes = await fetch(detailUrl.toString());
+    const detailData = await detailRes.json();
+
+    const results = detailData.items?.map((item: any) => {
+      const seconds = parseDuration(item.contentDetails?.duration || "PT0S");
+      return {
+        videoId: item.id,
+        title: item.snippet?.title || "Sin título",
+        artist: item.snippet?.channelTitle || "Artista desconocido",
+        thumbnailUrl: item.snippet?.thumbnails?.medium?.url || "",
+        durationSeconds: seconds,
+        durationFormatted: formatDuration(seconds),
+      };
+    }) || [];
+
+    res.json({ results });
+  } catch (err) {
+    console.error("[youtube-search]", err);
+    res.status(500).json({ error: "Error interno al buscar" });
+  }
+});
+
+// Obtener canciones guardadas del usuario
+router.get("/", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const songs = await db
+    .select()
+    .from(funeralSongsTable)
+    .where(eq(funeralSongsTable.userId, userId))
+    .orderBy(funeralSongsTable.position);
+  res.json(songs);
+});
+
+// Guardar una canción
+router.post("/", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const { youtubeVideoId, title, artist, thumbnailUrl, durationSeconds } = req.body;
+
+  if (!youtubeVideoId || !title) {
+    res.status(400).json({ error: "Datos de canción incompletos" });
+    return;
+  }
+
+  // Verificar que no esté ya guardada
+  const existing = await db
+    .select()
+    .from(funeralSongsTable)
+    .where(
+      and(
+        eq(funeralSongsTable.userId, userId),
+        eq(funeralSongsTable.youtubeVideoId, youtubeVideoId)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    res.status(409).json({ error: "Esta canción ya está en tu lista" });
+    return;
+  }
+
+  // Posición al final de la lista
+  const allSongs = await db
+    .select()
+    .from(funeralSongsTable)
+    .where(eq(funeralSongsTable.userId, userId));
+
+  const id = generateId();
+  await db.insert(funeralSongsTable).values({
+    id,
+    userId,
+    youtubeVideoId,
+    title,
+    artist,
+    thumbnailUrl: thumbnailUrl || "",
+    durationSeconds: durationSeconds || 0,
+    position: allSongs.length,
+  });
+
+  const created = await db
+    .select()
+    .from(funeralSongsTable)
+    .where(eq(funeralSongsTable.id, id))
+    .limit(1);
+
+  res.status(201).json(created[0]);
+});
+
+// Eliminar una canción
+router.delete("/:id", requireAuth, async (req, res) => {
+  const userId = (req as any).userId;
+  const existing = await db
+    .select()
+    .from(funeralSongsTable)
+    .where(
+      and(
+        eq(funeralSongsTable.id, req.params.id),
+        eq(funeralSongsTable.userId, userId)
+      )
+    )
+    .limit(1);
+
+  if (existing.length === 0) {
+    res.status(404).json({ error: "Canción no encontrada" });
+    return;
+  }
+
+  await db
+    .delete(funeralSongsTable)
+    .where(eq(funeralSongsTable.id, req.params.id));
+
+  res.json({ message: "Canción eliminada" });
+});
+
+export default router;
+Registrar la ruta en artifacts/api-server/src/routes/index.ts agregando:
+typescriptimport funeralSongsRouter from "./funeral-songs.js";
+router.use("/funeral-songs", funeralSongsRouter);
+```
+
+Agregar en `.env.example`:
+```
+YOUTUBE_API_KEY=AIza...
+
+PASO 3 — Página de búsqueda de música en el frontend
+Crear archivo nuevo artifacts/legado/src/pages/funeral/songs.tsx:
+typescriptimport { useState, useRef } from "react";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { getAuthHeaders } from "@/hooks/use-auth";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Music, Search, Heart, Trash2, Loader2,
+  Play, ExternalLink, ListMusic, Youtube
+} from "lucide-react";
+
+const BASE = "/api";
+
+type SearchResult = {
+  videoId: string;
+  title: string;
+  artist: string;
+  thumbnailUrl: string;
+  durationSeconds: number;
+  durationFormatted: string;
+};
+
+type SavedSong = {
+  id: string;
+  youtubeVideoId: string;
+  title: string;
+  artist: string;
+  thumbnailUrl: string;
+  durationSeconds: number;
+  position: number;
+};
+
+function formatDuration(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+export default function FuneralSongs() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const { data: savedSongs = [], isLoading } = useQuery<SavedSong[]>({
+    queryKey: ["funeral-songs"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/funeral-songs`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Error al cargar canciones");
+      return res.json();
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (song: SearchResult) => {
+      const res = await fetch(`${BASE}/funeral-songs`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          youtubeVideoId: song.videoId,
+          title: song.title,
+          artist: song.artist,
+          thumbnailUrl: song.thumbnailUrl,
+          durationSeconds: song.durationSeconds,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al guardar");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["funeral-songs"] });
+      toast({ title: "🎵 Canción agregada a tu lista" });
+    },
+    onError: (e: any) => {
+      toast({ title: e.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`${BASE}/funeral-songs/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Error al eliminar");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["funeral-songs"] });
+      toast({ title: "Canción eliminada" });
+    },
+  });
+
+  const handleSearch = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!query.trim()) return;
+    setSearching(true);
+    setResults([]);
+    try {
+      const res = await fetch(
+        `${BASE}/funeral-songs/search?q=${encodeURIComponent(query)}`,
+        { headers: getAuthHeaders() }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setResults(data.results || []);
+    } catch (err: any) {
+      toast({ title: "Error al buscar", description: err.message, variant: "destructive" });
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const isSaved = (videoId: string) =>
+    savedSongs.some((s) => s.youtubeVideoId === videoId);
+
+  const totalDuration = savedSongs.reduce((acc, s) => acc + (s.durationSeconds || 0), 0);
+
+  return (
+    <AppLayout>
+      <div className="max-w-4xl mx-auto space-y-8">
+
+        {/* Header */}
+        <div>
+          <h1 className="font-serif text-3xl font-bold text-foreground flex items-center gap-3">
+            <Music className="w-8 h-8 text-primary" />
+            Música para mi despedida
+          </h1>
+          <p className="text-muted-foreground mt-2">
+            Elige las canciones que quieres que suenen en tu sepelio. Busca cualquier canción y agrégala a tu lista personal.
+          </p>
+        </div>
+
+        {/* Buscador */}
+        <div className="bg-white rounded-3xl border border-border shadow-sm p-6">
+          <h2 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+            <Youtube className="w-5 h-5 text-red-500" />
+            Buscar canciones
+          </h2>
+          <form onSubmit={handleSearch} className="flex gap-3">
+            <Input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Ej: My Way Frank Sinatra, Ave María, Cielito Lindo..."
+              className="rounded-xl h-12 text-gray-900 flex-1"
+            />
+            <Button
+              type="submit"
+              disabled={searching || !query.trim()}
+              className="rounded-xl h-12 px-6 bg-red-600 hover:bg-red-700 text-white gap-2 shrink-0"
+            >
+              {searching
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Search className="w-4 h-4" />}
+              Buscar
+            </Button>
+          </form>
+
+          {/* Resultados */}
+          {results.length > 0 && (
+            <div className="mt-6 space-y-3">
+              <p className="text-sm text-muted-foreground">{results.length} resultados — haz click en el corazón para agregar</p>
+              {results.map((result) => (
+                <div
+                  key={result.videoId}
+                  className="flex items-center gap-4 p-3 rounded-2xl border border-border hover:bg-gray-50 transition-colors group"
+                >
+                  <div className="relative shrink-0">
+                    <img
+                      src={result.thumbnailUrl}
+                      alt={result.title}
+                      className="w-20 h-14 object-cover rounded-xl"
+                    />
+                    <button
+                      onClick={() =>
+                        setPlayingId(playingId === result.videoId ? null : result.videoId)
+                      }
+                      className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Play className="w-6 h-6 text-white fill-white" />
+                    </button>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{result.title}</p>
+                    <p className="text-sm text-muted-foreground truncate">{result.artist}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{result.durationFormatted}</p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    
+                      href={`https://www.youtube.com/watch?v=${result.videoId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-red-500 transition-colors p-1"
+                      title="Ver en YouTube"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                    <Button
+                      size="sm"
+                      onClick={() => saveMutation.mutate(result)}
+                      disabled={isSaved(result.videoId) || saveMutation.isPending}
+                      className={`rounded-xl gap-1.5 h-9 px-4 transition-all ${
+                        isSaved(result.videoId)
+                          ? "bg-pink-100 text-pink-600 border border-pink-200 cursor-default"
+                          : "bg-primary hover:bg-primary/90 text-white"
+                      }`}
+                    >
+                      <Heart className={`w-4 h-4 ${isSaved(result.videoId) ? "fill-current" : ""}`} />
+                      {isSaved(result.videoId) ? "Guardada" : "Agregar"}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Preview de YouTube embebido */}
+          {playingId && (
+            <div className="mt-4 rounded-2xl overflow-hidden border border-border">
+              <div className="flex justify-between items-center px-4 py-2 bg-gray-50 border-b border-border">
+                <span className="text-sm font-medium text-gray-700">Vista previa</span>
+                <button
+                  onClick={() => setPlayingId(null)}
+                  className="text-muted-foreground hover:text-foreground text-sm"
+                >
+                  Cerrar ✕
+                </button>
+              </div>
+              <iframe
+                src={`https://www.youtube.com/embed/${playingId}?autoplay=1`}
+                className="w-full aspect-video"
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Lista de canciones guardadas */}
+        <div className="bg-white rounded-3xl border border-border shadow-sm p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+              <ListMusic className="w-5 h-5 text-primary" />
+              Mi lista de música
+              {savedSongs.length > 0 && (
+                <span className="bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full font-medium">
+                  {savedSongs.length} canciones
+                </span>
+              )}
+            </h2>
+            {totalDuration > 0 && (
+              <span className="text-sm text-muted-foreground">
+                Duración total: {formatDuration(totalDuration)}
+              </span>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-primary" />
+            </div>
+          ) : savedSongs.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Music className="w-12 h-12 mx-auto mb-3 opacity-20" />
+              <p className="font-medium">Aún no tienes canciones guardadas</p>
+              <p className="text-sm mt-1">Busca tus canciones favoritas arriba y agrégalas con el corazón</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {savedSongs.map((song, index) => (
+                <div
+                  key={song.id}
+                  className="flex items-center gap-4 p-3 rounded-2xl border border-border hover:bg-gray-50 transition-colors group"
+                >
+                  <span className="text-sm font-bold text-muted-foreground w-6 text-center shrink-0">
+                    {index + 1}
+                  </span>
+                  <img
+                    src={song.thumbnailUrl}
+                    alt={song.title}
+                    className="w-16 h-11 object-cover rounded-lg shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{song.title}</p>
+                    <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {song.durationSeconds ? formatDuration(song.durationSeconds) : "--:--"}
+                  </span>
+                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    
+                      href={`https://www.youtube.com/watch?v=${song.youtubeVideoId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                      title="Ver en YouTube"
+                    >
+                      <Youtube className="w-4 h-4" />
+                    </a>
+                    <button
+                      onClick={() => deleteMutation.mutate(song.id)}
+                      disabled={deleteMutation.isPending}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-red-50 transition-colors"
+                      title="Eliminar"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground pb-4">
+          Tus canciones se guardan de forma segura y estarán disponibles para tus seres queridos cuando llegue el momento.
+        </p>
+      </div>
+    </AppLayout>
+  );
+}
+
+PASO 4 — Agregar la ruta en App.tsx y el link en el sidebar
+En artifacts/legado/src/App.tsx agregar:
+typescriptimport FuneralSongs from "@/pages/funeral/songs";
+Y dentro del Router agregar la ruta protegida:
+tsx<Route path="/funeral/songs">
+  {() => <ProtectedRoute component={FuneralSongs} />}
+</Route>
+En artifacts/legado/src/components/layout/Sidebar.tsx, en el array de navItems agregar después del item de "Mi Despedida":
+typescript{ name: "Música del Sepelio", href: "/funeral/songs", icon: Music },
+Asegurarse de que Music está importado desde lucide-react.
+
+PASO 5 — Mostrar las canciones en el portal del destinatario
+En artifacts/legado/src/pages/access/portal.tsx (o el archivo del portal de acceso del destinatario), agregar una sección que muestre las canciones del fallecido. Buscar dónde se muestran los legacy items y agregar después:
+tsx{/* Sección de música */}
+{data.funeralSongs && data.funeralSongs.length > 0 && (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="bg-white rounded-3xl p-8 shadow-xl border border-border"
+  >
+    <h2 className="font-serif text-2xl font-bold mb-2 flex items-center gap-3">
+      <Music className="w-6 h-6 text-primary" />
+      Música para esta despedida
+    </h2>
+    <p className="text-muted-foreground mb-6 text-sm">
+      {data.ownerProfile.fullName} eligió personalmente estas canciones para acompañar este momento.
+    </p>
+    <div className="space-y-3">
+      {data.funeralSongs.map((song: any, i: number) => (
+        
+          key={song.id}
+          href={`https://www.youtube.com/watch?v=${song.youtubeVideoId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-4 p-3 rounded-2xl border border-border hover:bg-gray-50 hover:border-primary/30 transition-all group"
+        >
+          <span className="text-sm font-bold text-muted-foreground w-5 text-center shrink-0">{i + 1}</span>
+          <img src={song.thumbnailUrl} alt={song.title} className="w-14 h-10 object-cover rounded-lg shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-gray-900 truncate">{song.title}</p>
+            <p className="text-sm text-muted-foreground truncate">{song.artist}</p>
+          </div>
+          <div className="shrink-0 flex items-center gap-2 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Youtube className="w-4 h-4" />
+            <span className="text-xs font-medium">Reproducir</span>
+          </div>
+        </a>
+      ))}
+    </div>
+  </motion.div>
+)}
+En el endpoint del backend que sirve el portal de acceso (artifacts/api-server/src/routes/access.ts), agregar la consulta de canciones funerarias al response:
+typescriptimport { funeralSongsTable } from "@workspace/db";
+
+// Dentro del handler, antes del res.json(), agregar:
+const funeralSongs = await db
+  .select()
+  .from(funeralSongsTable)
+  .where(eq(funeralSongsTable.userId, userId))
+  .orderBy(funeralSongsTable.position);
+
+// Agregar al objeto del response:
+res.json({
+  recipient,
+  ownerProfile: { ... },
+  items,
+  funeralSongs,  // <-- agregar esto
+  releasedAt: releaseEvents[0].releasedAt,
+});

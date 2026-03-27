@@ -1,0 +1,38 @@
+MEJORAS MENORES PENDIENTES
+MEJORA
+Contraseña débil sigue siendo válida — solo requiere 8 caracteres
+El schema Zod del registro acepta "12345678" como contraseña válida. Para datos tan sensibles como un testamento digital, las contraseñas débiles son un riesgo real.
+Fix: Agregar .regex(/[A-Z]/, "Debe tener al menos una mayúscula").regex(/[0-9]/, "Debe tener al menos un número") al campo password en el schema de registro del backend.
+MEJORA
+La URL de Spotify se guarda en localStorage — persiste entre sesiones pero no entre dispositivos
+La playlist de Spotify en la página de medios se guarda solo en el browser con localStorage. Si el usuario cambia de dispositivo o borra el caché, la pierde. Y los destinatarios nunca la ven al activarse el legado.
+Fix: Guardar la URL en el campo spotifyPlaylistUrl de funeral_preferences en la base de datos.
+MEJORA
+Sin límite de tamaño en el body de Express — archivos grandes pueden colapsar el servidor
+En app.ts: app.use(express.json()) sin límite de tamaño. Por defecto Express acepta 100kb. Si alguien envía un payload JSON muy grande (por ejemplo un testamento muy extenso con el texto en el body), podría causar problemas de memoria.
+Fix: Cambiar a app.use(express.json({ limit: "2mb" })). Los archivos multimedia ya van por Cloudinary directamente, así que 2mb es más que suficiente para el body JSON.
+MEJORA
+Sin página de error 500 personalizada en el frontend
+Si la API devuelve un error inesperado, el usuario ve mensajes técnicos o pantallas en blanco. Para un producto con datos tan sensibles, la experiencia de error importa mucho.
+Fix: Agregar un Error Boundary global en React que capture errores y muestre una pantalla amigable con opción de recargar o contactar soporte.
+💡 NUEVAS FUNCIONALIDADES RECOMENDADAS
+PRODUCTO
+Notificaciones push — recordar al usuario que actualice su legado
+El mayor riesgo de Legado es que el usuario cree su cuenta, suba contenido, y luego lo olvide por años. Cuando el legado se active, el contenido estará desactualizado. Un email anual automático el día del cumpleaños del usuario diciendo "Han pasado 12 meses desde tu último update — ¿quieres revisar tu legado?" mantiene el contenido vigente y al usuario enganchado.
+Implementación: Campo birthdayMonth + birthdayDay en el perfil. Cron job que corre diariamente y envía el email de recordatorio cuando coincide con el cumpleaños.
+PRODUCTO
+Herencia digital de contraseñas — el gestor de contraseñas del legado
+El usuario puede guardar en Legado las contraseñas o accesos de sus cuentas importantes: banco, email, redes sociales, Netflix. Todo cifrado con AES-GCM (ya tienes la infraestructura). Se libera solo cuando se activa el legado. Es una de las funcionalidades más prácticas y demandadas en plataformas similares.
+Implementación: Nueva tabla digital_assets con campos: nombre del servicio, usuario, contraseña cifrada, URL, notas. Solo visible para destinatarios específicos al activarse el legado.
+TECNOLOGÍA
+PWA — instalar Legado como app en el celular
+Con un manifest.json y un Service Worker básico, Legado puede instalarse en el celular como si fuera una app nativa. El usuario la ve en su pantalla de inicio, se abre sin barra del navegador, y puede recibir notificaciones push. Para una app de uso emocional y personal, esto aumenta significativamente el engagement.
+Implementación: Vite tiene plugin de PWA (vite-plugin-pwa). Configuración de 30 minutos. Icono de la app, splash screen, y modo offline básico.
+TECNOLOGÍA
+Verificación en dos pasos (2FA) para el admin — operaciones críticas
+El panel de admin puede liberar el legado de cualquier usuario. Una cuenta admin comprometida es el escenario más catastrófico posible. Agregar TOTP (Google Authenticator) para el login del admin añade una capa de seguridad crítica con muy poco trabajo.
+Implementación: Librería speakeasy para generar y validar códigos TOTP. Al hacer login como admin, además de email/contraseña se pide el código de 6 dígitos del autenticador.
+PRODUCTO
+Árbol genealógico visual — mapa de destinatarios
+Una vista visual interactiva donde el usuario puede ver todos sus destinatarios conectados a los ítems que les corresponden. "A mi hijo le van: el video de cumpleaños, las contraseñas, el testamento. A mi esposa: la carta, las fotos." Ayuda al usuario a entender y completar su legado de forma más intuitiva que una lista.
+Implementación: Librería reactflow o simplemente D3.js. Los datos ya existen en la DB — solo falta la visualización.

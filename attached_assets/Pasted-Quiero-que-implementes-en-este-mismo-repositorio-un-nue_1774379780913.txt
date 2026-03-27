@@ -1,0 +1,146 @@
+Quiero que implementes en este mismo repositorio un nuevo módulo funcional llamado "Control de Lotes" para mi sistema de almacén químico.
+
+Contexto del proceso real:
+- Los lotes nuevos que llegan son evaluados por laboratorio.
+- Laboratorio llena un historial de lotes evaluados.
+- Casi siempre un lote nuevo es evaluado comparándolo con el lote anterior.
+- En operación, cuando queremos consumir un lote nuevo, necesitamos verificar si es compatible con el lote anterior que terminamos.
+- Actualmente esto se revisa manualmente en Excel filtrando por colorante y revisando el historial.
+- Quiero digitalizar este proceso dentro de la app.
+
+La lógica principal del módulo debe basarse en estos campos del formato de laboratorio:
+1. nombre del colorante
+2. lote uso
+3. lote nuevo
+4. fecha V°B°
+5. comentarios (esto representa el estado o conformidad)
+
+Objetivo del módulo:
+Permitir consultar rápidamente si un lote nuevo está conforme y si puede usarse en reemplazo del lote anterior.
+
+Implementa este módulo con estas funcionalidades:
+
+1. Estructura general del módulo
+- Crear una nueva sección o módulo llamado "Control de Lotes" o "Lotes Evaluados".
+- Debe estar integrado al menú actual sin romper el diseño.
+- Debe tener vista de listado, formulario de registro, buscador y detalle por colorante.
+
+2. Registro de evaluaciones de lotes
+Crear un formulario para registrar una evaluación de laboratorio con estos campos:
+- nombre_colorante
+- lote_uso
+- lote_nuevo
+- fecha_visto_bueno
+- comentarios
+- estado_interpretado
+
+Notas:
+- "comentarios" es el texto original del laboratorio.
+- "estado_interpretado" debe derivarse del comentario y clasificarse automáticamente en valores útiles como:
+  - CONFORME
+  - CONFORME NO MEZCLAR
+  - NO CONFORME
+  - FALTA ETIQUETAR
+  - OBSERVACION
+- Si no puede clasificarse automáticamente, dejarlo como "REVISAR".
+
+3. Listado general
+Crear una tabla principal con:
+- fecha de ingreso / fecha V°B°
+- nombre del colorante
+- lote uso
+- lote nuevo
+- comentarios
+- estado interpretado
+- acciones (ver, editar, eliminar o inactivar)
+
+4. Búsqueda rápida
+La parte más importante del módulo:
+Agregar un buscador potente para consultar por:
+- nombre del colorante
+- lote uso
+- lote nuevo
+
+Debe permitir:
+- escribir una palabra y filtrar resultados
+- buscar por coincidencia parcial
+- ordenar por fecha más reciente
+
+5. Vista de historial por colorante
+Cuando se seleccione un colorante, mostrar su historial completo de lotes evaluados en orden cronológico o del más reciente al más antiguo.
+
+Debe mostrar claramente:
+- qué lote se estaba usando
+- qué lote nuevo fue evaluado
+- cuál fue el resultado
+- fecha de visto bueno
+- comentario
+
+Esto debe reemplazar la necesidad de ir al Excel y filtrar manualmente.
+
+6. Consulta operativa de compatibilidad
+Agregar una herramienta práctica dentro del módulo:
+Un formulario o panel donde el usuario ingrese:
+- colorante
+- lote anterior o lote actual terminado
+- lote nuevo que desea consumir
+
+Y el sistema debe responder algo como:
+- Compatible / Conforme
+- Conforme pero no mezclar
+- No conforme
+- No existe evaluación registrada
+- Revisar con laboratorio
+
+La lógica debe basarse en los registros ya guardados.
+
+7. Reglas de interpretación
+Implementar reglas iniciales para interpretar comentarios:
+- Si comentarios contiene "CONFORME" y no contiene "NO MEZCLAR" => estado_interpretado = CONFORME
+- Si contiene "CONFORME" y también "NO MEZCLAR" => estado_interpretado = CONFORME NO MEZCLAR
+- Si contiene "F/E" o "FALTA ETIQUETAR" => estado_interpretado = FALTA ETIQUETAR
+- Si contiene texto no reconocido => estado_interpretado = REVISAR
+- Si luego quieres proponer reglas mejores, hazlo sin romper la lógica
+
+8. Carga manual y futura importación
+Por ahora implementa primero el módulo para carga manual.
+Pero deja la estructura lista para que después se pueda importar desde Excel.
+No implementes todavía la importación si complica demasiado, pero deja el modelo preparado para ello.
+
+9. Integración con consumo o almacén
+Si existe relación con productos o colorantes de la maestra, úsala solo si no rompe la flexibilidad.
+Porque puede haber nombres con variaciones.
+Prioriza que el módulo funcione bien aunque el colorante se escriba manualmente.
+Si puedes, agrega sugerencia/autocomplete sin obligar a una relación estricta.
+
+10. Reportes
+Agregar una vista de reportes para este módulo con filtros por:
+- colorante
+- fecha
+- estado interpretado
+
+Y si es posible:
+- exportar resultados a CSV o Excel
+
+11. UX / diseño
+- Mantener el estilo visual actual del sistema
+- Formularios simples y rápidos
+- Búsqueda clara
+- Tablas legibles
+- Resaltar visualmente los estados:
+  - CONFORME
+  - CONFORME NO MEZCLAR
+  - FALTA ETIQUETAR
+  - REVISAR
+
+12. Persistencia
+- Guardar la información en la base de datos o almacenamiento persistente ya usado en la app
+- No dejarlo como placeholder
+
+13. Entrega esperada
+Al finalizar quiero que me indiques:
+1. Qué tablas o modelos creaste
+2. Qué pantallas nuevas agregaste
+3. Cómo funciona la lógica de compatibilidad
+4. Cómo registrar una evaluación
+5. Cómo consultar si un lote nuevo puede usarse
