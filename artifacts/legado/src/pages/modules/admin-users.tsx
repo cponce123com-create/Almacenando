@@ -1,449 +1,275 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { getAuthHeaders, useAuth, ROLE_LABELS, ROLE_COLORS, type WarehouseRole } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { useAuth, getAuthHeaders, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
-import { useState, useEffect } from "react";
-import { Settings, Plus, Edit2, Trash2, Copy, Check, AlertCircle, Loader2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { clsx } from "clsx";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Settings, Plus, Pencil, Trash2, Loader2, AlertCircle, User,
+  ShieldCheck, Eye, EyeOff, UserCog, CheckCircle2,
+} from "lucide-react";
 
-interface User {
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface AdminUser {
   id: string;
   email: string;
   name: string;
-  role: string;
-  status: string;
+  role: WarehouseRole;
+  status: "active" | "inactive";
   createdAt: string;
+  updatedAt?: string;
 }
 
-interface CreateUserForm {
-  email: string;
-  name: string;
-  password: string;
-  role: string;
-}
+// ─── API helper ──────────────────────────────────────────────────────────────
 
-interface EditUserForm {
-  name: string;
-  email: string;
-  role: string;
-  status: string;
-}
-
-export default function AdministracióndeUsuariosPage() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
-  const [copiedPassword, setCopiedPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  const [createForm, setCreateForm] = useState<CreateUserForm>({
-    email: "",
-    name: "",
-    password: "",
-    role: "operator",
+const api = async (path: string, opts?: RequestInit) => {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) },
   });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error ?? "Error en el servidor");
+  }
+  return res.json();
+};
 
-  const [editForm, setEditForm] = useState<EditUserForm>({
-    name: "",
-    email: "",
-    role: "operator",
-    status: "active",
-  });
+// ─── Role badge ──────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    loadUsers();
-  }, []);
-
-  const loadUsers = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch("/api/admin/users", {
-        headers: getAuthHeaders(),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(data);
-      } else {
-        toast({ title: "Error", description: "No se pudieron cargar los usuarios", variant: "destructive" });
-      }
-    } catch (error) {
-      toast({ title: "Error", description: "Error al cargar usuarios", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateUser = async () => {
-    if (!createForm.email || !createForm.name || !createForm.password) {
-      toast({ title: "Error", description: "Completa todos los campos", variant: "destructive" });
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const response = await fetch("/api/admin/users", {
-        method: "POST",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(createForm),
-      });
-
-      if (response.ok) {
-        const newUser = await response.json();
-        setUsers([...users, newUser]);
-        setCreateForm({ email: "", name: "", password: "", role: "operator" });
-        setShowCreateDialog(false);
-        toast({ title: "Éxito", description: "Usuario creado correctamente" });
-      } else {
-        const error = await response.json();
-        toast({ title: "Error", description: error.error || "No se pudo crear el usuario", variant: "destructive" });
-      }
-    } catch (error) {
-      toast({ title: "Error", description: "Error al crear usuario", variant: "destructive" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleEditUser = async () => {
-    if (!selectedUser || !editForm.name || !editForm.email) {
-      toast({ title: "Error", description: "Completa todos los campos", variant: "destructive" });
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
-        method: "PUT",
-        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify(editForm),
-      });
-
-      if (response.ok) {
-        const updatedUser = await response.json();
-        setUsers(users.map(u => u.id === selectedUser.id ? updatedUser : u));
-        setShowEditDialog(false);
-        setSelectedUser(null);
-        toast({ title: "Éxito", description: "Usuario actualizado correctamente" });
-      } else {
-        const error = await response.json();
-        toast({ title: "Error", description: error.error || "No se pudo actualizar el usuario", variant: "destructive" });
-      }
-    } catch (error) {
-      toast({ title: "Error", description: "Error al actualizar usuario", variant: "destructive" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteUser = async () => {
-    if (!selectedUser) return;
-
-    try {
-      setIsSubmitting(true);
-      const response = await fetch(`/api/admin/users/${selectedUser.id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-
-      if (response.ok) {
-        setUsers(users.filter(u => u.id !== selectedUser.id));
-        setShowDeleteDialog(false);
-        setSelectedUser(null);
-        toast({ title: "Éxito", description: "Usuario eliminado correctamente" });
-      } else {
-        const error = await response.json();
-        toast({ title: "Error", description: error.error || "No se pudo eliminar el usuario", variant: "destructive" });
-      }
-    } catch (error) {
-      toast({ title: "Error", description: "Error al eliminar usuario", variant: "destructive" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleResetPassword = async (userId: string) => {
-    try {
-      setIsSubmitting(true);
-      const response = await fetch(`/api/admin/users/${userId}/reset-password`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setGeneratedPassword(data.temporaryPassword);
-        toast({ title: "Éxito", description: "Contraseña temporal generada" });
-      } else {
-        const error = await response.json();
-        toast({ title: "Error", description: error.error || "No se pudo generar la contraseña", variant: "destructive" });
-      }
-    } catch (error) {
-      toast({ title: "Error", description: "Error al generar contraseña", variant: "destructive" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedPassword(true);
-    setTimeout(() => setCopiedPassword(false), 2000);
-  };
-
-  const openEditDialog = (u: User) => {
-    setSelectedUser(u);
-    setEditForm({
-      name: u.name,
-      email: u.email,
-      role: u.role,
-      status: u.status,
-    });
-    setShowEditDialog(true);
-  };
-
-  const openDeleteDialog = (u: User) => {
-    setSelectedUser(u);
-    setShowDeleteDialog(true);
-  };
-
-  const filteredUsers = users.filter(u =>
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())
+function RoleBadge({ role }: { role: WarehouseRole }) {
+  return (
+    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[role]}`}>
+      {ROLE_LABELS[role]}
+    </span>
   );
+}
 
-  const isAdmin = user?.role === "admin";
+// ─── Password field ──────────────────────────────────────────────────────────
+
+function PasswordInput({ value, onChange, placeholder = "Mínimo 8 caracteres" }: {
+  value: string; onChange: (v: string) => void; placeholder?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="pr-10"
+      />
+      <button
+        type="button"
+        onClick={() => setShow((s) => !s)}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+      >
+        {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      </button>
+    </div>
+  );
+}
+
+// ─── Edit self profile dialog ─────────────────────────────────────────────────
+
+function EditMyProfileDialog({
+  open, onClose, currentUser,
+}: {
+  open: boolean; onClose: () => void; currentUser: AdminUser;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ name: currentUser.name, email: currentUser.email, password: "" });
+
+  const mutation = useMutation({
+    mutationFn: (data: typeof form) =>
+      api("/api/admin/users/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: data.name, email: data.email, ...(data.password ? { password: data.password } : {}) }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      qc.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Perfil actualizado", description: "Tus datos fueron guardados correctamente." });
+      onClose();
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
-              <Settings className="w-6 h-6 text-blue-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Administración de Usuarios</h1>
-              <p className="text-slate-500 text-sm">Gestiona los usuarios y permisos del sistema</p>
-            </div>
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UserCog className="w-5 h-5 text-blue-600" /> Mi Perfil
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-3 text-sm text-blue-700">
+            Puedes cambiar tu nombre, correo y contraseña. Tu rol solo puede ser cambiado por un administrador.
           </div>
-          {isAdmin && (
-            <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Nuevo Usuario
-            </Button>
-          )}
+
+          <div className="space-y-1">
+            <Label>Nombre completo</Label>
+            <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label>Correo electrónico</Label>
+            <Input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label>Nueva contraseña <span className="text-slate-400 font-normal">(dejar en blanco para no cambiar)</span></Label>
+            <PasswordInput value={form.password} onChange={(v) => setForm((f) => ({ ...f, password: v }))} />
+          </div>
+
+          <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+            <ShieldCheck className="w-4 h-4 shrink-0" />
+            <span>Tu rol actual: <RoleBadge role={currentUser.role} /></span>
+          </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-100 p-6">
-          <div className="mb-6">
-            <Input
-              placeholder="Buscar por nombre o correo..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="max-w-md"
-            />
-          </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>
+          <Button
+            onClick={() => mutation.mutate(form)}
+            disabled={mutation.isPending || !form.name || !form.email}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {mutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            Guardar cambios
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+// ─── Create / Edit user dialog ────────────────────────────────────────────────
+
+type UserForm = { name: string; email: string; password: string; role: WarehouseRole; status: "active" | "inactive" };
+const emptyForm = (): UserForm => ({ name: "", email: "", password: "", role: "operator", status: "active" });
+
+function UserDialog({
+  open, onClose, editTarget, currentUserId,
+}: {
+  open: boolean; onClose: () => void; editTarget: AdminUser | null; currentUserId: string;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const isEdit = !!editTarget;
+  const isSelf = editTarget?.id === currentUserId;
+
+  const [form, setForm] = useState<UserForm>(
+    editTarget
+      ? { name: editTarget.name, email: editTarget.email, password: "", role: editTarget.role, status: editTarget.status }
+      : emptyForm()
+  );
+
+  const set = <K extends keyof UserForm>(k: K, v: UserForm[K]) => setForm((f) => ({ ...f, [k]: v }));
+
+  const mutation = useMutation({
+    mutationFn: (data: UserForm) => {
+      const body: Record<string, unknown> = {
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        status: data.status,
+      };
+      if (data.password) body.password = data.password;
+      if (!isEdit) body.password = data.password; // required for create
+
+      return isEdit
+        ? api(`/api/admin/users/${editTarget!.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        : api("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: isEdit ? "Usuario actualizado" : "Usuario creado" });
+      onClose();
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const valid = form.name && form.email && (isEdit || form.password.length >= 8);
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {isEdit ? <Pencil className="w-5 h-5 text-slate-600" /> : <Plus className="w-5 h-5 text-blue-600" />}
+            {isEdit ? "Editar usuario" : "Nuevo usuario"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {isSelf && (
+            <div className="bg-amber-50 border border-amber-100 rounded-lg px-4 py-3 text-sm text-amber-700">
+              Estás editando tu propia cuenta. No puedes cambiar tu rol ni desactivarte.
             </div>
-          ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-12">
-              <AlertCircle className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-500">No hay usuarios disponibles</p>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2 space-y-1">
+              <Label>Nombre completo</Label>
+              <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Ej. María García" />
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Correo</TableHead>
-                    <TableHead>Rol</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Creado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredUsers.map((u) => (
-                    <TableRow key={u.id}>
-                      <TableCell className="font-medium">{u.name}</TableCell>
-                      <TableCell>{u.email}</TableCell>
-                      <TableCell>
-                        <span className={clsx("text-xs px-2.5 py-1 rounded-full font-medium", ROLE_COLORS[u.role as keyof typeof ROLE_COLORS])}>
-                          {ROLE_LABELS[u.role as keyof typeof ROLE_LABELS]}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <span className={clsx("text-xs px-2.5 py-1 rounded-full font-medium", u.status === "active" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800")}>
-                          {u.status === "active" ? "Activo" : "Inactivo"}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm text-slate-500">
-                        {new Date(u.createdAt).toLocaleDateString("es-PE")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {isAdmin && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleResetPassword(u.id)}
-                                disabled={isSubmitting}
-                                title="Generar contraseña temporal"
-                              >
-                                <AlertCircle className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openEditDialog(u)}
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </Button>
-                              {u.id !== user?.id && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openDeleteDialog(u)}
-                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+            <div className="col-span-2 space-y-1">
+              <Label>Correo electrónico</Label>
+              <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="usuario@empresa.com" />
+            </div>
+            <div className="col-span-2 space-y-1">
+              <Label>
+                Contraseña {isEdit && <span className="text-slate-400 font-normal">(dejar en blanco para no cambiar)</span>}
+              </Label>
+              <PasswordInput value={form.password} onChange={(v) => set("password", v)} />
+            </div>
+
+            <div className="space-y-1">
+              <Label>Rol</Label>
+              <Select
+                value={form.role}
+                onValueChange={(v) => set("role", v as WarehouseRole)}
+                disabled={isSelf}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["admin", "supervisor", "operator", "quality", "readonly"] as WarehouseRole[]).map((r) => (
+                    <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Dialog para crear usuario */}
-      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Crear Nuevo Usuario</DialogTitle>
-            <DialogDescription>Completa los datos para crear un nuevo usuario del sistema</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-slate-700">Nombre</label>
-              <Input
-                value={createForm.name}
-                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                placeholder="Nombre completo"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Correo</label>
-              <Input
-                type="email"
-                value={createForm.email}
-                onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
-                placeholder="correo@ejemplo.com"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Contraseña</label>
-              <Input
-                type="password"
-                value={createForm.password}
-                onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
-                placeholder="Mínimo 8 caracteres"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Rol</label>
-              <Select value={createForm.role} onValueChange={(value) => setCreateForm({ ...createForm, role: value })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="operator">Operario</SelectItem>
-                  <SelectItem value="supervisor">Supervisor</SelectItem>
-                  <SelectItem value="quality">Calidad</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                  <SelectItem value="readonly">Solo Lectura</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-3 justify-end pt-4">
-              <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleCreateUser} disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Crear Usuario
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      {/* Dialog para editar usuario */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Usuario</DialogTitle>
-            <DialogDescription>Actualiza los datos del usuario</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-slate-700">Nombre</label>
-              <Input
-                value={editForm.name}
-                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                placeholder="Nombre completo"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Correo</label>
-              <Input
-                type="email"
-                value={editForm.email}
-                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                placeholder="correo@ejemplo.com"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Rol</label>
-              <Select value={editForm.role} onValueChange={(value) => setEditForm({ ...editForm, role: value })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="operator">Operario</SelectItem>
-                  <SelectItem value="supervisor">Supervisor</SelectItem>
-                  <SelectItem value="quality">Calidad</SelectItem>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                  <SelectItem value="readonly">Solo Lectura</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-slate-700">Estado</label>
-              <Select value={editForm.status} onValueChange={(value) => setEditForm({ ...editForm, status: value })}>
+            <div className="space-y-1">
+              <Label>Estado</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v) => set("status", v as "active" | "inactive")}
+                disabled={isSelf}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -453,71 +279,252 @@ export default function AdministracióndeUsuariosPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-3 justify-end pt-4">
-              <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleEditUser} disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Guardar Cambios
-              </Button>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={mutation.isPending}>Cancelar</Button>
+          <Button
+            onClick={() => mutation.mutate(form)}
+            disabled={mutation.isPending || !valid}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {mutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+            {isEdit ? "Guardar" : "Crear usuario"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+export default function AdministracióndeUsuariosPage() {
+  const { user: currentUser } = useAuth();
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [editTarget, setEditTarget] = useState<AdminUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [showMyProfile, setShowMyProfile] = useState(false);
+
+  const { data: users = [], isLoading, isError } = useQuery<AdminUser[]>({
+    queryKey: ["/api/admin/users"],
+    queryFn: () => api("/api/admin/users"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api(`/api/admin/users/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "Usuario eliminado" });
+      setDeleteTarget(null);
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+      setDeleteTarget(null);
+    },
+  });
+
+  const isAdmin = currentUser?.role === "admin";
+  const activeCount = users.filter((u) => u.status === "active").length;
+
+  // Stats
+  const roleCounts = Object.fromEntries(
+    (["admin", "supervisor", "operator", "quality", "readonly"] as WarehouseRole[])
+      .map((r) => [r, users.filter((u) => u.role === r).length])
+  ) as Record<WarehouseRole, number>;
+
+  const formatDate = (s: string) =>
+    new Date(s).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" });
+
+  return (
+    <AppLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+              <Settings className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Administración de Usuarios</h1>
+              <p className="text-slate-500 text-sm">{activeCount} usuarios activos · {users.length} en total</p>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+          <div className="flex gap-2">
+            {/* Botón "Mi perfil" para cualquier usuario autenticado */}
+            {currentUser && (
+              <Button variant="outline" onClick={() => setShowMyProfile(true)} className="gap-2">
+                <UserCog className="w-4 h-4" /> Mi perfil
+              </Button>
+            )}
+            {/* Botón crear solo para admin */}
+            {isAdmin && (
+              <Button onClick={() => setShowCreate(true)} className="gap-2 bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4" /> Nuevo usuario
+              </Button>
+            )}
+          </div>
+        </div>
 
-      {/* Dialog para confirmar eliminación */}
-      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        {/* Stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {(["admin", "supervisor", "operator", "quality", "readonly"] as WarehouseRole[]).map((r) => (
+            <div key={r} className="bg-white rounded-xl border border-slate-100 px-4 py-3">
+              <p className="text-2xl font-bold text-slate-800">{roleCounts[r]}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{ROLE_LABELS[r]}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Content */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="w-7 h-7 animate-spin text-blue-500" />
+          </div>
+        ) : isError ? (
+          <div className="flex items-center gap-3 text-red-600 bg-red-50 border border-red-100 rounded-xl px-5 py-4">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span className="text-sm">No se pudieron cargar los usuarios.</span>
+          </div>
+        ) : (
+          <Tabs defaultValue="active">
+            <TabsList className="mb-4">
+              <TabsTrigger value="active">
+                Activos <span className="ml-1.5 text-xs text-slate-500">({activeCount})</span>
+              </TabsTrigger>
+              <TabsTrigger value="inactive">
+                Inactivos <span className="ml-1.5 text-xs text-slate-500">({users.length - activeCount})</span>
+              </TabsTrigger>
+              <TabsTrigger value="all">
+                Todos <span className="ml-1.5 text-xs text-slate-500">({users.length})</span>
+              </TabsTrigger>
+            </TabsList>
+
+            {(["active", "inactive", "all"] as const).map((tab) => {
+              const filtered = tab === "all" ? users : users.filter((u) => u.status === tab);
+              return (
+                <TabsContent key={tab} value={tab}>
+                  <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+                    {filtered.length === 0 ? (
+                      <div className="py-16 text-center">
+                        <User className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+                        <p className="text-slate-500 text-sm">No hay usuarios {tab === "all" ? "" : tab === "active" ? "activos" : "inactivos"}.</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Usuario</TableHead>
+                            <TableHead>Rol</TableHead>
+                            <TableHead className="hidden sm:table-cell">Estado</TableHead>
+                            <TableHead className="hidden md:table-cell">Creado</TableHead>
+                            {isAdmin && <TableHead className="text-right">Acciones</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filtered.map((u) => (
+                            <TableRow key={u.id} className={u.id === currentUser?.id ? "bg-blue-50/50" : ""}>
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 font-semibold text-sm shrink-0">
+                                    {u.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-slate-900 text-sm leading-tight">
+                                      {u.name}
+                                      {u.id === currentUser?.id && (
+                                        <span className="ml-2 text-xs text-blue-600 font-normal">(tú)</span>
+                                      )}
+                                    </p>
+                                    <p className="text-xs text-slate-400 leading-tight">{u.email}</p>
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell><RoleBadge role={u.role} /></TableCell>
+                              <TableCell className="hidden sm:table-cell">
+                                <div className="flex items-center gap-1.5">
+                                  <div className={`w-1.5 h-1.5 rounded-full ${u.status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                                  <span className="text-xs text-slate-600 capitalize">
+                                    {u.status === "active" ? "Activo" : "Inactivo"}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell text-xs text-slate-400">
+                                {formatDate(u.createdAt)}
+                              </TableCell>
+                              {isAdmin && (
+                                <TableCell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-slate-400 hover:text-blue-600"
+                                      onClick={() => setEditTarget(u)}
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </Button>
+                                    {u.id !== currentUser?.id && (
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-slate-400 hover:text-red-600"
+                                        onClick={() => setDeleteTarget(u)}
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                </TabsContent>
+              );
+            })}
+          </Tabs>
+        )}
+      </div>
+
+      {/* Dialogs */}
+      {showCreate && (
+        <UserDialog open={showCreate} onClose={() => setShowCreate(false)} editTarget={null} currentUserId={currentUser?.id ?? ""} />
+      )}
+      {editTarget && (
+        <UserDialog open={!!editTarget} onClose={() => setEditTarget(null)} editTarget={editTarget} currentUserId={currentUser?.id ?? ""} />
+      )}
+      {currentUser && showMyProfile && (
+        <EditMyProfileDialog open={showMyProfile} onClose={() => setShowMyProfile(false)} currentUser={currentUser as AdminUser} />
+      )}
+
+      {/* Delete confirm */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Eliminar Usuario</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
             <AlertDialogDescription>
-              ¿Estás seguro de que deseas eliminar a {selectedUser?.name}? Esta acción no se puede deshacer.
+              Se eliminará permanentemente la cuenta de <strong>{deleteTarget?.name}</strong> ({deleteTarget?.email}).
+              Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex gap-3 justify-end">
+          <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteUser} disabled={isSubmitting} className="bg-red-600 hover:bg-red-700">
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Eliminar
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Eliminar"}
             </AlertDialogAction>
-          </div>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Dialog para mostrar contraseña temporal */}
-      <Dialog open={!!generatedPassword} onOpenChange={(open) => !open && setGeneratedPassword(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Contraseña Temporal Generada</DialogTitle>
-            <DialogDescription>Copia esta contraseña y comparte con el usuario</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <code className="text-lg font-mono font-bold text-slate-900">{generatedPassword}</code>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => copyToClipboard(generatedPassword!)}
-                >
-                  {copiedPassword ? (
-                    <Check className="w-4 h-4 text-green-600" />
-                  ) : (
-                    <Copy className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-              <p>El usuario debe cambiar esta contraseña en su primer inicio de sesión.</p>
-            </div>
-            <Button onClick={() => setGeneratedPassword(null)} className="w-full">
-              Cerrar
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </AppLayout>
   );
 }
