@@ -30,6 +30,7 @@ interface InventoryRecord {
   previousBalance: string; inputs: string; outputs: string; finalBalance: string;
   physicalCount?: string | null; photoUrl?: string | null; notes?: string | null;
   registeredBy: string; createdAt: string; boxes?: InventoryBox[];
+  lastConsumptionDate?: string | null;
 }
 interface InventoryStats {
   totalProducts: number; withoutRecords: number; exact: number;
@@ -557,6 +558,7 @@ export default function TomaDeInventarioPage() {
                     <TableHead className="font-semibold text-slate-600 text-right">Total Físico</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Diferencia</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Cajas</TableHead>
+                    <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Últ. Consumo</TableHead>
                     <TableHead className="font-semibold text-slate-600">Observaciones</TableHead>
                     {canDelete && <TableHead className="w-12" />}
                   </TableRow>
@@ -610,6 +612,11 @@ export default function TomaDeInventarioPage() {
                           ) : (
                             <span className="text-slate-300 text-xs">—</span>
                           )}
+                        </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {r.lastConsumptionDate
+                            ? <span className="text-slate-700 font-medium">{r.lastConsumptionDate}</span>
+                            : <span className="text-slate-300">—</span>}
                         </TableCell>
                         <TableCell className="text-sm text-slate-500 max-w-[180px] truncate">
                           {r.notes || <span className="text-slate-300">—</span>}

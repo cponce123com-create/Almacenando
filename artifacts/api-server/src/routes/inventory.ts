@@ -138,24 +138,40 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
   }
   const records = await query.orderBy(desc(inventoryRecordsTable.recordDate));
 
-  // Attach boxes for all records in one query
-  if (records.length > 0) {
-    const ids = records.map(r => r.id);
-    const boxes = await db.select().from(inventoryBoxesTable)
-      .where(inArray(inventoryBoxesTable.inventoryRecordId, ids))
-      .orderBy(inventoryBoxesTable.inventoryRecordId, inventoryBoxesTable.boxNumber);
+  if (records.length === 0) { res.json(records); return; }
 
-    const boxMap = new Map<string, typeof boxes>();
-    for (const box of boxes) {
-      if (!boxMap.has(box.inventoryRecordId)) boxMap.set(box.inventoryRecordId, []);
-      boxMap.get(box.inventoryRecordId)!.push(box);
-    }
+  const ids = records.map(r => r.id);
 
-    res.json(records.map(r => ({ ...r, boxes: boxMap.get(r.id) ?? [] })));
-    return;
+  // Boxes
+  const boxes = await db.select().from(inventoryBoxesTable)
+    .where(inArray(inventoryBoxesTable.inventoryRecordId, ids))
+    .orderBy(inventoryBoxesTable.inventoryRecordId, inventoryBoxesTable.boxNumber);
+
+  const boxMap = new Map<string, typeof boxes>();
+  for (const box of boxes) {
+    if (!boxMap.has(box.inventoryRecordId)) boxMap.set(box.inventoryRecordId, []);
+    boxMap.get(box.inventoryRecordId)!.push(box);
   }
 
-  res.json(records);
+  // Last consumption date per product_id
+  const productIds = [...new Set(records.map(r => r.productId))];
+  const lcRows = await db.execute(sql`
+    SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
+    FROM inventory_records ir
+    WHERE ir.outputs::numeric > 0
+      AND ir.product_id = ANY(${productIds})
+    GROUP BY ir.product_id
+  `);
+  const lcMap = new Map<string, string>();
+  for (const row of lcRows.rows as { product_id: string; last_consumption_date: string | null }[]) {
+    if (row.last_consumption_date) lcMap.set(row.product_id, row.last_consumption_date);
+  }
+
+  res.json(records.map(r => ({
+    ...r,
+    boxes: boxMap.get(r.id) ?? [],
+    lastConsumptionDate: lcMap.get(r.productId) ?? null,
+  })));
 }));
 
 // ── Single ────────────────────────────────────────────────────────────────────

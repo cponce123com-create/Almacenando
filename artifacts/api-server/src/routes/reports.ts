@@ -228,6 +228,7 @@ router.get("/export/:type", requireAuth, asyncHandler(async (req, res) => {
 
   if (type === "inventory") {
     const records = await db.select({
+      productId: inventoryRecordsTable.productId,
       productCode: productsTable.code,
       productName: productsTable.name,
       recordDate: inventoryRecordsTable.recordDate,
@@ -238,10 +239,22 @@ router.get("/export/:type", requireAuth, asyncHandler(async (req, res) => {
     }).from(inventoryRecordsTable)
       .leftJoin(productsTable, sql`${inventoryRecordsTable.productId} = ${productsTable.id}`)
       .orderBy(desc(inventoryRecordsTable.recordDate));
+
+    // Last consumption per product
+    const lcRows = await db.execute(sql`
+      SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
+      FROM inventory_records ir WHERE ir.outputs::numeric > 0
+      GROUP BY ir.product_id
+    `);
+    const lcMapRep = new Map<string, string>();
+    for (const row of lcRows.rows as { product_id: string; last_consumption_date: string | null }[]) {
+      if (row.last_consumption_date) lcMapRep.set(row.product_id, row.last_consumption_date);
+    }
     data = records.map(r => ({
       "Código": r.productCode, "Producto": r.productName, "Fecha": r.recordDate,
       "Saldo Anterior": r.previousBalance, "Entradas": r.inputs,
       "Salidas": r.outputs, "Saldo Final": r.finalBalance,
+      "Últ. Consumo": r.productId ? (lcMapRep.get(r.productId) ?? "") : "",
     }));
     sheetName = "Inventario";
   } else if (type === "immobilized") {

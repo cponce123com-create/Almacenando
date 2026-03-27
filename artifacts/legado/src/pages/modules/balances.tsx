@@ -28,6 +28,7 @@ interface BalanceRecord {
   notes?: string | null;
   registeredBy: string;
   createdAt: string;
+  lastConsumptionDate?: string | null;
 }
 
 interface ImportResult {
@@ -392,7 +393,8 @@ export default function BalancesPage() {
                     <TableHead>Descripción</TableHead>
                     <TableHead>UM</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead>Fecha</TableHead>
+                    <TableHead>Fecha SA</TableHead>
+                    <TableHead>Últ. Consumo</TableHead>
                     <TableHead className="w-20">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -415,6 +417,11 @@ export default function BalancesPage() {
                       <TableCell className="text-slate-500">{r.unit}</TableCell>
                       <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
+                      <TableCell className="text-sm">
+                        {r.lastConsumptionDate
+                          ? <span className="text-slate-700 font-medium">{r.lastConsumptionDate}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
                           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditRecord(r)}>

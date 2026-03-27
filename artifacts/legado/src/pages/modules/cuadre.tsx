@@ -24,6 +24,7 @@ interface InventoryRecord { productId: string; physicalCount?: string | null; re
 interface CuadreItem {
   id: string; cuadreId: string; code: string; productDescription: string; unit: string;
   systemBalance: string; physicalCount: string; difference: string; notes?: string | null;
+  lastConsumptionDate?: string | null;
 }
 interface CuadreRecord {
   id: string; warehouse: string; cuadreDate: string; responsible: string;
@@ -351,6 +352,7 @@ export default function CuadrePage() {
                     <TableHead className="font-semibold text-slate-600 text-right">Saldo SA</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-right">Último Físico</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Diferencia</TableHead>
+                    <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Últ. Consumo</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Estado</TableHead>
                     <TableHead className="font-semibold text-slate-600">Observaciones</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center w-36">Acciones</TableHead>
@@ -382,6 +384,11 @@ export default function CuadrePage() {
                         </TableCell>
                         <TableCell className="text-center">
                           {item ? <DiffBadge diff={diff} /> : <span className="text-slate-300 text-xs">—</span>}
+                        </TableCell>
+                        <TableCell className="text-sm whitespace-nowrap">
+                          {item?.lastConsumptionDate
+                            ? <span className="text-slate-700 font-medium">{item.lastConsumptionDate}</span>
+                            : <span className="text-slate-300">—</span>}
                         </TableCell>
                         <TableCell className="text-center">
                           {isPending ? (
