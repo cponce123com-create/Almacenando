@@ -37,12 +37,11 @@ router.get("/template", requireAuth, asyncHandler(async (req, res) => {
     ORDER BY br.warehouse, br.code, br.balance_date DESC, br.created_at DESC
   `);
 
-  // Fetch last consumption date per product code
+  // Fetch last inventory record date per product code
   const lcRows = await db.execute(sql`
     SELECT p.code, MAX(ir.record_date) AS last_consumption_date
     FROM inventory_records ir
     JOIN products p ON ir.product_id = p.id
-    WHERE ir.outputs::numeric > 0
     GROUP BY p.code
   `);
   const lcMap = new Map<string, string>();
@@ -169,7 +168,6 @@ router.get("/latest", requireAuth, asyncHandler(async (req, res) => {
       SELECT p.code, MAX(ir.record_date) AS last_consumption_date
       FROM inventory_records ir
       JOIN products p ON ir.product_id = p.id
-      WHERE ir.outputs::numeric > 0
       GROUP BY p.code
     ) lc ON lc.code = br.code
     ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
@@ -208,7 +206,6 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
       SELECT p.code, MAX(ir.record_date) AS last_consumption_date
       FROM inventory_records ir
       JOIN products p ON ir.product_id = p.id
-      WHERE ir.outputs::numeric > 0
       GROUP BY p.code
     `);
     const lcMap = new Map<string, string>();

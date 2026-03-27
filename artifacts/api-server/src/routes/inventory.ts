@@ -158,8 +158,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const lcRows = await db.execute(sql`
     SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
     FROM inventory_records ir
-    WHERE ir.outputs::numeric > 0
-      AND ir.product_id = ANY(${productIds})
+    WHERE ir.product_id = ANY(${productIds})
     GROUP BY ir.product_id
   `);
   const lcMap = new Map<string, string>();
