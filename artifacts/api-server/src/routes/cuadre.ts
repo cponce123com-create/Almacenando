@@ -53,7 +53,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
   const [created] = await db.insert(cuadreRecordsTable).values({
     id,
     ...cuadreData,
-    registeredBy: req.user!.id,
+    registeredBy: req.userId,
   }).returning();
 
   if (items && items.length > 0) {

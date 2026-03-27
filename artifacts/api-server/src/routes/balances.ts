@@ -64,7 +64,7 @@ router.post(
     });
 
     const batchId = generateId();
-    const userId = req.user!.id;
+    const userId = req.userId;
     let inserted = 0;
     const errors: Array<{ row: number; code: string; error: string }> = [];
 
@@ -157,7 +157,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), as
   const [created] = await db.insert(balanceRecordsTable).values({
     id,
     ...parsed.data,
-    registeredBy: req.user!.id,
+    registeredBy: req.userId,
   }).returning();
   res.status(201).json(created);
 }));
