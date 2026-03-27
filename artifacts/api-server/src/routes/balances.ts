@@ -173,6 +173,11 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
   res.json(updated);
 }));
 
+router.delete("/all", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
+  await db.delete(balanceRecordsTable);
+  res.json({ message: "Todos los saldos eliminados correctamente" });
+}));
+
 router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const [deleted] = await db.delete(balanceRecordsTable).where(eq(balanceRecordsTable.id, id as string)).returning();

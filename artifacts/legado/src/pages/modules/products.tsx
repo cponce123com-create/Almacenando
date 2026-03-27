@@ -572,6 +572,7 @@ export default function MaestrodeProductosPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [showImportResult, setShowImportResult] = useState(false);
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
 
   const canWrite = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
   const canDelete = user?.role && ["admin", "supervisor"].includes(user.role);
@@ -668,6 +669,18 @@ export default function MaestrodeProductosPage() {
     },
   });
 
+  const deleteAllMutation = useMutation({
+    mutationFn: () => fetch(`${BASE}/api/products/all`, { method: "DELETE", headers: getAuthHeaders() })
+      .then(r => { if (!r.ok) throw new Error("Error al eliminar"); return r.json(); }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports/summary"] });
+      setShowDeleteAll(false);
+      toast({ title: "Maestra vaciada", description: "Todos los productos fueron eliminados." });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     return products.filter(p => {
@@ -734,6 +747,17 @@ export default function MaestrodeProductosPage() {
               <Button onClick={() => setShowForm(true)} className="gap-2" size="sm">
                 <Plus className="w-4 h-4" />
                 Nuevo Producto
+              </Button>
+            )}
+            {user?.role === "admin" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50"
+                onClick={() => setShowDeleteAll(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Eliminar todo
               </Button>
             )}
           </div>
@@ -1015,6 +1039,28 @@ export default function MaestrodeProductosPage() {
               >
                 {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={showDeleteAll} onOpenChange={open => { if (!open) setShowDeleteAll(false); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar toda la maestra?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Se eliminarán <strong>todos los productos</strong> del almacén. Esta acción no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteAllMutation.isPending}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 hover:bg-red-700"
+                onClick={() => deleteAllMutation.mutate()}
+                disabled={deleteAllMutation.isPending}
+              >
+                {deleteAllMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Sí, eliminar todo
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
