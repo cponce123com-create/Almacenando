@@ -32,6 +32,7 @@ interface BalanceRecord {
 
 interface ImportResult {
   inserted: number;
+  updated: number;
   errors: Array<{ row: number; code: string; error: string }>;
   total: number;
   batchId: string;
@@ -133,10 +134,14 @@ function ImportResultsModal({ open, onClose, result }: { open: boolean; onClose:
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>Resultado de Importación</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-3 text-center">
+          <div className="grid grid-cols-4 gap-2 text-center">
             <div className="bg-green-50 rounded-lg p-3">
               <p className="text-2xl font-bold text-green-700">{result.inserted}</p>
-              <p className="text-xs text-green-600">Insertados</p>
+              <p className="text-xs text-green-600">Nuevos</p>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-3">
+              <p className="text-2xl font-bold text-blue-700">{result.updated ?? 0}</p>
+              <p className="text-xs text-blue-600">Actualizados</p>
             </div>
             <div className="bg-red-50 rounded-lg p-3">
               <p className="text-2xl font-bold text-red-700">{result.errors.length}</p>
@@ -179,6 +184,7 @@ export default function BalancesPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [filterDate, setFilterDate] = useState<string>("");
   const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   const warehouseParam = warehouse === "all" ? "" : `?warehouse=${warehouse}`;
 
@@ -272,20 +278,22 @@ export default function BalancesPage() {
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || isImporting) return;
+    e.target.value = "";
+    setIsImporting(true);
     const fd = new FormData();
     fd.append("file", file);
-    const wParam = warehouse !== "all" ? `?warehouse=${warehouse}` : "";
     try {
-      const result = await apiJson(`${BASE}/api/balances/import${wParam}`, { method: "POST", body: fd });
+      const result = await apiJson(`${BASE}/api/balances/import`, { method: "POST", body: fd });
       setImportResult(result);
       setShowImportResult(true);
       queryClient.invalidateQueries({ queryKey: ["balances"] });
       queryClient.invalidateQueries({ queryKey: ["balance-dates"] });
     } catch (err: unknown) {
       toast({ title: "Error al importar", description: err instanceof Error ? err.message : "Error desconocido", variant: "destructive" });
+    } finally {
+      setIsImporting(false);
     }
-    e.target.value = "";
   };
 
   return (
@@ -305,11 +313,14 @@ export default function BalancesPage() {
             <Button variant="outline" size="sm" onClick={downloadTemplate}>
               <Download className="w-4 h-4 mr-1.5" /> Descargar Plantilla
             </Button>
-            <label className="cursor-pointer">
-              <Button variant="outline" size="sm" asChild>
-                <span><Upload className="w-4 h-4 mr-1.5" /> Importar</span>
+            <label className={`cursor-pointer ${isImporting ? "opacity-60 pointer-events-none" : ""}`}>
+              <Button variant="outline" size="sm" asChild disabled={isImporting}>
+                <span>
+                  {isImporting ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Upload className="w-4 h-4 mr-1.5" />}
+                  {isImporting ? "Importando…" : "Importar"}
+                </span>
               </Button>
-              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} disabled={isImporting} />
             </label>
             <Button size="sm" onClick={() => setShowForm(true)}>
               <Plus className="w-4 h-4 mr-1.5" /> Nuevo Saldo
@@ -364,6 +375,13 @@ export default function BalancesPage() {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span>
+                {filtered.length === records.length
+                  ? `${records.length} registro${records.length !== 1 ? "s" : ""}`
+                  : `${filtered.length} de ${records.length} registro${records.length !== 1 ? "s" : ""}`}
+              </span>
+            </div>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
