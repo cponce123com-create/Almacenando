@@ -3,6 +3,7 @@ import {
   usersTable,
   productsTable,
   inventoryRecordsTable,
+  inventoryBoxesTable,
   immobilizedProductsTable,
   samplesTable,
   dyeLotsTable,
@@ -10,7 +11,7 @@ import {
   personnelTable,
   eppMasterTable,
 } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, like } from "drizzle-orm";
 import { hashPassword } from "./auth.js";
 import { generateId } from "./id.js";
 import { logger } from "./logger.js";
@@ -394,4 +395,68 @@ export async function seedWarehouseData() {
   logger.info({ count: demoEpp.length }, "EPP catalog seeded");
 
   logger.info("Warehouse data seed complete!");
+}
+
+// ---------------------------------------------------------------------------
+// purgeDemoData — elimina todos los datos demo (productos PROD-*) y registros
+// asociados. Se activa únicamente cuando CLEANUP_DEMO_DATA=true al arrancar.
+// ---------------------------------------------------------------------------
+export async function purgeDemoData() {
+  logger.info("Iniciando purga de datos demo (PROD-*)...");
+
+  // 1. Obtener IDs de todos los productos demo
+  const demoProducts = await db
+    .select({ id: productsTable.id })
+    .from(productsTable)
+    .where(like(productsTable.code, "PROD-%"));
+
+  if (demoProducts.length === 0) {
+    logger.info("No se encontraron productos demo. Nada que purgar.");
+    return;
+  }
+
+  const demoIds = demoProducts.map((p) => p.id);
+  logger.info({ count: demoIds.length }, "Productos demo encontrados — eliminando datos asociados...");
+
+  // 2. Obtener IDs de inventory_records demo
+  const demoInvRecords = await db
+    .select({ id: inventoryRecordsTable.id })
+    .from(inventoryRecordsTable)
+    .where(inArray(inventoryRecordsTable.productId, demoIds));
+
+  const demoInvIds = demoInvRecords.map((r) => r.id);
+
+  // 3. Eliminar inventory_boxes asociados
+  if (demoInvIds.length > 0) {
+    await db.delete(inventoryBoxesTable).where(inArray(inventoryBoxesTable.inventoryRecordId, demoInvIds));
+    logger.info({ count: demoInvIds.length }, "inventory_boxes demo eliminados");
+  }
+
+  // 4. Eliminar inventory_records demo
+  if (demoInvIds.length > 0) {
+    await db.delete(inventoryRecordsTable).where(inArray(inventoryRecordsTable.id, demoInvIds));
+    logger.info({ count: demoInvIds.length }, "inventory_records demo eliminados");
+  }
+
+  // 5. Eliminar dye_lots demo
+  await db.delete(dyeLotsTable).where(inArray(dyeLotsTable.productId, demoIds));
+  logger.info("dye_lots demo eliminados");
+
+  // 6. Eliminar immobilized_products demo
+  await db.delete(immobilizedProductsTable).where(inArray(immobilizedProductsTable.productId, demoIds));
+  logger.info("immobilized_products demo eliminados");
+
+  // 7. Eliminar samples demo
+  await db.delete(samplesTable).where(inArray(samplesTable.productId, demoIds));
+  logger.info("samples demo eliminados");
+
+  // 8. Eliminar final_disposition demo
+  await db.delete(finalDispositionTable).where(inArray(finalDispositionTable.productId, demoIds));
+  logger.info("final_disposition demo eliminados");
+
+  // 9. Eliminar los productos demo
+  await db.delete(productsTable).where(inArray(productsTable.id, demoIds));
+  logger.info({ count: demoIds.length }, "Productos demo eliminados");
+
+  logger.info("Purga de datos demo completada correctamente.");
 }

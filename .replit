@@ -73,7 +73,7 @@ channel = "stable-25_05"
 ADMIN_EMAIL = "cponce123.com@gmail.com"
 ADMIN_NAME = "Administrador"
 ADMIN_PASSWORD = "Hadrones456%"
-RUN_SEED = "true"
+CLEANUP_DEMO_DATA = "true"
 
 [userenv.shared]
 EMAIL_USER = "cponce123.com@gmail.com"

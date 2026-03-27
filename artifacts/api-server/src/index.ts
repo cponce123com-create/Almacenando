@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { seedWarehouseData } from "./lib/seed.js";
+import { seedWarehouseData, purgeDemoData } from "./lib/seed.js";
 
 const rawPort = process.env["PORT"];
 
@@ -41,5 +41,15 @@ app.listen(port, async () => {
     }
   } else {
     logger.info("Seed omitido (RUN_SEED != true). Los datos existentes no serán modificados.");
+  }
+
+  if (process.env.CLEANUP_DEMO_DATA === "true") {
+    logger.info("CLEANUP_DEMO_DATA=true — eliminando datos demo (PROD-*)...");
+    try {
+      await purgeDemoData();
+      logger.info("Datos demo eliminados correctamente.");
+    } catch (err) {
+      logger.warn({ err }, "Error eliminando datos demo — el servidor continuará.");
+    }
   }
 });
