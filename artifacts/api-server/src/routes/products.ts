@@ -21,7 +21,7 @@ const productSchema = z.object({
   category: z.string().min(1),
   unit: z.string().min(1),
   minimumStock: z.string().default("0"),
-  maximumStock: z.string().optional(),
+  maximumStock: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   msds: z.boolean().default(false),
   controlled: z.boolean().default(false),
   location: z.string().optional(),

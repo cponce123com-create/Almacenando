@@ -29,7 +29,7 @@ const inventorySchema = z.object({
   inputs: z.string().default("0"),
   outputs: z.string().default("0"),
   finalBalance: z.string().default("0"),
-  physicalCount: z.string().optional(),
+  physicalCount: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   notes: z.string().optional(),
 });
 

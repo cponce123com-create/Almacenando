@@ -19,7 +19,7 @@ const dispositionSchema = z.object({
   contractor: z.string().optional(),
   manifestNumber: z.string().optional(),
   certificateNumber: z.string().optional(),
-  cost: z.string().optional(),
+  cost: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   status: z.enum(["pending", "in_progress", "completed", "cancelled"]).default("pending"),
   notes: z.string().optional(),
 });
