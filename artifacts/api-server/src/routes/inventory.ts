@@ -1,8 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { inventoryRecordsTable, productsTable } from "@workspace/db";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { inventoryRecordsTable, productsTable, inventoryBoxesTable } from "@workspace/db";
+import { eq, desc, sql, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
@@ -11,14 +11,25 @@ import { uploadToCloudinary } from "../lib/cloudinary.js";
 
 const router = Router();
 
+const storage = multer.memoryStorage();
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Solo se permiten imágenes"));
   },
 });
+
+// Accept up to 5 box photos (photo0..photo4) + legacy single photo
+const boxUpload = upload.fields([
+  { name: "photo", maxCount: 1 },
+  { name: "photo0", maxCount: 1 },
+  { name: "photo1", maxCount: 1 },
+  { name: "photo2", maxCount: 1 },
+  { name: "photo3", maxCount: 1 },
+  { name: "photo4", maxCount: 1 },
+]);
 
 const inventorySchema = z.object({
   warehouse: z.string().min(1).default("General"),
@@ -31,7 +42,32 @@ const inventorySchema = z.object({
   finalBalance: z.string().default("0"),
   physicalCount: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   notes: z.string().optional(),
+  // JSON array of {weight, lot} objects for up to 5 boxes
+  boxesData: z.string().optional(),
 });
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+type Files = { [fieldname: string]: Express.Multer.File[] };
+
+async function uploadBoxPhotos(files: Files): Promise<(string | null)[]> {
+  const urls: (string | null)[] = [];
+  for (let i = 0; i < 5; i++) {
+    const fieldFiles = files[`photo${i}`];
+    if (fieldFiles && fieldFiles.length > 0) {
+      const result = await uploadToCloudinary(fieldFiles[0]!.buffer, {
+        resource_type: "image",
+        folder: "almacenando/inventario",
+      });
+      urls.push(result.secure_url as string);
+    } else {
+      urls.push(null);
+    }
+  }
+  return urls;
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
 
 router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
@@ -92,6 +128,8 @@ router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
   res.json({ totalProducts, withoutRecords, exact, withDifference: surplus + shortage, surplus, shortage });
 }));
 
+// ── List ──────────────────────────────────────────────────────────────────────
+
 router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
   let query = db.select().from(inventoryRecordsTable).$dynamic();
@@ -99,48 +137,125 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
     query = query.where(eq(inventoryRecordsTable.warehouse, warehouse));
   }
   const records = await query.orderBy(desc(inventoryRecordsTable.recordDate));
+
+  // Attach boxes for all records in one query
+  if (records.length > 0) {
+    const ids = records.map(r => r.id);
+    const boxes = await db.select().from(inventoryBoxesTable)
+      .where(inArray(inventoryBoxesTable.inventoryRecordId, ids))
+      .orderBy(inventoryBoxesTable.inventoryRecordId, inventoryBoxesTable.boxNumber);
+
+    const boxMap = new Map<string, typeof boxes>();
+    for (const box of boxes) {
+      if (!boxMap.has(box.inventoryRecordId)) boxMap.set(box.inventoryRecordId, []);
+      boxMap.get(box.inventoryRecordId)!.push(box);
+    }
+
+    res.json(records.map(r => ({ ...r, boxes: boxMap.get(r.id) ?? [] })));
+    return;
+  }
+
   res.json(records);
 }));
+
+// ── Single ────────────────────────────────────────────────────────────────────
 
 router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const records = await db.select().from(inventoryRecordsTable)
     .where(eq(inventoryRecordsTable.id, id as string)).limit(1);
   if (records.length === 0) { res.status(404).json({ error: "Registro no encontrado" }); return; }
-  res.json(records[0]);
+  const boxes = await db.select().from(inventoryBoxesTable)
+    .where(eq(inventoryBoxesTable.inventoryRecordId, id as string))
+    .orderBy(inventoryBoxesTable.boxNumber);
+  res.json({ ...records[0], boxes });
 }));
+
+// ── Create ────────────────────────────────────────────────────────────────────
 
 router.post(
   "/",
   requireAuth,
   requireRole("supervisor", "admin", "operator"),
-  upload.single("photo"),
+  boxUpload,
   asyncHandler(async (req, res) => {
     const authedReq = req as AuthenticatedRequest;
     const parsed = inventorySchema.safeParse(req.body);
-    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+      return;
+    }
 
-    let photoUrl: string | undefined;
-    if (req.file) {
-      const result = await uploadToCloudinary(req.file.buffer, {
+    const files = (req.files ?? {}) as Files;
+
+    // Parse box entries
+    let boxEntries: { weight: string; lot: string }[] = [];
+    if (parsed.data.boxesData) {
+      try { boxEntries = JSON.parse(parsed.data.boxesData); } catch { /* ignore */ }
+    }
+    const activeBoxes = boxEntries.filter(b => b.weight && parseFloat(b.weight) > 0);
+
+    // Calculate total physicalCount from boxes (if any boxes have data)
+    let physicalCount = parsed.data.physicalCount ?? null;
+    if (activeBoxes.length > 0) {
+      const total = activeBoxes.reduce((sum, b) => sum + (parseFloat(b.weight) || 0), 0);
+      physicalCount = String(total);
+    }
+
+    // Upload box photos
+    const photoUrls = await uploadBoxPhotos(files);
+
+    // Legacy single photo fallback
+    let legacyPhotoUrl: string | null = null;
+    if (files["photo"]?.[0]) {
+      const result = await uploadToCloudinary(files["photo"][0].buffer, {
         resource_type: "image",
         folder: "almacenando/inventario",
       });
-      photoUrl = result.secure_url as string;
+      legacyPhotoUrl = result.secure_url as string;
     }
+    const mainPhotoUrl = photoUrls[0] ?? legacyPhotoUrl;
 
     const id = generateId();
     const [created] = await db.insert(inventoryRecordsTable).values({
       id,
-      ...parsed.data,
-      physicalCount: parsed.data.physicalCount ?? null,
-      photoUrl: photoUrl ?? null,
+      warehouse: parsed.data.warehouse,
+      productId: parsed.data.productId,
+      recordDate: parsed.data.recordDate,
+      responsible: parsed.data.responsible,
+      previousBalance: parsed.data.previousBalance,
+      inputs: parsed.data.inputs,
+      outputs: parsed.data.outputs,
+      finalBalance: parsed.data.finalBalance ?? physicalCount ?? parsed.data.previousBalance,
+      physicalCount: physicalCount ?? null,
+      photoUrl: mainPhotoUrl,
+      notes: parsed.data.notes,
       registeredBy: authedReq.userId,
     }).returning();
 
-    res.status(201).json(created);
+    // Insert box records
+    for (let i = 0; i < boxEntries.length; i++) {
+      const box = boxEntries[i]!;
+      if (!box.weight && !box.lot && !photoUrls[i]) continue;
+      await db.insert(inventoryBoxesTable).values({
+        id: generateId(),
+        inventoryRecordId: id,
+        boxNumber: i + 1,
+        weight: box.weight || null,
+        lot: box.lot || null,
+        photoUrl: photoUrls[i],
+      });
+    }
+
+    const boxes = await db.select().from(inventoryBoxesTable)
+      .where(eq(inventoryBoxesTable.inventoryRecordId, id))
+      .orderBy(inventoryBoxesTable.boxNumber);
+
+    res.status(201).json({ ...created, boxes });
   })
 );
+
+// ── Update ────────────────────────────────────────────────────────────────────
 
 router.put(
   "/:id",
@@ -150,7 +265,10 @@ router.put(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const parsed = inventorySchema.partial().safeParse(req.body);
-    if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+      return;
+    }
 
     let photoUrl: string | undefined;
     if (req.file) {
@@ -162,6 +280,7 @@ router.put(
     }
 
     const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+    delete updateData.boxesData;
     if (photoUrl) updateData.photoUrl = photoUrl;
 
     const [updated] = await db.update(inventoryRecordsTable)
@@ -172,6 +291,8 @@ router.put(
     res.json(updated);
   })
 );
+
+// ── Delete ────────────────────────────────────────────────────────────────────
 
 router.delete(
   "/:id",

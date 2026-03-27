@@ -1,6 +1,7 @@
 export * from "./users";
 export * from "./products";
 export * from "./inventory-records";
+export * from "./inventory-boxes";
 export * from "./balance-records";
 export * from "./cuadre-records";
 export * from "./immobilized-products";

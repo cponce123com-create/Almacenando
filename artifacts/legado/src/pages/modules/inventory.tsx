@@ -14,34 +14,38 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   ClipboardList, Plus, Trash2, Loader2, AlertCircle,
   TrendingUp, TrendingDown, Minus, Search, X, ChevronsUpDown,
-  Camera, ImageOff, Eye, PackageX, CheckCircle2, AlertTriangle,
+  Camera, ImageOff, Eye, PackageX, CheckCircle2, AlertTriangle, Box,
 } from "lucide-react";
 
-interface Product { id: string; code: string; name: string; unit: string; }
+const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QD"] as const;
+const NUM_BOXES = 5;
+
+interface Product { id: string; code: string; name: string; unit: string; warehouse: string; }
+interface InventoryBox {
+  id: string; inventoryRecordId: string; boxNumber: number;
+  weight: string | null; lot: string | null; photoUrl: string | null; createdAt: string;
+}
 interface InventoryRecord {
-  id: string; productId: string; recordDate: string;
+  id: string; warehouse: string; productId: string; recordDate: string;
   previousBalance: string; inputs: string; outputs: string; finalBalance: string;
-  physicalCount?: string | null;
-  photoUrl?: string | null;
-  notes?: string | null; registeredBy: string; createdAt: string;
+  physicalCount?: string | null; photoUrl?: string | null; notes?: string | null;
+  registeredBy: string; createdAt: string; boxes?: InventoryBox[];
 }
 interface InventoryStats {
-  totalProducts: number;
-  withoutRecords: number;
-  exact: number;
-  withDifference: number;
-  surplus: number;
-  shortage: number;
+  totalProducts: number; withoutRecords: number; exact: number;
+  withDifference: number; surplus: number; shortage: number;
 }
+interface BalanceRecord {
+  id: string; code: string; quantity: string; productDescription: string; unit: string; balanceDate: string;
+}
+interface BoxEntry { weight: string; lot: string; }
 
-// ── API helper ───────────────────────────────────────────────────────────────
+// ── API helpers ───────────────────────────────────────────────────────────────
 const apiJson = async (path: string, opts?: RequestInit) => {
   const res = await fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
   return res.json();
 };
-
-// Para subir con foto (multipart/form-data) — NO ponemos Content-Type, el browser lo pone solo
 const apiForm = async (path: string, formData: FormData, method = "POST") => {
   const res = await fetch(path, { method, headers: getAuthHeaders(), body: formData });
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
@@ -49,8 +53,9 @@ const apiForm = async (path: string, formData: FormData, method = "POST") => {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const emptyBoxes = (): BoxEntry[] => Array.from({ length: NUM_BOXES }, () => ({ weight: "", lot: "" }));
 
-// ── ProductCombobox ──────────────────────────────────────────────────────────
+// ── ProductCombobox ───────────────────────────────────────────────────────────
 function ProductCombobox({ products, value, onChange }: {
   products: Product[]; value: string; onChange: (id: string) => void;
 }) {
@@ -128,7 +133,7 @@ function ProductCombobox({ products, value, onChange }: {
   );
 }
 
-// ── PhotoViewer modal ────────────────────────────────────────────────────────
+// ── PhotoViewer ───────────────────────────────────────────────────────────────
 function PhotoViewer({ url, onClose }: { url: string; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={onClose}>
@@ -138,14 +143,15 @@ function PhotoViewer({ url, onClose }: { url: string; onClose: () => void }) {
           <X className="w-5 h-5" />
         </button>
         <img src={url} alt="Foto de etiqueta" className="w-full rounded-xl shadow-2xl object-contain max-h-[80vh]" />
-        <p className="text-center text-white text-xs mt-2 opacity-70">Foto de etiqueta / último lote</p>
       </div>
     </div>
   );
 }
 
 // ── CoverageStats ─────────────────────────────────────────────────────────────
-function CoverageStats({ stats, isLoading }: { stats: InventoryStats | undefined; isLoading: boolean }) {
+function CoverageStats({ stats, isLoading, warehouse }: {
+  stats: InventoryStats | undefined; isLoading: boolean; warehouse: string;
+}) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -166,8 +172,8 @@ function CoverageStats({ stats, isLoading }: { stats: InventoryStats | undefined
 
   const cards = [
     {
-      label: "Sin cuadre registrado",
-      sublabel: `${stats.totalProducts} productos en total · ${pctCovered}% cubiertos`,
+      label: "Sin inventario registrado",
+      sublabel: `${stats.totalProducts} productos en ${warehouse} · ${pctCovered}% cubiertos`,
       value: stats.withoutRecords,
       icon: <PackageX className="w-5 h-5 text-slate-400" />,
       bg: stats.withoutRecords === 0 ? "bg-emerald-50 border-emerald-100" : "bg-amber-50 border-amber-100",
@@ -177,7 +183,7 @@ function CoverageStats({ stats, isLoading }: { stats: InventoryStats | undefined
         : <span className="text-xs font-medium text-amber-600 bg-amber-100 rounded-full px-2 py-0.5">Pendientes</span>,
     },
     {
-      label: "Exacto en último cuadre",
+      label: "Conteo exacto",
       sublabel: "Físico coincide con sistema",
       value: stats.exact,
       icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
@@ -230,95 +236,203 @@ function CoverageStats({ stats, isLoading }: { stats: InventoryStats | undefined
   );
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
-export default function CuadredeInventarioPage() {
+// ── BoxesDialog ───────────────────────────────────────────────────────────────
+function BoxesDialog({ record, productName, unit, onClose, onViewPhoto }: {
+  record: InventoryRecord | null; productName: string; unit: string;
+  onClose: () => void; onViewPhoto: (url: string) => void;
+}) {
+  if (!record) return null;
+  const boxes = record.boxes ?? [];
+  const activeBoxes = boxes.filter(b => b.weight || b.lot || b.photoUrl);
+  return (
+    <Dialog open={!!record} onOpenChange={o => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Box className="w-5 h-5 text-emerald-600" />
+            Detalle de cajas
+          </DialogTitle>
+          <p className="text-sm text-slate-500 mt-0.5">{productName} · {record.recordDate}</p>
+        </DialogHeader>
+        {activeBoxes.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-8">No hay datos de cajas registrados</p>
+        ) : (
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+            {activeBoxes.map(box => (
+              <div key={box.id} className="flex items-center gap-3 bg-slate-50 rounded-lg px-4 py-3">
+                <span className="text-xs font-bold text-slate-400 w-14">Caja {box.boxNumber}</span>
+                <div className="flex-1 min-w-0">
+                  {box.weight && (
+                    <p className="text-sm font-semibold text-slate-800">
+                      {parseFloat(box.weight).toFixed(2)} <span className="text-xs font-normal text-slate-500">{unit}</span>
+                    </p>
+                  )}
+                  {box.lot && <p className="text-xs text-slate-500 truncate">{box.lot}</p>}
+                </div>
+                {box.photoUrl ? (
+                  <button onClick={() => onViewPhoto(box.photoUrl!)}
+                    className="shrink-0 w-12 h-12 rounded-lg overflow-hidden border border-slate-200 hover:opacity-80 transition-opacity">
+                    <img src={box.photoUrl} alt="Foto caja" className="w-full h-full object-cover" />
+                  </button>
+                ) : (
+                  <div className="shrink-0 w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center">
+                    <ImageOff className="w-4 h-4 text-slate-300" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cerrar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+export default function TomaDeInventarioPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
   const canWrite = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
   const canDelete = user?.role && ["admin", "supervisor"].includes(user.role);
 
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>("Q1");
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<InventoryRecord | null>(null);
+  const [viewBoxesRecord, setViewBoxesRecord] = useState<InventoryRecord | null>(null);
   const [filterProduct, setFilterProduct] = useState("all");
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
-  // Estado del formulario
+  // Form state
   const [form, setForm] = useState({
     productId: "",
     recordDate: today(),
-    previousBalance: "",   // Saldo actual en sistema
-    physicalCount: "",     // Cantidad en físico
+    previousBalance: "",
     notes: "",
   });
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [boxes, setBoxes] = useState<BoxEntry[]>(emptyBoxes());
+  const [boxPhotos, setBoxPhotos] = useState<(File | null)[]>(Array(NUM_BOXES).fill(null));
+  const [boxPreviews, setBoxPreviews] = useState<(string | null)[]>(Array(NUM_BOXES).fill(null));
+  const fileRef0 = useRef<HTMLInputElement>(null);
+  const fileRef1 = useRef<HTMLInputElement>(null);
+  const fileRef2 = useRef<HTMLInputElement>(null);
+  const fileRef3 = useRef<HTMLInputElement>(null);
+  const fileRef4 = useRef<HTMLInputElement>(null);
+  const fileRefs = [fileRef0, fileRef1, fileRef2, fileRef3, fileRef4];
 
-  // Diferencia calculada automáticamente
-  const difference = useMemo(() => {
-    const sys = parseFloat(form.previousBalance) || 0;
-    const phys = parseFloat(form.physicalCount) || 0;
-    if (!form.previousBalance || !form.physicalCount) return null;
-    return phys - sys;
-  }, [form.previousBalance, form.physicalCount]);
+  const setField = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  const setField = (k: keyof typeof form, v: string) =>
-    setForm(f => ({ ...f, [k]: v }));
+  const updateBox = (i: number, key: keyof BoxEntry, val: string) => {
+    setBoxes(prev => prev.map((b, idx) => idx === i ? { ...b, [key]: val } : b));
+  };
 
-  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBoxPhoto = (i: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPhotoFile(file);
+    setBoxPhotos(prev => prev.map((p, idx) => idx === i ? file : p));
     const reader = new FileReader();
-    reader.onload = ev => setPhotoPreview(ev.target?.result as string);
+    reader.onload = ev => setBoxPreviews(prev => prev.map((p, idx) => idx === i ? (ev.target?.result as string) : p));
     reader.readAsDataURL(file);
   };
 
+  const clearBoxPhoto = (i: number) => {
+    setBoxPhotos(prev => prev.map((p, idx) => idx === i ? null : p));
+    setBoxPreviews(prev => prev.map((p, idx) => idx === i ? null : p));
+    if (fileRefs[i].current) fileRefs[i].current!.value = "";
+  };
+
+  const totalPhysical = useMemo(
+    () => boxes.reduce((sum, b) => sum + (parseFloat(b.weight) || 0), 0),
+    [boxes]
+  );
+  const hasBoxData = boxes.some(b => b.weight || b.lot) || boxPhotos.some(Boolean);
+  const difference = hasBoxData && form.previousBalance
+    ? totalPhysical - (parseFloat(form.previousBalance) || 0)
+    : null;
+
   const resetForm = () => {
-    setForm({ productId: "", recordDate: today(), previousBalance: "", physicalCount: "", notes: "" });
-    setPhotoFile(null);
-    setPhotoPreview(null);
+    setForm({ productId: "", recordDate: today(), previousBalance: "", notes: "" });
+    setBoxes(emptyBoxes());
+    setBoxPhotos(Array(NUM_BOXES).fill(null));
+    setBoxPreviews(Array(NUM_BOXES).fill(null));
+    fileRefs.forEach(r => { if (r.current) r.current.value = ""; });
   };
 
   // Queries
   const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"], queryFn: () => apiJson("/api/products"),
+    queryKey: ["/api/products", selectedWarehouse],
+    queryFn: () => apiJson(`/api/products?warehouse=${selectedWarehouse}`),
   });
+
   const { data: records = [], isLoading, isError } = useQuery<InventoryRecord[]>({
-    queryKey: ["/api/inventory"], queryFn: () => apiJson("/api/inventory"),
+    queryKey: ["/api/inventory", selectedWarehouse],
+    queryFn: () => apiJson(`/api/inventory?warehouse=${selectedWarehouse}`),
   });
+
   const { data: stats, isLoading: statsLoading } = useQuery<InventoryStats>({
-    queryKey: ["/api/inventory/stats"], queryFn: () => apiJson("/api/inventory/stats"),
+    queryKey: ["/api/inventory/stats", selectedWarehouse],
+    queryFn: () => apiJson(`/api/inventory/stats?warehouse=${selectedWarehouse}`),
   });
+
+  const { data: latestBalances = [] } = useQuery<BalanceRecord[]>({
+    queryKey: ["/api/balances/latest", selectedWarehouse],
+    queryFn: () => apiJson(`/api/balances/latest?warehouse=${selectedWarehouse}`),
+  });
+
+  // Build balance lookup by code
+  const balanceByCode = useMemo(() =>
+    Object.fromEntries(latestBalances.map(b => [b.code, b])),
+    [latestBalances]
+  );
+
+  // Auto-fill previous balance when product changes
+  useEffect(() => {
+    if (!form.productId) { setField("previousBalance", ""); return; }
+    const product = products.find(p => p.id === form.productId);
+    if (!product) return;
+    const balance = balanceByCode[product.code];
+    setField("previousBalance", balance ? String(balance.quantity) : "");
+  }, [form.productId, products, balanceByCode]);
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() =>
     filterProduct === "all" ? records : records.filter(r => r.productId === filterProduct),
     [records, filterProduct]);
 
-  // Mutations
+  const getDiff = (r: InventoryRecord) => {
+    const sys = parseFloat(r.previousBalance) || 0;
+    const phys = r.physicalCount != null ? parseFloat(r.physicalCount) : null;
+    return phys !== null ? phys - sys : null;
+  };
+
+  // Mutation
   const createMutation = useMutation({
     mutationFn: () => {
       const fd = new FormData();
       fd.append("productId", form.productId);
+      fd.append("warehouse", selectedWarehouse);
       fd.append("recordDate", form.recordDate);
       fd.append("previousBalance", form.previousBalance || "0");
       fd.append("inputs", "0");
       fd.append("outputs", "0");
-      // finalBalance = physicalCount (lo que hay en físico ES el saldo final real)
-      const physVal = form.physicalCount || form.previousBalance || "0";
-      fd.append("finalBalance", physVal);
-      fd.append("physicalCount", form.physicalCount || "");
+      fd.append("finalBalance", hasBoxData ? String(totalPhysical) : form.previousBalance || "0");
+      fd.append("physicalCount", hasBoxData ? String(totalPhysical) : "");
       fd.append("notes", form.notes);
-      if (photoFile) fd.append("photo", photoFile);
+      fd.append("boxesData", JSON.stringify(boxes));
+      // Attach photos
+      boxPhotos.forEach((photo, i) => {
+        if (photo) fd.append(`photo${i}`, photo);
+      });
       return apiForm("/api/inventory", fd, "POST");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
       qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
       qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
-      toast({ title: "Cuadre guardado", description: "El cuadre de inventario fue registrado correctamente." });
+      toast({ title: "Inventario guardado", description: "El registro de inventario fue guardado correctamente." });
       setShowForm(false);
       resetForm();
     },
@@ -336,60 +450,59 @@ export default function CuadredeInventarioPage() {
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); setDeleteTarget(null); },
   });
 
-  // Stats de la tabla (registros totales, con foto, etc.)
-  const withDiff = records.filter(r => {
-    const sys = parseFloat(r.previousBalance) || 0;
-    const phys = r.physicalCount != null ? parseFloat(r.physicalCount) : null;
-    return phys !== null && Math.abs(phys - sys) >= 0.01;
-  }).length;
-
-  const getDiff = (r: InventoryRecord) => {
-    const sys = parseFloat(r.previousBalance) || 0;
-    const phys = r.physicalCount != null ? parseFloat(r.physicalCount) : null;
-    return phys !== null ? phys - sys : null;
-  };
+  const canSubmit = form.productId && (hasBoxData || form.previousBalance);
 
   return (
     <AppLayout>
       <div className="space-y-6">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-emerald-100 flex items-center justify-center">
               <ClipboardList className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Cuadre de Inventario</h1>
-              <p className="text-slate-500 text-sm">Registro diario · Saldo en sistema vs. conteo físico</p>
+              <h1 className="text-2xl font-bold text-slate-900">Toma de Inventario</h1>
+              <p className="text-slate-500 text-sm">Registro de existencias por producto y lote</p>
             </div>
           </div>
-          {canWrite && (
-            <Button onClick={() => setShowForm(true)} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
-              <Plus className="w-4 h-4" /> Nuevo Cuadre
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            <Select value={selectedWarehouse} onValueChange={v => { setSelectedWarehouse(v); setFilterProduct("all"); }}>
+              <SelectTrigger className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WAREHOUSES.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {canWrite && (
+              <Button onClick={() => setShowForm(true)} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+                <Plus className="w-4 h-4" /> Nuevo Registro
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* ── Cobertura por producto (nuevo) ── */}
+        {/* Stats por almacén */}
         <div>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 ml-1">
-            Estado actual por producto
+            Estado del almacén {selectedWarehouse}
           </p>
-          <CoverageStats stats={stats} isLoading={statsLoading} />
+          <CoverageStats stats={stats} isLoading={statsLoading} warehouse={selectedWarehouse} />
         </div>
 
-        {/* ── Stats de registros ── */}
+        {/* Resumen de registros */}
         <div>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 ml-1">
-            Registros de cuadres
+            Registros del almacén {selectedWarehouse}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: "Total Registros", val: records.length, color: "text-slate-900" },
-              { label: "Con Diferencias", val: withDiff, color: "text-amber-600" },
-              { label: "Sin Diferencias", val: records.length - withDiff, color: "text-emerald-600" },
-              { label: "Con Foto", val: records.filter(r => r.photoUrl).length, color: "text-violet-600" },
+              { label: "Con Diferencia", val: records.filter(r => { const d = getDiff(r); return d !== null && Math.abs(d) >= 0.01; }).length, color: "text-amber-600" },
+              { label: "Sin Diferencia", val: records.filter(r => { const d = getDiff(r); return d !== null && Math.abs(d) < 0.01; }).length, color: "text-emerald-600" },
+              { label: "Con Cajas", val: records.filter(r => (r.boxes?.length ?? 0) > 0).length, color: "text-violet-600" },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-slate-100 p-4">
                 <p className="text-xs text-slate-500 mb-1">{s.label}</p>
@@ -399,7 +512,7 @@ export default function CuadredeInventarioPage() {
           </div>
         </div>
 
-        {/* Filtro */}
+        {/* Filtro por producto */}
         <div className="bg-white rounded-xl border border-slate-100 p-4">
           <Select value={filterProduct} onValueChange={setFilterProduct}>
             <SelectTrigger className="w-72">
@@ -426,7 +539,7 @@ export default function CuadredeInventarioPage() {
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
               <ClipboardList className="w-10 h-10" />
-              <p className="text-sm font-medium">No hay registros de inventario aún</p>
+              <p className="text-sm font-medium">No hay registros de inventario en {selectedWarehouse}</p>
               {canWrite && (
                 <Button variant="outline" size="sm" onClick={() => setShowForm(true)} className="gap-2 mt-1">
                   <Plus className="w-4 h-4" /> Crear primer registro
@@ -441,17 +554,18 @@ export default function CuadredeInventarioPage() {
                     <TableHead className="font-semibold text-slate-600">Fecha</TableHead>
                     <TableHead className="font-semibold text-slate-600">Producto</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-right">Saldo Sistema</TableHead>
-                    <TableHead className="font-semibold text-slate-600 text-right">Físico</TableHead>
+                    <TableHead className="font-semibold text-slate-600 text-right">Total Físico</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Diferencia</TableHead>
+                    <TableHead className="font-semibold text-slate-600 text-center">Cajas</TableHead>
                     <TableHead className="font-semibold text-slate-600">Observaciones</TableHead>
-                    <TableHead className="font-semibold text-slate-600 text-center">Foto</TableHead>
-                    {canDelete && <TableHead className="w-12"></TableHead>}
+                    {canDelete && <TableHead className="w-12" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map(r => {
                     const d = getDiff(r);
                     const product = productMap[r.productId];
+                    const boxCount = (r.boxes ?? []).filter(b => b.weight || b.lot || b.photoUrl).length;
                     return (
                       <TableRow key={r.id} className="hover:bg-slate-50/70">
                         <TableCell className="text-sm text-slate-700 font-medium whitespace-nowrap">{r.recordDate}</TableCell>
@@ -461,7 +575,7 @@ export default function CuadredeInventarioPage() {
                             <p className="text-xs text-slate-400">{product?.code} · {product?.unit}</p>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm text-slate-600">
+                        <TableCell className="text-right font-mono text-sm text-slate-500">
                           {parseFloat(r.previousBalance).toFixed(2)}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm font-bold text-slate-900">
@@ -486,18 +600,19 @@ export default function CuadredeInventarioPage() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm text-slate-500 max-w-[200px] truncate">
-                          {r.notes || <span className="text-slate-300">—</span>}
-                        </TableCell>
                         <TableCell className="text-center">
-                          {r.photoUrl ? (
-                            <button onClick={() => setViewPhoto(r.photoUrl!)}
-                              className="inline-flex items-center gap-1 text-violet-600 hover:text-violet-800 text-xs font-medium bg-violet-50 hover:bg-violet-100 rounded-full px-2 py-0.5 transition-colors">
-                              <Eye className="w-3 h-3" /> Ver
+                          {boxCount > 0 ? (
+                            <button
+                              onClick={() => setViewBoxesRecord(r)}
+                              className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-xs font-medium bg-emerald-50 hover:bg-emerald-100 rounded-full px-2 py-0.5 transition-colors">
+                              <Box className="w-3 h-3" /> {boxCount}
                             </button>
                           ) : (
-                            <ImageOff className="w-4 h-4 text-slate-200 mx-auto" />
+                            <span className="text-slate-300 text-xs">—</span>
                           )}
+                        </TableCell>
+                        <TableCell className="text-sm text-slate-500 max-w-[180px] truncate">
+                          {r.notes || <span className="text-slate-300">—</span>}
                         </TableCell>
                         {canDelete && (
                           <TableCell className="text-right">
@@ -516,131 +631,163 @@ export default function CuadredeInventarioPage() {
           )}
         </div>
 
-        {/* ── Dialog Nuevo Cuadre ── */}
+        {/* ── Formulario nuevo registro ── */}
         <Dialog open={showForm} onOpenChange={v => { setShowForm(v); if (!v) resetForm(); }}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <ClipboardList className="w-5 h-5 text-emerald-600" /> Nuevo Cuadre de Inventario
+                <ClipboardList className="w-5 h-5 text-emerald-600" /> Nuevo Registro de Inventario
+                <span className="ml-auto text-xs font-normal text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{selectedWarehouse}</span>
               </DialogTitle>
             </DialogHeader>
 
             <div className="space-y-5">
 
-              {/* 1. Producto */}
-              <div className="space-y-1.5">
-                <Label>Producto <span className="text-red-500">*</span></Label>
-                <ProductCombobox products={products} value={form.productId} onChange={v => setField("productId", v)} />
-                {form.productId && (
-                  <p className="text-xs text-slate-400 mt-1">
-                    Unidad: <span className="font-medium text-slate-600">{productMap[form.productId]?.unit}</span>
-                  </p>
-                )}
-              </div>
-
-              {/* 2. Fecha */}
-              <div className="space-y-1.5">
-                <Label>Fecha del Cuadre <span className="text-red-500">*</span></Label>
-                <Input type="date" value={form.recordDate} onChange={e => setField("recordDate", e.target.value)} />
-              </div>
-
-              {/* 3. Saldo actual en sistema + Físico */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Producto + fecha */}
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-end">
                 <div className="space-y-1.5">
-                  <Label>Saldo en Sistema <span className="text-red-500">*</span></Label>
-                  <p className="text-xs text-slate-400">Lo que dice el sistema</p>
-                  <Input type="number" step="0.01" min="0" placeholder="0.00"
-                    value={form.previousBalance}
-                    onChange={e => setField("previousBalance", e.target.value)} />
+                  <Label>Producto <span className="text-red-500">*</span></Label>
+                  <ProductCombobox products={products} value={form.productId} onChange={v => setField("productId", v)} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Cantidad en Físico <span className="text-red-500">*</span></Label>
-                  <p className="text-xs text-slate-400">Lo que encontraste en almacén</p>
-                  <Input type="number" step="0.01" min="0" placeholder="0.00"
-                    value={form.physicalCount}
-                    onChange={e => setField("physicalCount", e.target.value)} />
+                  <Label>Fecha</Label>
+                  <Input type="date" value={form.recordDate} onChange={e => setField("recordDate", e.target.value)} className="w-40" />
                 </div>
               </div>
 
-              {/* 4. Diferencia calculada */}
-              {difference !== null && (
-                <div className={`rounded-lg p-3 flex items-center justify-between border ${
-                  Math.abs(difference) < 0.01
-                    ? "bg-emerald-50 border-emerald-100"
-                    : difference > 0
-                    ? "bg-blue-50 border-blue-100"
-                    : "bg-red-50 border-red-100"
-                }`}>
+              {/* Saldo en sistema (auto-cargado) */}
+              {form.productId && (
+                <div className="bg-slate-50 rounded-lg px-4 py-3 flex items-center justify-between border border-slate-100">
                   <div>
-                    <p className="text-xs font-medium text-slate-500">Diferencia encontrada</p>
+                    <p className="text-xs font-semibold text-slate-500">Saldo en sistema (último SA)</p>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      {Math.abs(difference) < 0.01
-                        ? "El físico coincide con el sistema ✓"
-                        : difference > 0
-                        ? "Hay más producto del que indica el sistema"
-                        : "Falta producto respecto al sistema"}
+                      {productMap[form.productId]?.unit ?? ""}
+                      {form.previousBalance ? "" : " · Sin saldo actualizado registrado"}
                     </p>
                   </div>
-                  <span className={`text-xl font-bold ${
-                    Math.abs(difference) < 0.01 ? "text-emerald-700"
-                    : difference > 0 ? "text-blue-700"
-                    : "text-red-600"
-                  }`}>
-                    {difference > 0 ? "+" : ""}{difference.toFixed(2)}
-                    {form.productId && ` ${productMap[form.productId]?.unit ?? ""}`}
+                  <span className="text-2xl font-bold text-slate-800 font-mono">
+                    {form.previousBalance ? parseFloat(form.previousBalance).toFixed(2) : <span className="text-slate-300">—</span>}
                   </span>
                 </div>
               )}
 
-              {/* 5. Observaciones */}
-              <div className="space-y-1.5">
-                <Label>Observaciones</Label>
-                <Textarea
-                  placeholder="Anota cualquier detalle: lote que estás usando, condiciones del almacén, motivo de diferencia, etc."
-                  value={form.notes}
-                  onChange={e => setField("notes", e.target.value)}
-                  rows={3}
-                  className="resize-none"
-                />
+              {/* Tabla de cajas */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <Label className="flex items-center gap-2">
+                    <Box className="w-4 h-4 text-emerald-600" /> Cajas / Lotes
+                  </Label>
+                  <span className="text-xs text-slate-400">Peso · Lote o Observación · Foto</span>
+                </div>
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  {/* Header */}
+                  <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-0 bg-slate-50 border-b border-slate-200 px-4 py-2">
+                    <span className="text-xs font-semibold text-slate-400">#</span>
+                    <span className="text-xs font-semibold text-slate-500">Peso / Cantidad</span>
+                    <span className="text-xs font-semibold text-slate-500">Lote / Observación</span>
+                    <span className="text-xs font-semibold text-slate-500 text-center">Foto</span>
+                  </div>
+                  {boxes.map((box, i) => (
+                    <div key={i} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-2 items-center px-4 py-2.5 border-b border-slate-100 last:border-0">
+                      <span className="text-xs font-bold text-slate-400">{i + 1}</span>
+                      <Input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        placeholder="0.00"
+                        value={box.weight}
+                        onChange={e => updateBox(i, "weight", e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <Input
+                        type="text"
+                        placeholder="Lote, fecha venc., observación..."
+                        value={box.lot}
+                        onChange={e => updateBox(i, "lot", e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                      <div className="flex items-center justify-center">
+                        <input
+                          ref={fileRefs[i]}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={e => handleBoxPhoto(i, e)}
+                        />
+                        {boxPreviews[i] ? (
+                          <div className="relative group">
+                            <button
+                              type="button"
+                              onClick={() => setViewPhoto(boxPreviews[i]!)}
+                              className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200">
+                              <img src={boxPreviews[i]!} alt="preview" className="w-full h-full object-cover" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => clearBoxPhoto(i)}
+                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => fileRefs[i].current?.click()}
+                            className="w-9 h-9 border border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-300 hover:border-emerald-400 hover:text-emerald-500 transition-colors">
+                            <Camera className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* 6. Foto de etiqueta */}
-              <div className="space-y-1.5">
-                <Label className="flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-violet-500" />
-                  Foto de Etiqueta
-                  <span className="text-xs text-slate-400 font-normal">(opcional — muestra el lote que estás usando)</span>
-                </Label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={handlePhotoChange}
-                />
-                {photoPreview ? (
-                  <div className="relative">
-                    <img src={photoPreview} alt="Vista previa" className="w-full h-40 object-cover rounded-lg border border-slate-200" />
-                    <button
-                      type="button"
-                      onClick={() => { setPhotoFile(null); setPhotoPreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                      className="absolute top-2 right-2 bg-white rounded-full p-1 shadow-md text-slate-600 hover:text-red-600">
-                      <X className="w-4 h-4" />
-                    </button>
-                    <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur rounded-full px-2 py-0.5 text-xs text-slate-600">
-                      {photoFile?.name}
-                    </div>
+              {/* Total y diferencia */}
+              {hasBoxData && (
+                <div className={`rounded-lg p-3 flex items-center justify-between border ${
+                  difference === null ? "bg-slate-50 border-slate-100"
+                  : Math.abs(difference) < 0.01 ? "bg-emerald-50 border-emerald-100"
+                  : difference > 0 ? "bg-blue-50 border-blue-100"
+                  : "bg-red-50 border-red-100"
+                }`}>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600">
+                      Total físico: <span className="font-mono text-slate-900">{totalPhysical.toFixed(3)} {productMap[form.productId]?.unit ?? ""}</span>
+                    </p>
+                    {difference !== null && (
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {Math.abs(difference) < 0.01
+                          ? "El físico coincide con el sistema ✓"
+                          : difference > 0
+                          ? "Hay más producto del que indica el sistema"
+                          : "Falta producto respecto al sistema"}
+                      </p>
+                    )}
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full h-24 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center gap-2 text-slate-400 hover:border-violet-300 hover:text-violet-500 transition-colors">
-                    <Camera className="w-6 h-6" />
-                    <span className="text-xs">Toca para tomar foto o elegir imagen</span>
-                  </button>
-                )}
+                  {difference !== null && (
+                    <span className={`text-xl font-bold font-mono ${
+                      Math.abs(difference) < 0.01 ? "text-emerald-700"
+                      : difference > 0 ? "text-blue-700"
+                      : "text-red-600"
+                    }`}>
+                      {difference > 0 ? "+" : ""}{difference.toFixed(3)}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Observaciones generales */}
+              <div className="space-y-1.5">
+                <Label>Observaciones generales</Label>
+                <Textarea
+                  placeholder="Observaciones adicionales del conteo..."
+                  value={form.notes}
+                  onChange={e => setField("notes", e.target.value)}
+                  rows={2}
+                  className="resize-none"
+                />
               </div>
 
             </div>
@@ -651,23 +798,32 @@ export default function CuadredeInventarioPage() {
               </Button>
               <Button
                 onClick={() => createMutation.mutate()}
-                disabled={createMutation.isPending || !form.productId || !form.previousBalance || !form.physicalCount}
+                disabled={createMutation.isPending || !canSubmit}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Guardar Cuadre
+                Guardar Registro
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-        {/* ── AlertDialog Eliminar ── */}
+        {/* ── Detalle de cajas ── */}
+        <BoxesDialog
+          record={viewBoxesRecord}
+          productName={viewBoxesRecord ? (productMap[viewBoxesRecord.productId]?.name ?? "") : ""}
+          unit={viewBoxesRecord ? (productMap[viewBoxesRecord.productId]?.unit ?? "") : ""}
+          onClose={() => setViewBoxesRecord(null)}
+          onViewPhoto={url => setViewPhoto(url)}
+        />
+
+        {/* ── Eliminar ── */}
         <AlertDialog open={!!deleteTarget} onOpenChange={o => { if (!o) setDeleteTarget(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>¿Eliminar registro?</AlertDialogTitle>
               <AlertDialogDescription>
-                Se eliminará el cuadre del {deleteTarget?.recordDate}. Esta acción no se puede deshacer.
+                Se eliminará el registro del {deleteTarget?.recordDate}. Esta acción no se puede deshacer.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
