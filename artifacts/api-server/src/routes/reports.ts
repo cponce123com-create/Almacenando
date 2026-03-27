@@ -240,10 +240,10 @@ router.get("/export/:type", requireAuth, asyncHandler(async (req, res) => {
       .leftJoin(productsTable, sql`${inventoryRecordsTable.productId} = ${productsTable.id}`)
       .orderBy(desc(inventoryRecordsTable.recordDate));
 
-    // Last consumption per product
+    // Last inventory record date per product
     const lcRows = await db.execute(sql`
       SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
-      FROM inventory_records ir WHERE ir.outputs::numeric > 0
+      FROM inventory_records ir
       GROUP BY ir.product_id
     `);
     const lcMapRep = new Map<string, string>();

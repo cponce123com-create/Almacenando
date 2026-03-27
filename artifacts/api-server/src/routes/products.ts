@@ -104,11 +104,10 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   }
   const products = await query.orderBy(productsTable.code);
 
-  // Last consumption date per product
+  // Last inventory record date per product
   const lcRows = await db.execute(sql`
     SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
     FROM inventory_records ir
-    WHERE ir.outputs::numeric > 0
     GROUP BY ir.product_id
   `);
   const lcMap = new Map<string, string>();

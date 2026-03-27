@@ -47,8 +47,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
       SELECT p.code, MAX(ir.record_date) AS last_consumption_date
       FROM inventory_records ir
       JOIN products p ON ir.product_id = p.id
-      WHERE ir.outputs::numeric > 0
-        AND p.code = ANY(${codes})
+      WHERE p.code = ANY(${codes})
       GROUP BY p.code
     `);
     for (const row of lcRows.rows as { code: string; last_consumption_date: string | null }[]) {
