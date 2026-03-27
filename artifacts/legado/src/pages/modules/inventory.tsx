@@ -41,6 +41,10 @@ interface BalanceRecord {
 }
 interface BoxEntry { weight: string; lot: string; }
 
+// Stable empty arrays to avoid recreating references on every render (prevents infinite loops in useEffect)
+const EMPTY_PRODUCTS: Product[] = [];
+const EMPTY_BALANCES: BalanceRecord[] = [];
+
 // ── API helpers ───────────────────────────────────────────────────────────────
 const apiJson = async (path: string, opts?: RequestInit) => {
   const res = await fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
@@ -363,7 +367,7 @@ export default function TomaDeInventarioPage() {
   };
 
   // Queries
-  const { data: products = [] } = useQuery<Product[]>({
+  const { data: products = EMPTY_PRODUCTS } = useQuery<Product[]>({
     queryKey: ["/api/products", selectedWarehouse],
     queryFn: () => apiJson(`/api/products?warehouse=${selectedWarehouse}`),
   });
@@ -378,7 +382,7 @@ export default function TomaDeInventarioPage() {
     queryFn: () => apiJson(`/api/inventory/stats?warehouse=${selectedWarehouse}`),
   });
 
-  const { data: latestBalances = [] } = useQuery<BalanceRecord[]>({
+  const { data: latestBalances = EMPTY_BALANCES } = useQuery<BalanceRecord[]>({
     queryKey: ["/api/balances/latest", selectedWarehouse],
     queryFn: () => apiJson(`/api/balances/latest?warehouse=${selectedWarehouse}`),
   });
@@ -391,11 +395,16 @@ export default function TomaDeInventarioPage() {
 
   // Auto-fill previous balance when product changes
   useEffect(() => {
-    if (!form.productId) { setField("previousBalance", ""); return; }
+    if (!form.productId) {
+      if (form.previousBalance !== "") setField("previousBalance", "");
+      return;
+    }
     const product = products.find(p => p.id === form.productId);
     if (!product) return;
     const balance = balanceByCode[product.code];
-    setField("previousBalance", balance ? String(balance.quantity) : "");
+    const next = balance ? String(balance.quantity) : "";
+    if (next !== form.previousBalance) setField("previousBalance", next);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.productId, products, balanceByCode]);
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
