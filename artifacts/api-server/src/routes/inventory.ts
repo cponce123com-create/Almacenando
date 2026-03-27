@@ -1,8 +1,8 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { inventoryRecordsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { inventoryRecordsTable, productsTable } from "@workspace/db";
+import { eq, desc, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
@@ -32,6 +32,79 @@ const inventorySchema = z.object({
   physicalCount: z.string().optional(),        // Cantidad encontrada en físico
   notes: z.string().optional(),
 });
+
+// ── GET estadísticas de cobertura de cuadres ─────────────────────────────────
+router.get("/stats", requireAuth, asyncHandler(async (_req, res) => {
+  // Todos los productos activos
+  const allProducts = await db
+    .select({ id: productsTable.id })
+    .from(productsTable)
+    .where(eq(productsTable.status, "active"));
+
+  const totalProducts = allProducts.length;
+
+  if (totalProducts === 0) {
+    res.json({ totalProducts: 0, withoutRecords: 0, exact: 0, withDifference: 0, surplus: 0, shortage: 0 });
+    return;
+  }
+
+  // Para cada producto, obtener su cuadre más reciente
+  const latestPerProduct = await db.execute(sql`
+    SELECT DISTINCT ON (product_id)
+      product_id,
+      previous_balance,
+      physical_count
+    FROM inventory_records
+    ORDER BY product_id, record_date DESC, created_at DESC
+  `);
+
+  const latestMap = new Map<string, { previousBalance: string; physicalCount: string | null }>();
+  for (const row of latestPerProduct.rows as any[]) {
+    latestMap.set(row.product_id, {
+      previousBalance: row.previous_balance ?? "0",
+      physicalCount: row.physical_count ?? null,
+    });
+  }
+
+  let withoutRecords = 0;
+  let exact = 0;
+  let surplus = 0;
+  let shortage = 0;
+
+  for (const product of allProducts) {
+    const latest = latestMap.get(product.id);
+    if (!latest) {
+      withoutRecords++;
+      continue;
+    }
+    if (latest.physicalCount === null) {
+      // Tiene registro pero sin conteo físico → cuenta como sin diferencia registrada
+      exact++;
+      continue;
+    }
+    const sys = parseFloat(latest.previousBalance) || 0;
+    const phys = parseFloat(latest.physicalCount) || 0;
+    const diff = phys - sys;
+    if (Math.abs(diff) < 0.01) {
+      exact++;
+    } else if (diff > 0) {
+      surplus++;
+    } else {
+      shortage++;
+    }
+  }
+
+  const withDifference = surplus + shortage;
+
+  res.json({
+    totalProducts,
+    withoutRecords,
+    exact,
+    withDifference,
+    surplus,
+    shortage,
+  });
+}));
 
 // ── GET todos los registros ──────────────────────────────────────────────────
 router.get("/", requireAuth, asyncHandler(async (_req, res) => {
