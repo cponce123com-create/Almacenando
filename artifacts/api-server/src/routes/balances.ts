@@ -120,16 +120,22 @@ router.post(
 
 router.get("/latest", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
-  const whereClause = warehouse && warehouse !== "all"
-    ? eq(balanceRecordsTable.warehouse, warehouse)
-    : undefined;
 
   const rows = await db.execute(sql`
-    SELECT DISTINCT ON (warehouse, code)
-      id, warehouse, type, code, product_description, unit, quantity, balance_date, batch_id, notes, registered_by, created_at, updated_at
-    FROM balance_records
-    ${whereClause ? sql`WHERE warehouse = ${warehouse}` : sql``}
-    ORDER BY warehouse, code, balance_date DESC, created_at DESC
+    SELECT DISTINCT ON (br.warehouse, br.code)
+      br.id, br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
+      br.balance_date, br.batch_id, br.notes, br.registered_by, br.created_at, br.updated_at,
+      lc.last_consumption_date
+    FROM balance_records br
+    LEFT JOIN (
+      SELECT p.code, MAX(ir.record_date) AS last_consumption_date
+      FROM inventory_records ir
+      JOIN products p ON ir.product_id = p.id
+      WHERE ir.outputs::numeric > 0
+      GROUP BY p.code
+    ) lc ON lc.code = br.code
+    ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
+    ORDER BY br.warehouse, br.code, br.balance_date DESC, br.created_at DESC
   `);
   res.json(rows.rows);
 }));
@@ -158,6 +164,22 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
   let query = db.select().from(balanceRecordsTable).$dynamic();
   if (conditions.length > 0) query = query.where(and(...conditions));
   const records = await query.orderBy(desc(balanceRecordsTable.balanceDate), balanceRecordsTable.code);
+
+  if (records.length > 0) {
+    const lcRows = await db.execute(sql`
+      SELECT p.code, MAX(ir.record_date) AS last_consumption_date
+      FROM inventory_records ir
+      JOIN products p ON ir.product_id = p.id
+      WHERE ir.outputs::numeric > 0
+      GROUP BY p.code
+    `);
+    const lcMap = new Map<string, string>();
+    for (const row of lcRows.rows as { code: string; last_consumption_date: string | null }[]) {
+      if (row.last_consumption_date) lcMap.set(row.code, row.last_consumption_date);
+    }
+    res.json(records.map(r => ({ ...r, lastConsumptionDate: lcMap.get(r.code) ?? null })));
+    return;
+  }
   res.json(records);
 }));
 

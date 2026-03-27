@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { cuadreRecordsTable, cuadreItemsTable } from "@workspace/db";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
@@ -34,18 +34,34 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
     query = query.where(eq(cuadreRecordsTable.warehouse, warehouse));
   }
   const records = await query.orderBy(desc(cuadreRecordsTable.cuadreDate), desc(cuadreRecordsTable.createdAt));
-  if (records.length > 0) {
-    const ids = records.map(r => r.id);
-    const allItems = await db.select().from(cuadreItemsTable).where(inArray(cuadreItemsTable.cuadreId, ids));
-    const itemMap = new Map<string, typeof allItems>();
-    for (const item of allItems) {
-      if (!itemMap.has(item.cuadreId)) itemMap.set(item.cuadreId, []);
-      itemMap.get(item.cuadreId)!.push(item);
+  if (records.length === 0) { res.json(records); return; }
+
+  const ids = records.map(r => r.id);
+  const allItems = await db.select().from(cuadreItemsTable).where(inArray(cuadreItemsTable.cuadreId, ids));
+
+  // Last consumption date per product code
+  const codes = [...new Set(allItems.map(i => i.code))];
+  const lcMap = new Map<string, string>();
+  if (codes.length > 0) {
+    const lcRows = await db.execute(sql`
+      SELECT p.code, MAX(ir.record_date) AS last_consumption_date
+      FROM inventory_records ir
+      JOIN products p ON ir.product_id = p.id
+      WHERE ir.outputs::numeric > 0
+        AND p.code = ANY(${codes})
+      GROUP BY p.code
+    `);
+    for (const row of lcRows.rows as { code: string; last_consumption_date: string | null }[]) {
+      if (row.last_consumption_date) lcMap.set(row.code, row.last_consumption_date);
     }
-    res.json(records.map(r => ({ ...r, items: itemMap.get(r.id) ?? [] })));
-    return;
   }
-  res.json(records);
+
+  const itemMap = new Map<string, typeof allItems>();
+  for (const item of allItems) {
+    if (!itemMap.has(item.cuadreId)) itemMap.set(item.cuadreId, []);
+    itemMap.get(item.cuadreId)!.push({ ...item, lastConsumptionDate: lcMap.get(item.code) ?? null } as typeof item & { lastConsumptionDate: string | null });
+  }
+  res.json(records.map(r => ({ ...r, items: itemMap.get(r.id) ?? [] })));
 }));
 
 router.get("/:id", requireAuth, asyncHandler(async (req, res) => {

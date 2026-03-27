@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { db } from "@workspace/db";
 import { productsTable, inventoryRecordsTable, immobilizedProductsTable, samplesTable, dyeLotsTable, finalDispositionTable } from "@workspace/db";
-import { eq, count, and } from "drizzle-orm";
+import { eq, count, and, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
@@ -34,7 +34,7 @@ const productSchema = z.object({
 
 const TEMPLATE_HEADERS = [
   "almacen", "tipo", "codigo", "descripcion", "um", "cantidad", "zona", "ubicacion",
-  "familia", "lote", "tipo_producto", "estado", "msds", "controlado", "observacion",
+  "familia", "lote", "tipo_producto", "estado", "msds", "controlado", "observacion", "ultimo_consumo",
 ];
 
 const REQUIRED_COLUMNS = ["codigo", "descripcion", "um"];
@@ -103,6 +103,19 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
     query = query.where(eq(productsTable.warehouse, warehouse));
   }
   const products = await query.orderBy(productsTable.code);
+
+  // Last consumption date per product
+  const lcRows = await db.execute(sql`
+    SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
+    FROM inventory_records ir
+    WHERE ir.outputs::numeric > 0
+    GROUP BY ir.product_id
+  `);
+  const lcMap = new Map<string, string>();
+  for (const row of lcRows.rows as { product_id: string; last_consumption_date: string | null }[]) {
+    if (row.last_consumption_date) lcMap.set(row.product_id, row.last_consumption_date);
+  }
+
   const rows = products.map(p => {
     const locationParts = (p.location ?? "").split(" / ");
     return {
@@ -112,6 +125,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
       lote: "", tipo_producto: p.hazardClass ?? "", estado: p.status === "active" ? "activo" : "inactivo",
       msds: p.msds ? "si" : "no", controlado: p.controlled ? "si" : "no",
       observacion: p.notes ?? "",
+      ultimo_consumo: lcMap.get(p.id) ?? "",
     };
   });
   const wb = XLSX.utils.book_new();
