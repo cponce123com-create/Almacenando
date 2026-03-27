@@ -235,6 +235,11 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
   res.json(updated);
 }));
 
+router.delete("/all", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
+  await db.delete(productsTable);
+  res.json({ message: "Todos los productos eliminados correctamente" });
+}));
+
 router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const products = await db.select().from(productsTable).where(eq(productsTable.id, id as string)).limit(1);

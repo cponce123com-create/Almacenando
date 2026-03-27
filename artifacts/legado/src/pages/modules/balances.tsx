@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getAuthHeaders } from "@/hooks/use-auth";
+import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES } from "@/contexts/WarehouseContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -167,6 +167,7 @@ function ImportResultsModal({ open, onClose, result }: { open: boolean; onClose:
 }
 
 export default function BalancesPage() {
+  const { user } = useAuth();
   const { warehouse } = useWarehouse();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -177,6 +178,7 @@ export default function BalancesPage() {
   const [showImportResult, setShowImportResult] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [filterDate, setFilterDate] = useState<string>("");
+  const [showDeleteAll, setShowDeleteAll] = useState(false);
 
   const warehouseParam = warehouse === "all" ? "" : `?warehouse=${warehouse}`;
 
@@ -246,6 +248,18 @@ export default function BalancesPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const deleteAllMutation = useMutation({
+    mutationFn: () => fetch(`${BASE}/api/balances/all`, { method: "DELETE", headers: getAuthHeaders() })
+      .then(r => { if (!r.ok) throw new Error("Error al eliminar"); return r.json(); }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["balances"] });
+      queryClient.invalidateQueries({ queryKey: ["balance-dates"] });
+      setShowDeleteAll(false);
+      toast({ title: "Saldos eliminados", description: "Todos los registros de saldo fueron eliminados." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const downloadTemplate = async () => {
     const res = await fetch(`${BASE}/api/balances/template`, { headers: getAuthHeaders() });
     if (!res.ok) return;
@@ -300,6 +314,16 @@ export default function BalancesPage() {
             <Button size="sm" onClick={() => setShowForm(true)}>
               <Plus className="w-4 h-4 mr-1.5" /> Nuevo Saldo
             </Button>
+            {user?.role === "admin" && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-red-200 text-red-600 hover:bg-red-50"
+                onClick={() => setShowDeleteAll(true)}
+              >
+                <Trash2 className="w-4 h-4 mr-1.5" /> Eliminar todo
+              </Button>
+            )}
           </div>
         </div>
 
@@ -446,6 +470,28 @@ export default function BalancesPage() {
             >
               {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showDeleteAll} onOpenChange={open => !open && setShowDeleteAll(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar todos los saldos?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminarán <strong>todos los registros de saldo</strong>. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteAllMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => deleteAllMutation.mutate()}
+              disabled={deleteAllMutation.isPending}
+            >
+              {deleteAllMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Sí, eliminar todo
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
