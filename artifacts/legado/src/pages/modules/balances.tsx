@@ -268,13 +268,13 @@ export default function BalancesPage() {
   });
 
   const downloadTemplate = async () => {
-    const qs = selectedWarehouse && selectedWarehouse !== "all" ? `?warehouse=${selectedWarehouse}` : "";
+    const qs = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
     const res = await fetch(`${BASE}/api/balances/template${qs}`, { headers: getAuthHeaders() });
-    if (!res.ok) return;
+    if (!res.ok) { toast({ title: "Error", description: "No se pudo descargar la plantilla", variant: "destructive" }); return; }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const wLabel = selectedWarehouse && selectedWarehouse !== "all" ? `_${selectedWarehouse}` : "";
+    const wLabel = warehouse && warehouse !== "all" ? `_${warehouse}` : "";
     a.href = url; a.download = `plantilla_saldo${wLabel}.xlsx`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   };
