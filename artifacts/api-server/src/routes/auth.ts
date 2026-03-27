@@ -76,4 +76,48 @@ router.get("/me", requireAuth, async (req, res) => {
   });
 });
 
+const updateMeSchema = z.object({
+  name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().min(8).optional(),
+});
+
+router.put("/me", requireAuth, async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
+  const parsed = updateMeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+
+  const users = await db.select().from(usersTable).where(eq(usersTable.id, authedReq.userId)).limit(1);
+  if (users.length === 0) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
+  const user = users[0]!;
+
+  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.data.name) updateData.name = parsed.data.name;
+  if (parsed.data.email) updateData.email = parsed.data.email;
+
+  if (parsed.data.currentPassword && parsed.data.newPassword) {
+    const valid = await comparePassword(parsed.data.currentPassword, user.passwordHash);
+    if (!valid) { res.status(400).json({ error: "Contraseña actual incorrecta" }); return; }
+    updateData.passwordHash = await hashPassword(parsed.data.newPassword);
+  }
+
+  const [updated] = await db.update(usersTable)
+    .set(updateData)
+    .where(eq(usersTable.id, authedReq.userId))
+    .returning();
+
+  res.json({
+    id: updated!.id,
+    email: updated!.email,
+    name: updated!.name,
+    role: updated!.role,
+    status: updated!.status,
+    createdAt: updated!.createdAt.toISOString(),
+  });
+});
+
 export default router;

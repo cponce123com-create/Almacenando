@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { cuadreRecordsTable, cuadreItemsTable } from "@workspace/db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
@@ -34,6 +34,17 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
     query = query.where(eq(cuadreRecordsTable.warehouse, warehouse));
   }
   const records = await query.orderBy(desc(cuadreRecordsTable.cuadreDate), desc(cuadreRecordsTable.createdAt));
+  if (records.length > 0) {
+    const ids = records.map(r => r.id);
+    const allItems = await db.select().from(cuadreItemsTable).where(inArray(cuadreItemsTable.cuadreId, ids));
+    const itemMap = new Map<string, typeof allItems>();
+    for (const item of allItems) {
+      if (!itemMap.has(item.cuadreId)) itemMap.set(item.cuadreId, []);
+      itemMap.get(item.cuadreId)!.push(item);
+    }
+    res.json(records.map(r => ({ ...r, items: itemMap.get(r.id) ?? [] })));
+    return;
+  }
   res.json(records);
 }));
 

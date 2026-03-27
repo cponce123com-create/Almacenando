@@ -413,7 +413,7 @@ export default function BalancesPage() {
                       <TableCell className="font-mono text-sm font-medium">{r.code}</TableCell>
                       <TableCell>{r.productDescription}</TableCell>
                       <TableCell className="text-slate-500">{r.unit}</TableCell>
-                      <TableCell className="text-right font-semibold">{parseFloat(r.quantity).toLocaleString("es")}</TableCell>
+                      <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
