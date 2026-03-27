@@ -54,85 +54,87 @@
 }
 
 :root {
-  --background: 248 100% 99%;
-  --foreground: 240 10% 15%;
-  
-  /* Primary: Violeta vibrante para mejor contraste */
-  --primary: 262 83% 58%;
+  /* Fondo general — azul pizarra muy claro */
+  --background: 210 25% 97%;
+  --foreground: 213 45% 10%;
+
+  /* Primario: Teal científico — evoca laboratorio e industria química */
+  --primary: 184 85% 30%;
   --primary-foreground: 0 0% 100%;
-  
-  --secondary: 260 20% 95%;
-  --secondary-foreground: 262 30% 30%;
-  
-  --muted: 260 15% 96%;
-  --muted-foreground: 240 8% 46%;
-  
-  --accent: 262 40% 92%;
-  --accent-foreground: 262 50% 30%;
-  
-  --destructive: 0 84% 60%;
+
+  --secondary: 184 30% 92%;
+  --secondary-foreground: 184 60% 20%;
+
+  --muted: 210 20% 94%;
+  --muted-foreground: 213 20% 46%;
+
+  /* Acento ámbar — color de advertencia química */
+  --accent: 38 92% 50%;
+  --accent-foreground: 38 80% 15%;
+
+  --destructive: 0 84% 58%;
   --destructive-foreground: 0 0% 100%;
-  
+
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 15%;
-  --card-border: 260 20% 90%;
-  
-  --border: 260 20% 88%;
-  --input: 260 20% 85%;
-  --ring: 262 83% 58%;
-  
+  --card-foreground: 213 45% 10%;
+  --card-border: 210 25% 88%;
+
+  --border: 210 25% 86%;
+  --input: 210 25% 84%;
+  --ring: 184 85% 30%;
+
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 15%;
-  --popover-border: 260 20% 90%;
+  --popover-foreground: 213 45% 10%;
+  --popover-border: 210 25% 88%;
 
-  --sidebar: 260 25% 98%;
-  --sidebar-foreground: 240 10% 15%;
-  --sidebar-border: 260 20% 90%;
-  --sidebar-primary: 262 83% 58%;
+  /* Sidebar oscuro — navy profundo para máximo contraste */
+  --sidebar: 213 62% 9%;
+  --sidebar-foreground: 210 30% 88%;
+  --sidebar-border: 213 45% 16%;
+  --sidebar-primary: 184 80% 52%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 262 40% 93%;
-  --sidebar-accent-foreground: 262 50% 30%;
-  --sidebar-ring: 262 83% 58%;
+  --sidebar-accent: 213 50% 16%;
+  --sidebar-accent-foreground: 210 30% 95%;
+  --sidebar-ring: 184 80% 52%;
 
-  --radius: 0.75rem;
+  --radius: 0.625rem;
 }
 
 .dark {
-  --background: 240 10% 10%;
-  --foreground: 248 100% 99%;
-  
-  --primary: 262 83% 65%;
+  --background: 213 45% 8%;
+  --foreground: 210 30% 95%;
+
+  --primary: 184 80% 52%;
   --primary-foreground: 0 0% 100%;
-  
-  --secondary: 260 20% 15%;
-  --secondary-foreground: 262 30% 90%;
-  
-  --muted: 260 15% 15%;
-  --muted-foreground: 240 8% 60%;
-  
-  --accent: 262 40% 20%;
-  --accent-foreground: 262 50% 90%;
-  
+
+  --secondary: 184 30% 14%;
+  --secondary-foreground: 184 60% 80%;
+
+  --muted: 213 30% 14%;
+  --muted-foreground: 210 20% 58%;
+
+  --accent: 38 85% 55%;
+  --accent-foreground: 38 80% 10%;
+
   --destructive: 0 72% 50%;
   --destructive-foreground: 0 0% 100%;
-  
-  --card: 240 10% 12%;
-  --card-foreground: 248 100% 99%;
-  --card-border: 260 20% 20%;
-  
-  --border: 260 20% 20%;
-  --input: 260 20% 25%;
-  --ring: 262 83% 65%;
 
-  --popover: 240 10% 12%;
-  --popover-foreground: 248 100% 99%;
-  --popover-border: 260 20% 20%;
+  --card: 213 40% 11%;
+  --card-foreground: 210 30% 95%;
+  --card-border: 213 35% 18%;
+
+  --border: 213 35% 18%;
+  --input: 213 35% 22%;
+  --ring: 184 80% 52%;
+
+  --popover: 213 40% 11%;
+  --popover-foreground: 210 30% 95%;
+  --popover-border: 213 35% 18%;
 }
 
 @layer base {
   * {
     @apply border-border;
-    /* Desactivar forzado de colores de sistema para evitar blanco y negro en PCs corporativas */
     forced-color-adjust: none !important;
   }
   body {
@@ -143,43 +145,38 @@
   }
 }
 
-.glass-panel {
-  @apply bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl shadow-primary/5 dark:bg-black/50 dark:border-white/10;
-}
+/* Colores forzados para monitores corporativos con alto contraste */
+.bg-primary        { background-color: #0d7f85 !important; color: white !important; }
+.text-primary      { color: #0d7f85 !important; }
+.border-primary    { border-color: #0d7f85 !important; }
+.bg-primary\/10    { background-color: #0d7f8519 !important; }
+.bg-primary\/20    { background-color: #0d7f8533 !important; }
 
-/* 
- * FORZADO DE COLORES PARA MONITORES CON BAJO CONTRASTE O MODOS DE AHORRO
- * Algunos equipos de oficina eliminan los colores suaves de Tailwind.
- * Aquí forzamos colores sólidos para elementos clave.
- */
+/* Fondos de secciones comunes */
+.bg-slate-50       { background-color: #f1f5f9 !important; }
+.bg-slate-100      { background-color: #e8edf3 !important; }
+.bg-teal-50        { background-color: #f0fdfa !important; }
+.bg-teal-100       { background-color: #ccfbf1 !important; }
+.bg-cyan-50        { background-color: #ecfeff !important; }
+.bg-cyan-100       { background-color: #cffafe !important; }
+.bg-amber-50       { background-color: #fffbeb !important; }
+.bg-amber-100      { background-color: #fef3c7 !important; }
+.bg-green-50       { background-color: #f0fdf4 !important; }
+.bg-green-100      { background-color: #dcfce7 !important; }
+.bg-red-50         { background-color: #fef2f2 !important; }
+.bg-red-100        { background-color: #fee2e2 !important; }
+.bg-blue-50        { background-color: #eff6ff !important; }
+.bg-blue-100       { background-color: #dbeafe !important; }
 
-/* Botones y acentos */
-.bg-primary { background-color: #7c3aed !important; color: white !important; }
-.text-primary { color: #7c3aed !important; }
-.border-primary { border-color: #7c3aed !important; }
-
-/* Fondos de secciones */
-.bg-slate-50  { background-color: #f8fafc !important; }
-.bg-slate-100 { background-color: #f1f5f9 !important; }
-.bg-blue-50   { background-color: #eff6ff !important; }
-.bg-blue-100  { background-color: #dbeafe !important; }
-.bg-violet-50  { background-color: #f5f3ff !important; }
-.bg-violet-100 { background-color: #ede9fe !important; }
-.bg-green-100 { background-color: #dcfce7 !important; }
-.bg-red-100 { background-color: #fee2e2 !important; }
-
-/* Asegurar visibilidad de bordes en tablas y cards */
 .border { border-width: 1px !important; border-style: solid !important; }
-.border-slate-100 { border-color: #f1f5f9 !important; }
-.border-slate-200 { border-color: #e2e8f0 !important; }
+.border-slate-100  { border-color: #e2e8f0 !important; }
+.border-slate-200  { border-color: #cbd5e1 !important; }
 
-/* Fix específico para el problema de "letras blancas en fondo blanco" */
 button, .button {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
 }
 
-.bg-white button.variant-outline, 
-.bg-white button.variant-ghost {
-  color: #1e293b !important; /* Slate 800 para asegurar lectura */
+.glass-panel {
+  @apply bg-white/70 backdrop-blur-xl border border-white/50 shadow-xl;
 }
