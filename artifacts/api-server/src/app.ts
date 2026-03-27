@@ -3,13 +3,9 @@ import cors from "cors";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
 import path from "path";
-import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { generalApiLimiter } from "./lib/rate-limit.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app: Express = express();
 
@@ -35,11 +31,12 @@ app.use(helmet());
 //   - /api/*  → API routes (registered below)
 //   - /*      → React SPA (legado/dist/public)
 //
-// __dirname in the compiled CJS bundle equals the directory of index.cjs,
-// i.e. <repo-root>/artifacts/api-server/dist/
-// So the frontend build is two levels up + legado/dist/public.
+// We use process.cwd() (the monorepo root) to locate the frontend build.
+// This avoids relying on import.meta.url which becomes undefined when esbuild
+// compiles ESM → CJS format, causing a TypeError at startup.
 // ---------------------------------------------------------------------------
-const FRONTEND_DIST = path.join(__dirname, "../../legado/dist/public");
+const FRONTEND_DIST = process.env.FRONTEND_DIST_PATH
+  ?? path.resolve(process.cwd(), "artifacts/legado/dist/public");
 
 function getAllowedOrigins(): string[] {
   const origins: string[] = [];
