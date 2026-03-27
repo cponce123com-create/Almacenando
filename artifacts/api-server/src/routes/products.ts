@@ -236,7 +236,14 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
 }));
 
 router.delete("/all", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
-  await db.delete(productsTable);
+  await db.transaction(async (tx) => {
+    await tx.delete(dyeLotsTable);
+    await tx.delete(finalDispositionTable);
+    await tx.delete(immobilizedProductsTable);
+    await tx.delete(samplesTable);
+    await tx.delete(inventoryRecordsTable);
+    await tx.delete(productsTable);
+  });
   res.json({ message: "Todos los productos eliminados correctamente" });
 }));
 
