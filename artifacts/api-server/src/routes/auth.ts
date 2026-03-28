@@ -6,6 +6,7 @@ import { hashPassword, comparePassword, signToken, requireAuth, type Authenticat
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { authLoginLimiter } from "../lib/rate-limit.js";
+import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
 
@@ -14,7 +15,7 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-router.post("/login", authLoginLimiter, async (req, res) => {
+router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Datos de login inválidos" });
@@ -52,13 +53,13 @@ router.post("/login", authLoginLimiter, async (req, res) => {
     },
     token,
   });
-});
+}));
 
-router.post("/logout", (_req, res) => {
+router.post("/logout", asyncHandler(async (_req, res) => {
   res.json({ message: "Sesión cerrada correctamente" });
-});
+}));
 
-router.get("/me", requireAuth, async (req, res) => {
+router.get("/me", requireAuth, asyncHandler(async (req, res) => {
   const { userId } = req as AuthenticatedRequest;
   const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (users.length === 0) {
@@ -74,7 +75,7 @@ router.get("/me", requireAuth, async (req, res) => {
     status: user.status,
     createdAt: user.createdAt.toISOString(),
   });
-});
+}));
 
 const updateMeSchema = z.object({
   name: z.string().min(1).optional(),
@@ -83,7 +84,7 @@ const updateMeSchema = z.object({
   newPassword: z.string().min(8).optional(),
 });
 
-router.put("/me", requireAuth, async (req, res) => {
+router.put("/me", requireAuth, asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const parsed = updateMeSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -118,6 +119,6 @@ router.put("/me", requireAuth, async (req, res) => {
     status: updated!.status,
     createdAt: updated!.createdAt.toISOString(),
   });
-});
+}));
 
 export default router;
