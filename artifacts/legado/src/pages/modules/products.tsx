@@ -117,10 +117,11 @@ const emptyForm = (warehouse = "General"): ProductFormData => ({
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 async function fetchProducts(warehouse?: string): Promise<Product[]> {
-  const params = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
-  const res = await fetch(`${BASE}/api/products${params}`, { headers: getAuthHeaders() });
+  const base = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}&limit=500` : "?limit=500";
+  const res = await fetch(`${BASE}/api/products${base}`, { headers: getAuthHeaders() });
   if (!res.ok) throw new Error("Error al cargar productos");
-  return res.json();
+  const json = await res.json();
+  return json.data ?? json;
 }
 
 async function createProduct(data: ProductFormData): Promise<Product> {

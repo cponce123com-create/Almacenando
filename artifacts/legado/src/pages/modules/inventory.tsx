@@ -385,12 +385,12 @@ export default function TomaDeInventarioPage() {
   // Queries
   const { data: products = EMPTY_PRODUCTS } = useQuery<Product[]>({
     queryKey: ["/api/products", selectedWarehouse],
-    queryFn: () => apiJson(`/api/products?warehouse=${selectedWarehouse}`),
+    queryFn: () => apiJson(`/api/products?warehouse=${selectedWarehouse}&limit=500`).then((r: any) => r.data ?? r),
   });
 
   const { data: records = [], isLoading, isError } = useQuery<InventoryRecord[]>({
     queryKey: ["/api/inventory", selectedWarehouse],
-    queryFn: () => apiJson(`/api/inventory?warehouse=${selectedWarehouse}`),
+    queryFn: () => apiJson(`/api/inventory?warehouse=${selectedWarehouse}&limit=500`).then((r: any) => r.data ?? r),
   });
 
   const { data: stats, isLoading: statsLoading } = useQuery<InventoryStats>({

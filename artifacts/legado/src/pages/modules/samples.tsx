@@ -179,7 +179,7 @@ export default function MuestrasPage() {
   const [filterStatus, setFilterStatus] = useState("all");
 
   const { data: samples = [], isLoading, isError } = useQuery<Sample[]>({
-    queryKey: ["/api/samples"], queryFn: () => api("/api/samples"),
+    queryKey: ["/api/samples"], queryFn: () => api("/api/samples?limit=500").then((r: any) => r.data ?? r),
   });
 
   const filtered = useMemo(() => {

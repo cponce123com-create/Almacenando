@@ -57,7 +57,7 @@ export default function PersonalPage() {
   const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const { data: personnel = [], isLoading, isError } = useQuery<Personnel[]>({
-    queryKey: ["/api/personnel"], queryFn: () => api("/api/personnel"),
+    queryKey: ["/api/personnel"], queryFn: () => api("/api/personnel?limit=500").then((r: any) => r.data ?? r),
   });
 
   const depts = useMemo(() => [...new Set(personnel.map(p => p.department))].sort(), [personnel]);
