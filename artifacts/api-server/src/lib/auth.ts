@@ -1,6 +1,8 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import type { Request, Response, NextFunction } from "express";
+import { db, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import type { WarehouseRole } from "@workspace/db";
 
 const jwtSecret = process.env.SESSION_SECRET;
@@ -40,23 +42,48 @@ export function verifyToken(token: string): { userId: string; email: string; rol
 
 export type AuthenticatedRequest = Request & { userId: string; userRole: WarehouseRole; userEmail: string };
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).json({ error: "No autorizado" });
-    return;
+// ---------------------------------------------------------------------------
+// requireAuth — verifies the JWT then does a lightweight DB check to confirm
+// the account is still active and reads the current role from the database.
+// This prevents a revoked/demoted user from continuing to act on stale JWT
+// permissions for up to the full 8-hour token lifetime.
+// ---------------------------------------------------------------------------
+export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      res.status(401).json({ error: "No autorizado" });
+      return;
+    }
+
+    const token = authHeader.substring(7);
+    const payload = verifyToken(token);
+    if (!payload) {
+      res.status(401).json({ error: "Token inválido o expirado" });
+      return;
+    }
+
+    // Lightweight DB check: confirm the account is still active and retrieve
+    // the current role from the source of truth rather than trusting the JWT.
+    const rows = await db
+      .select({ status: usersTable.status, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.id, payload.userId))
+      .limit(1);
+
+    if (rows.length === 0 || rows[0]!.status !== "active") {
+      res.status(401).json({ error: "Cuenta desactivada o no encontrada" });
+      return;
+    }
+
+    const authedReq = req as AuthenticatedRequest;
+    authedReq.userId = payload.userId;
+    authedReq.userRole = rows[0]!.role; // live role from DB, not from JWT
+    authedReq.userEmail = payload.email;
+    next();
+  } catch (err) {
+    next(err);
   }
-  const token = authHeader.substring(7);
-  const payload = verifyToken(token);
-  if (!payload) {
-    res.status(401).json({ error: "Token inválido o expirado" });
-    return;
-  }
-  const authedReq = req as AuthenticatedRequest;
-  authedReq.userId = payload.userId;
-  authedReq.userRole = payload.role;
-  authedReq.userEmail = payload.email;
-  next();
 }
 
 export function requireRole(...roles: WarehouseRole[]) {

@@ -85,7 +85,12 @@ const updateMeSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   currentPassword: z.string().optional(),
-  newPassword: z.string().min(8).optional(),
+  newPassword: z
+    .string()
+    .min(8, "La contraseña debe tener al menos 8 caracteres")
+    .regex(/[A-Z]/, "Debe tener al menos una mayúscula")
+    .regex(/[0-9]/, "Debe tener al menos un número")
+    .optional(),
 });
 
 router.put("/me", requireAuth, asyncHandler(async (req, res) => {

@@ -14,7 +14,11 @@ const router = Router();
 const createUserSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
-  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
+  password: z
+    .string()
+    .min(8, "La contraseña debe tener al menos 8 caracteres")
+    .regex(/[A-Z]/, "Debe tener al menos una mayúscula")
+    .regex(/[0-9]/, "Debe tener al menos un número"),
   role: z.enum(["supervisor", "operator", "quality", "admin", "readonly"]),
 });
 
@@ -23,7 +27,12 @@ const updateUserSchema = z.object({
   email: z.string().email().optional(),
   role: z.enum(["supervisor", "operator", "quality", "admin", "readonly"]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
-  password: z.string().min(8).optional(),
+  password: z
+    .string()
+    .min(8, "La contraseña debe tener al menos 8 caracteres")
+    .regex(/[A-Z]/, "Debe tener al menos una mayúscula")
+    .regex(/[0-9]/, "Debe tener al menos un número")
+    .optional(),
 });
 
 function generateTemporaryPassword(): string {
