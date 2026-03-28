@@ -43,17 +43,9 @@ artifacts-monorepo/
 - **quality** — Manage samples, dye lots, quality approvals
 - **readonly** — View-only access to all modules
 
-## Demo Credentials
+## Credentials
 
-All use password: `Almacen2024!`
-
-| Role | Email |
-|------|-------|
-| admin | admin@almacen.com |
-| supervisor | supervisor@almacen.com |
-| operator | operario@almacen.com |
-| quality | calidad@almacen.com |
-| readonly | consulta@almacen.com |
+Seed credentials are defined in `.env.seed`, which is not committed to version control. Run the seed script locally to create initial users, or use the `POST /api/auth/setup` endpoint with `ADMIN_SETUP_KEY` to bootstrap the first admin account.
 
 ## Multi-Warehouse Support
 
