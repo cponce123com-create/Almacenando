@@ -8,6 +8,7 @@ import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
+import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -230,14 +231,17 @@ router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
 }));
 
 router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
   const parsed = productSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const id = generateId();
   const [created] = await db.insert(productsTable).values({ id, ...parsed.data }).returning();
+  void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "product", resourceId: created!.id, ipAddress: req.ip });
   res.status(201).json(created);
 }));
 
 router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
   const { id } = req.params;
   const parsed = productSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
@@ -245,6 +249,7 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
     .set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(productsTable.id, id as string)).returning();
   if (!updated) { res.status(404).json({ error: "Producto no encontrado" }); return; }
+  void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "product", resourceId: id, ipAddress: req.ip });
   res.json(updated);
 }));
 
@@ -261,6 +266,7 @@ router.delete("/all", requireAuth, requireRole("admin"), asyncHandler(async (_re
 }));
 
 router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
   const { id } = req.params;
   const products = await db.select().from(productsTable).where(eq(productsTable.id, id as string)).limit(1);
   if (products.length === 0) { res.status(404).json({ error: "Producto no encontrado" }); return; }
@@ -270,6 +276,7 @@ router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHand
     const [deactivated] = await db.update(productsTable)
       .set({ status: "inactive", updatedAt: new Date() })
       .where(eq(productsTable.id, id as string)).returning();
+    void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "product", resourceId: id, details: { soft: true }, ipAddress: req.ip });
     res.json({
       message: "El producto fue marcado como inactivo",
       soft: true,
@@ -280,6 +287,7 @@ router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHand
   }
 
   await db.delete(productsTable).where(eq(productsTable.id, id as string));
+  void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "product", resourceId: id, details: { soft: false }, ipAddress: req.ip });
   res.json({ message: "Producto eliminado permanentemente", soft: false });
 }));
 

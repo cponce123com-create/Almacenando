@@ -7,6 +7,7 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { authLoginLimiter } from "../lib/rate-limit.js";
 import { asyncHandler } from "../lib/async-handler.js";
+import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
 
@@ -42,6 +43,7 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
   }
 
   const token = signToken({ userId: user.id, email: user.email, role: user.role });
+  void writeAuditLog({ userId: user.id, action: "login", resource: "session", resourceId: user.id, ipAddress: req.ip });
   res.json({
     user: {
       id: user.id,
@@ -55,7 +57,9 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
   });
 }));
 
-router.post("/logout", asyncHandler(async (_req, res) => {
+router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
+  const { userId } = req as AuthenticatedRequest;
+  void writeAuditLog({ userId, action: "logout", resource: "session", resourceId: userId, ipAddress: req.ip });
   res.json({ message: "Sesión cerrada correctamente" });
 }));
 

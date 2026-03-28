@@ -8,6 +8,7 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
 import { uploadToCloudinary } from "../lib/cloudinary.js";
+import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
 
@@ -266,6 +267,7 @@ router.post(
       .where(eq(inventoryBoxesTable.inventoryRecordId, id))
       .orderBy(inventoryBoxesTable.boxNumber);
 
+    void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
     res.status(201).json({ ...created, boxes });
   })
 );
@@ -298,11 +300,13 @@ router.put(
     delete updateData.boxesData;
     if (photoUrl) updateData.photoUrl = photoUrl;
 
+    const authedReq = req as AuthenticatedRequest;
     const [updated] = await db.update(inventoryRecordsTable)
       .set(updateData)
       .where(eq(inventoryRecordsTable.id, id as string)).returning();
 
     if (!updated) { res.status(404).json({ error: "Registro no encontrado" }); return; }
+    void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
     res.json(updated);
   })
 );
@@ -314,10 +318,12 @@ router.delete(
   requireAuth,
   requireRole("supervisor", "admin"),
   asyncHandler(async (req, res) => {
+    const authedReq = req as AuthenticatedRequest;
     const { id } = req.params;
     const [deleted] = await db.delete(inventoryRecordsTable)
       .where(eq(inventoryRecordsTable.id, id as string)).returning();
     if (!deleted) { res.status(404).json({ error: "Registro no encontrado" }); return; }
+    void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
     res.json({ message: "Registro eliminado" });
   })
 );

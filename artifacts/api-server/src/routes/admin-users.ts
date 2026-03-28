@@ -7,6 +7,7 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import type { WarehouseRole } from "@workspace/db";
 import { asyncHandler } from "../lib/async-handler.js";
+import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
 
@@ -47,6 +48,7 @@ router.get("/", requireAuth, requireRole("admin", "supervisor"), asyncHandler(as
 }));
 
 router.post("/", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
   const parsed = createUserSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
@@ -75,10 +77,12 @@ router.post("/", requireAuth, requireRole("admin"), asyncHandler(async (req, res
     status: usersTable.status,
     createdAt: usersTable.createdAt,
   });
+  void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "user", resourceId: id, ipAddress: req.ip });
   res.status(201).json(created);
 }));
 
 router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
   const { id } = req.params;
   const parsed = updateUserSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -102,6 +106,7 @@ router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, r
     res.status(404).json({ error: "Usuario no encontrado" });
     return;
   }
+  void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "user", resourceId: id, ipAddress: req.ip });
   res.json(updated);
 }));
 
@@ -138,6 +143,7 @@ router.delete("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req
     res.status(404).json({ error: "Usuario no encontrado" });
     return;
   }
+  void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "user", resourceId: id, ipAddress: req.ip });
   res.json({ message: "Usuario eliminado" });
 }));
 

@@ -6,6 +6,7 @@ import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
+import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
 
@@ -46,6 +47,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), as
     ...parsed.data,
     registeredBy: authedReq.userId,
   }).returning();
+  void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "immobilized_product", resourceId: id, ipAddress: req.ip });
   res.status(201).json(created);
 }));
 
@@ -72,6 +74,7 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler
     res.status(404).json({ error: "Registro no encontrado" });
     return;
   }
+  void writeAuditLog({ userId: authedReq.userId, action: "release", resource: "immobilized_product", resourceId: id, ipAddress: req.ip });
   res.json(updated);
 }));
 
