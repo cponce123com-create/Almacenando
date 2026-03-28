@@ -2,13 +2,19 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { inventoryRecordsTable, productsTable, inventoryBoxesTable } from "@workspace/db";
-import { eq, desc, sql, and, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, inArray, count, max } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
 import { uploadToCloudinary } from "../lib/cloudinary.js";
 import { writeAuditLog } from "../lib/audit.js";
+
+function parsePagination(q: Record<string, unknown>) {
+  const page = Math.max(1, parseInt(String(q.page ?? "1"), 10) || 1);
+  const limit = Math.min(500, Math.max(1, parseInt(String(q.limit ?? "50"), 10) || 50));
+  return { page, limit, offset: (page - 1) * limit };
+}
 
 const router = Router();
 
@@ -72,17 +78,6 @@ async function uploadBoxPhotos(files: Files): Promise<(string | null)[]> {
 
 router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
-  const warehouseFilter = warehouse && warehouse !== "all"
-    ? sql`WHERE p.status = 'active' AND p.warehouse = ${warehouse}`
-    : sql`WHERE p.status = 'active'`;
-
-  const productCount = await db.execute(sql`SELECT COUNT(*) as n FROM products p ${warehouseFilter}`);
-  const totalProducts = parseInt(String((productCount.rows[0] as any).n)) || 0;
-
-  if (totalProducts === 0) {
-    res.json({ totalProducts: 0, withoutRecords: 0, exact: 0, withDifference: 0, surplus: 0, shortage: 0 });
-    return;
-  }
 
   const allProducts = await db.select({ id: productsTable.id })
     .from(productsTable)
@@ -91,6 +86,13 @@ router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
         ? and(eq(productsTable.status, "active"), eq(productsTable.warehouse, warehouse))
         : eq(productsTable.status, "active")
     );
+
+  const totalProducts = allProducts.length;
+
+  if (totalProducts === 0) {
+    res.json({ totalProducts: 0, withoutRecords: 0, exact: 0, withDifference: 0, surplus: 0, shortage: 0 });
+    return;
+  }
 
   const warehouseCondition = warehouse && warehouse !== "all"
     ? sql`AND warehouse = ${warehouse}`
@@ -133,13 +135,22 @@ router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
 
 router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
-  let query = db.select().from(inventoryRecordsTable).$dynamic();
-  if (warehouse && warehouse !== "all") {
-    query = query.where(eq(inventoryRecordsTable.warehouse, warehouse));
-  }
-  const records = await query.orderBy(desc(inventoryRecordsTable.recordDate));
+  const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+  const condition = warehouse && warehouse !== "all"
+    ? eq(inventoryRecordsTable.warehouse, warehouse)
+    : undefined;
 
-  if (records.length === 0) { res.json(records); return; }
+  const [{ total }] = await db.select({ total: count() }).from(inventoryRecordsTable).where(condition);
+  const records = await db.select().from(inventoryRecordsTable)
+    .where(condition)
+    .orderBy(desc(inventoryRecordsTable.recordDate))
+    .limit(limit)
+    .offset(offset);
+
+  if (records.length === 0) {
+    res.json({ data: [], total, page, limit });
+    return;
+  }
 
   const ids = records.map(r => r.id);
 
@@ -154,24 +165,31 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
     boxMap.get(box.inventoryRecordId)!.push(box);
   }
 
-  // Last consumption date per product_id
+  // Last consumption date per product_id — typed Drizzle query
   const productIds = [...new Set(records.map(r => r.productId))];
-  const lcRows = await db.execute(sql`
-    SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
-    FROM inventory_records ir
-    WHERE ir.product_id = ANY(${productIds})
-    GROUP BY ir.product_id
-  `);
+  const lcRows = await db.select({
+    productId: inventoryRecordsTable.productId,
+    lastConsumptionDate: max(inventoryRecordsTable.recordDate),
+  })
+    .from(inventoryRecordsTable)
+    .where(inArray(inventoryRecordsTable.productId, productIds))
+    .groupBy(inventoryRecordsTable.productId);
+
   const lcMap = new Map<string, string>();
-  for (const row of lcRows.rows as { product_id: string; last_consumption_date: string | null }[]) {
-    if (row.last_consumption_date) lcMap.set(row.product_id, row.last_consumption_date);
+  for (const row of lcRows) {
+    if (row.lastConsumptionDate) lcMap.set(row.productId, row.lastConsumptionDate);
   }
 
-  res.json(records.map(r => ({
-    ...r,
-    boxes: boxMap.get(r.id) ?? [],
-    lastConsumptionDate: lcMap.get(r.productId) ?? null,
-  })));
+  res.json({
+    data: records.map(r => ({
+      ...r,
+      boxes: boxMap.get(r.id) ?? [],
+      lastConsumptionDate: lcMap.get(r.productId) ?? null,
+    })),
+    total,
+    page,
+    limit,
+  });
 }));
 
 // ── Single ────────────────────────────────────────────────────────────────────

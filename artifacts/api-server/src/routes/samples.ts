@@ -1,11 +1,17 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { samplesTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, count } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
+
+function parsePagination(q: Record<string, unknown>) {
+  const page = Math.max(1, parseInt(String(q.page ?? "1"), 10) || 1);
+  const limit = Math.min(500, Math.max(1, parseInt(String(q.limit ?? "50"), 10) || 50));
+  return { page, limit, offset: (page - 1) * limit };
+}
 
 const router = Router();
 
@@ -25,9 +31,14 @@ const sampleSchema = z.object({
   notes: z.string().optional(),
 });
 
-router.get("/", requireAuth, asyncHandler(async (_req, res) => {
-  const records = await db.select().from(samplesTable).orderBy(desc(samplesTable.sampleDate));
-  res.json(records);
+router.get("/", requireAuth, asyncHandler(async (req, res) => {
+  const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+  const [{ total }] = await db.select({ total: count() }).from(samplesTable);
+  const records = await db.select().from(samplesTable)
+    .orderBy(desc(samplesTable.sampleDate))
+    .limit(limit)
+    .offset(offset);
+  res.json({ data: records, total, page, limit });
 }));
 
 router.get("/:id", requireAuth, asyncHandler(async (req, res) => {

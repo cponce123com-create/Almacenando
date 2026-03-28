@@ -10,6 +10,12 @@ import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
 
+function parsePagination(q: Record<string, unknown>) {
+  const page = Math.max(1, parseInt(String(q.page ?? "1"), 10) || 1);
+  const limit = Math.min(500, Math.max(1, parseInt(String(q.limit ?? "50"), 10) || 50));
+  return { page, limit, offset: (page - 1) * limit };
+}
+
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -215,12 +221,17 @@ async function checkProductDependencies(id: string) {
 
 router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
-  let query = db.select().from(productsTable).$dynamic();
-  if (warehouse && warehouse !== "all") {
-    query = query.where(eq(productsTable.warehouse, warehouse));
-  }
-  const products = await query.orderBy(productsTable.warehouse, productsTable.code);
-  res.json(products);
+  const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+  const condition = warehouse && warehouse !== "all"
+    ? eq(productsTable.warehouse, warehouse)
+    : undefined;
+  const [{ total }] = await db.select({ total: count() }).from(productsTable).where(condition);
+  const products = await db.select().from(productsTable)
+    .where(condition)
+    .orderBy(productsTable.warehouse, productsTable.code)
+    .limit(limit)
+    .offset(offset);
+  res.json({ data: products, total, page, limit });
 }));
 
 router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
