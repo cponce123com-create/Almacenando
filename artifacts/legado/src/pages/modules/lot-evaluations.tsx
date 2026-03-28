@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
+import { getAuthToken } from "../../hooks/use-auth";
 import {
   FlaskConical, Plus, Search, History, Shuffle, BarChart2,
   Pencil, Trash2, CheckCircle, XCircle, AlertCircle, Eye,
@@ -23,7 +24,7 @@ import { cn } from "@/lib/utils";
 const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function getAuthHeaders() {
-  const token = sessionStorage.getItem("almacen_token");
+  const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -171,7 +172,7 @@ export default function LotEvaluationsPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const token = sessionStorage.getItem("almacen_token");
+      const token = getAuthToken();
       const res = await fetch(`${API_BASE}/api/lot-evaluations/import`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -192,7 +193,7 @@ export default function LotEvaluationsPage() {
   }
 
   async function downloadTemplate() {
-    const token = sessionStorage.getItem("almacen_token");
+    const token = getAuthToken();
     const url = `${API_BASE}/api/lot-evaluations/template`;
     try {
       const res = await fetch(url, {
