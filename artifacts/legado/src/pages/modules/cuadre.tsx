@@ -176,6 +176,7 @@ export default function CuadrePage() {
   };
 
   const warehouseParam = warehouse === "all" ? "" : `?warehouse=${warehouse}`;
+  const limitParam = (base: string) => base ? `${base}&limit=500` : "?limit=500";
 
   // Queries
   const { data: records = [], isLoading, isError } = useQuery<CuadreRecord[]>({
@@ -185,7 +186,7 @@ export default function CuadrePage() {
 
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products", warehouse],
-    queryFn: () => apiJson(`/api/products${warehouseParam}`),
+    queryFn: () => apiJson(`/api/products${limitParam(warehouseParam)}`).then((r: any) => r.data ?? r),
   });
 
   const { data: latestBalances = [] } = useQuery<BalanceRecord[]>({
@@ -195,7 +196,7 @@ export default function CuadrePage() {
 
   const { data: inventoryRecords = [] } = useQuery<InventoryRecord[]>({
     queryKey: ["/api/inventory", warehouse],
-    queryFn: () => apiJson(`/api/inventory${warehouseParam}`),
+    queryFn: () => apiJson(`/api/inventory${limitParam(warehouseParam)}`).then((r: any) => r.data ?? r),
   });
 
   // Build lookup maps

@@ -156,7 +156,7 @@ export default function LotesyTinturasPage() {
   // ---------------------------------------------------------------------------
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"],
-    queryFn: () => api("/api/products"),
+    queryFn: () => api("/api/products?limit=500").then((r: any) => r.data ?? r),
   });
 
   const { data: lots = [], isLoading, isError } = useQuery<DyeLot[]>({

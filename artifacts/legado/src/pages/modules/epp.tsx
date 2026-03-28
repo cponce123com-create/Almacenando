@@ -73,7 +73,7 @@ export default function EquiposdeProtecciónPersonalPage() {
     queryKey: ["/api/epp/deliveries"], queryFn: () => api("/api/epp/deliveries"),
   });
   const { data: personnel = [] } = useQuery<Personnel[]>({
-    queryKey: ["/api/personnel"], queryFn: () => api("/api/personnel"),
+    queryKey: ["/api/personnel"], queryFn: () => api("/api/personnel?limit=500").then((r: any) => r.data ?? r),
   });
   const { data: eppAlerts = [] } = useQuery<Record<string, unknown>[]>({
     queryKey: ["/api/reports/epp-alerts"], queryFn: () => api("/api/reports/epp-alerts"),

@@ -245,7 +245,7 @@ export default function DisposicionFinalPage() {
   const [filterStatus, setFilterStatus] = useState("all");
 
   const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"], queryFn: () => api("/api/products"),
+    queryKey: ["/api/products"], queryFn: () => api("/api/products?limit=500").then((r: any) => r.data ?? r),
   });
   const { data: records = [], isLoading, isError } = useQuery<Disposition[]>({
     queryKey: ["/api/disposition"], queryFn: () => api("/api/disposition"),

@@ -116,7 +116,7 @@ export default function ProductosInmovilizadosPage() {
   const set = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"], queryFn: () => api("/api/products"),
+    queryKey: ["/api/products"], queryFn: () => api("/api/products?limit=500").then((r: any) => r.data ?? r),
   });
   const { data: records = [], isLoading, isError } = useQuery<ImmobilizedRecord[]>({
     queryKey: ["/api/immobilized"], queryFn: () => api("/api/immobilized"),
