@@ -23,6 +23,7 @@ import {
   Scale,
   Warehouse,
   UserCog,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
@@ -70,6 +71,7 @@ export const modules = [
   { name: "Lotes / Tinturas",     href: "/dye-lots",     icon: Layers },
   { name: "Control de Lotes",     href: "/lot-evaluations", icon: Microscope },
   { name: "Disposición Final",    href: "/disposition",  icon: Recycle },
+  { name: "MSDS",                 href: "/msds",         icon: ShieldCheck },
   { name: "Documentos",           href: "/documents",    icon: FileText },
   { name: "EPP",                  href: "/epp",          icon: Shield },
   { name: "Personal",             href: "/personnel",    icon: Users },

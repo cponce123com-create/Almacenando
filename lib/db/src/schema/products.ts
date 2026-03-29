@@ -14,6 +14,7 @@ export const productsTable = pgTable("products", {
   minimumStock: numeric("minimum_stock").notNull().default("0"),
   maximumStock: numeric("maximum_stock"),
   msds: boolean("msds").notNull().default(false),
+  msdsUrl: text("msds_url"),
   controlled: boolean("controlled").notNull().default(false),
   location: text("location"),
   supplier: text("supplier"),

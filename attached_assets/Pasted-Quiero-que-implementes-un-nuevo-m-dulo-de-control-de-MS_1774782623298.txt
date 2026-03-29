@@ -1,0 +1,43 @@
+Quiero que implementes un nuevo módulo de control de MSDS (Fichas de Seguridad) en este proyecto. Sigue estos pasos en orden:
+1. Migración de base de datos
+Agrega una nueva migración en lib/db/drizzle/ llamada 0003_msds_url.sql con el siguiente contenido:
+sqlALTER TABLE products ADD COLUMN msds_url text;
+Luego actualiza el schema en lib/db/src/schema/products.ts agregando el campo:
+tsmsdsUrl: text("msds_url"),
+```
+
+**2. Backend**
+En `artifacts/api-server/src/routes/products.ts`:
+- Agrega `msdsUrl: z.string().optional().nullable()` al `productSchema`
+- Agrega un nuevo endpoint `GET /products/msds-stats` que reciba `?warehouse=` como query param y retorne `{ sinMsds: number, conMsds: number, total: number }` consultando la tabla de productos con Drizzle
+
+**3. Instalar dependencia**
+Instala `qrcode.react` en el workspace del frontend legado:
+```
+pnpm add qrcode.react --filter @workspace/legado
+4. Nuevo componente de página
+Crea artifacts/legado/src/pages/modules/msds.tsx. La página debe tener:
+
+Usa AppLayout, useWarehouse(), useAuth() y getAuthHeaders() igual que las otras páginas del proyecto
+Arriba del todo: selector de almacén (botones para QA, Q1, QP, QL, QD y "Todos") que use el contexto useWarehouse
+Debajo del selector: tres tarjetas métricas que consuman el endpoint /api/products/msds-stats?warehouse=<almacen_seleccionado> y muestren: productos sin MSDS (en rojo), productos con MSDS (en verde) y porcentaje completado
+Debajo de las métricas: layout de dos columnas:
+
+Columna izquierda: input de búsqueda reactivo que filtre la lista de productos del almacén seleccionado por nombre o código. Cada fila muestra código, nombre y un badge verde/rojo según tenga MSDS. Al hacer clic en una fila se selecciona ese producto
+Columna derecha: panel de detalle del producto seleccionado que muestra:
+
+Nombre, código y almacén
+Badge de estado MSDS
+Si tiene MSDS (msds: true y msdsUrl con valor): un QR generado con QRCodeSVG de qrcode.react apuntando a la URL, un botón "Descargar MSDS" que abra msdsUrl en nueva pestaña, y un botón "Imprimir etiqueta QR" que abra una ventana de impresión con el QR + código + nombre del producto centrados y listos para imprimir
+Si no tiene MSDS: un aviso en rojo indicando que falta la ficha
+
+
+
+
+
+5. Registrar la ruta
+
+En artifacts/legado/src/App.tsx agrega la ruta /msds apuntando al nuevo componente
+En el sidebar o menú de navegación existente agrega un ítem "MSDS" con el ícono ShieldCheck de lucide-react, colocado junto a los otros módulos
+
+Usa el mismo estilo visual, patrones de React Query, manejo de errores y estructura de código que ya existe en las otras páginas del módulo como products.tsx o documents.tsx. No cambies nada del resto del proyecto.

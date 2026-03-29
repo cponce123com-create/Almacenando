@@ -25,6 +25,7 @@ import PersonnelPage from "@/pages/modules/personnel";
 import ReportsPage from "@/pages/modules/reports";
 import AdminUsersPage from "@/pages/modules/admin-users";
 import LotEvaluationsPage from "@/pages/modules/lot-evaluations";
+import MsdsPage from "@/pages/modules/msds";
 import ProfilePage from "@/pages/profile";
 
 const queryClient = new QueryClient({
@@ -96,6 +97,7 @@ function Router() {
       <Route path="/reports"><ProtectedRoute component={ReportsPage} /></Route>
       <Route path="/admin-users"><ProtectedRoute component={AdminUsersPage} /></Route>
       <Route path="/lot-evaluations"><ProtectedRoute component={LotEvaluationsPage} /></Route>
+      <Route path="/msds"><ProtectedRoute component={MsdsPage} /></Route>
       <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
 
       <Route component={NotFound} />

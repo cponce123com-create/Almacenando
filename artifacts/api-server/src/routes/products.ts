@@ -30,6 +30,7 @@ const productSchema = z.object({
   minimumStock: z.string().default("0"),
   maximumStock: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   msds: z.boolean().default(false),
+  msdsUrl: z.string().optional().nullable(),
   controlled: z.boolean().default(false),
   location: z.string().optional(),
   supplier: z.string().optional(),
@@ -218,6 +219,17 @@ async function checkProductDependencies(id: string) {
   if ((dis?.n ?? 0) > 0) deps.push(`Disposición Final (${dis?.n} registros)`);
   return deps;
 }
+
+router.get("/msds-stats", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+  const condition = warehouse && warehouse !== "all"
+    ? eq(productsTable.warehouse, warehouse)
+    : undefined;
+  const [{ total }] = await db.select({ total: count() }).from(productsTable).where(condition);
+  const [{ conMsds }] = await db.select({ conMsds: count() }).from(productsTable)
+    .where(condition ? and(condition, eq(productsTable.msds, true)) : eq(productsTable.msds, true));
+  res.json({ sinMsds: Number(total) - Number(conMsds), conMsds: Number(conMsds), total: Number(total) });
+}));
 
 router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
