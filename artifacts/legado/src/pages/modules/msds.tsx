@@ -220,11 +220,14 @@ export default function MsdsPage() {
     };
 
     const renderFirstAid = (text: string | null | undefined, color: string): string => {
-      if (!text?.trim()) return "";
-      const items = text.split(/[·\n]/).map((s) => s.trim()).filter(Boolean);
-      const bullets = items.map((i) => `<div style="margin-bottom:1px;">• ${i}</div>`).join("");
-      return `<div style="background:#fff8e1;border-top:1px solid #eee;padding:4px 6px;font-size:7.5px;color:#333;line-height:1.4;">
-        <div style="font-weight:bold;color:${color};margin-bottom:2px;">ⓘ ⊖ En caso de contacto:</div>
+      const items = text?.trim()
+        ? text.split(/[·\n]/).map((s) => s.trim()).filter(Boolean)
+        : [];
+      const bullets = items.length
+        ? items.map((i) => `<div style="margin-bottom:2px;">• ${i}</div>`).join("")
+        : `<div style="color:#aaa;font-style:italic;">Sin instrucciones registradas</div>`;
+      return `<div style="background:#fff8e1;border-top:1px solid #eee;padding:5px 8px;font-size:7.5px;color:#333;line-height:1.5;flex:1;">
+        <div style="font-weight:bold;color:${color};margin-bottom:3px;font-size:8px;">ⓘ En caso de contacto:</div>
         ${bullets}
       </div>`;
     };
@@ -238,9 +241,9 @@ export default function MsdsPage() {
         const pictoHtml = renderPictos(p.hazardPictograms, color);
         const firstAidHtml = renderFirstAid(p.firstAid, color);
         return `
-        <div class="card" style="border:2px solid ${color};">
-          <div style="background:${color};color:white;text-align:center;padding:4px 6px;font-size:9px;font-weight:bold;letter-spacing:0.5px;">${label}</div>
-          <div style="display:flex;align-items:flex-start;padding:5px 7px;gap:5px;border-bottom:1px solid #eee;">
+        <div class="card" style="border:2px solid ${color};display:flex;flex-direction:column;">
+          <div style="background:${color};color:white;text-align:center;padding:4px 6px;font-size:9px;font-weight:bold;letter-spacing:0.5px;flex-shrink:0;">${label}</div>
+          <div style="display:flex;align-items:flex-start;padding:5px 7px;gap:5px;border-bottom:1px solid #eee;flex-shrink:0;">
             <div style="flex:1;min-width:0;">
               <div style="font-size:12px;font-weight:bold;color:#111;text-transform:uppercase;line-height:1.2;">${p.name}</div>
               <div style="font-size:8px;color:#555;margin-top:3px;">Código: <strong>${p.code}</strong></div>
@@ -249,17 +252,18 @@ export default function MsdsPage() {
             </div>
             ${pictoHtml}
           </div>
-          <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid #eee;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(p.msdsUrl!)}" width="80" height="80" alt="QR" style="flex-shrink:0;display:block;border-right:1px solid #eee;">
-            <div style="flex:1;min-width:0;padding:6px 8px;background:${color}10;display:flex;flex-direction:column;justify-content:center;gap:2px;">
-              <div style="font-size:7px;font-weight:bold;color:${color};letter-spacing:0.3px;">ESCANEA PARA VER MSDS COMPLETA</div>
-              <div style="font-size:9px;font-weight:bold;color:#1a1a2e;margin-top:4px;">${p.code}</div>
+          <div style="display:flex;align-items:stretch;border-bottom:1px solid #eee;flex-shrink:0;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=95x95&data=${encodeURIComponent(p.msdsUrl!)}" width="95" height="95" alt="QR" style="flex-shrink:0;display:block;border-right:1px solid #eee;">
+            <div style="flex:1;min-width:0;padding:6px 8px;background:${color}0d;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:4px;">
+              <div style="font-size:7px;font-weight:bold;color:${color};letter-spacing:0.5px;text-transform:uppercase;">Escanea para ver</div>
+              <div style="font-size:8px;font-weight:bold;color:${color};letter-spacing:0.5px;text-transform:uppercase;">MSDS Completa</div>
+              <div style="font-size:11px;font-weight:bold;color:#1a1a2e;letter-spacing:1px;border-top:1px dashed ${color}80;padding-top:4px;width:100%;">${p.code}</div>
             </div>
           </div>
           ${firstAidHtml}
-          <div style="padding:3px 6px;margin-top:auto;border-top:1px solid #eee;">
-            <svg class="barcode-lg" data-code="${p.code}" style="width:100%;height:32px;display:block;"></svg>
-            <div style="font-size:7.5px;color:#555;text-align:center;">${p.code}</div>
+          <div style="padding:6px 8px;border-top:1px solid #eee;background:#fafafa;text-align:center;flex-shrink:0;">
+            <svg class="barcode-lg" data-code="${p.code}" style="width:90%;height:36px;display:inline-block;"></svg>
+            <div style="font-size:8px;color:#666;margin-top:2px;letter-spacing:1px;">${p.code}</div>
           </div>
         </div>`;
       }).join("");
