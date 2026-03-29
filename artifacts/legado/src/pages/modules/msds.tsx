@@ -40,6 +40,7 @@ export default function MsdsPage() {
   const [msdsInput, setMsdsInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [editingUrl, setEditingUrl] = useState(false);
 
   const warehouseQ = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
   const warehouseStats = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
@@ -84,6 +85,7 @@ export default function MsdsPage() {
       const updated: Product = await res.json();
       setSelected(updated);
       setMsdsInput("");
+      setEditingUrl(false);
       void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
       void queryClient.invalidateQueries({ queryKey: ["/api/products/msds-stats", warehouse] });
     } catch (err: any) {
@@ -242,6 +244,14 @@ export default function MsdsPage() {
   </div>
   ${pagesHtml}
   <script>
+    function tryPrint(jsBarcodeReady, imgsReady) {
+      if (jsBarcodeReady && imgsReady) window.print();
+    }
+
+    var barcodeReady = false;
+    var imgsDone = false;
+
+    // Load JsBarcode, then render all barcodes
     var script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js';
     script.onload = function() {
@@ -254,9 +264,23 @@ export default function MsdsPage() {
           width: 1.2
         });
       });
-      window.print();
+      barcodeReady = true;
+      tryPrint(barcodeReady, imgsDone);
     };
     document.head.appendChild(script);
+
+    // Wait for all QR images to finish loading
+    var imgs = Array.from(document.querySelectorAll('img'));
+    if (imgs.length === 0) {
+      imgsDone = true;
+    } else {
+      var loaded = 0;
+      imgs.forEach(function(img) {
+        function onDone() { loaded++; if (loaded === imgs.length) { imgsDone = true; tryPrint(barcodeReady, imgsDone); } }
+        if (img.complete && img.naturalWidth > 0) { onDone(); }
+        else { img.onload = onDone; img.onerror = onDone; }
+      });
+    }
   <\/script>
 </body>
 </html>`);
@@ -390,7 +414,7 @@ export default function MsdsPage() {
                   return (
                     <div
                       key={p.id}
-                      onClick={() => setSelected(p)}
+                      onClick={() => { setSelected(p); setEditingUrl(false); setMsdsInput(""); setSaveError(null); }}
                       style={{
                         display: "flex",
                         alignItems: "center",
@@ -471,8 +495,8 @@ export default function MsdsPage() {
                 </div>
 
                 {/* MSDS content */}
-                {selected.msds && selected.msdsUrl ? (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20 }}>
+                {selected.msds && selected.msdsUrl && !editingUrl ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
                     <div style={{ padding: 16, border: "2px solid #99f6e4", borderRadius: 12, background: "#f0fdfa" }}>
                       <QRCodeSVG
                         id="msds-qr-svg"
@@ -485,7 +509,7 @@ export default function MsdsPage() {
                     <p style={{ fontSize: 12, color: "#64748b", margin: 0, textAlign: "center", wordBreak: "break-all", maxWidth: 280 }}>
                       {selected.msdsUrl}
                     </p>
-                    <div style={{ display: "flex", gap: 10 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
                       <Button
                         onClick={() => window.open(selected.msdsUrl!, "_blank")}
                         style={{ background: "#0d9488", color: "#fff", border: "none", gap: 6 }}
@@ -493,36 +517,41 @@ export default function MsdsPage() {
                         <Download style={{ width: 15, height: 15 }} />
                         Descargar MSDS
                       </Button>
-                      <Button
-                        variant="outline"
-                        onClick={handlePrintQr}
-                        style={{ gap: 6 }}
-                      >
+                      <Button variant="outline" onClick={handlePrintQr} style={{ gap: 6 }}>
                         <Printer style={{ width: 15, height: 15 }} />
                         Imprimir etiqueta QR
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => { setMsdsInput(selected.msdsUrl ?? ""); setSaveError(null); setEditingUrl(true); }}
+                        style={{ gap: 6, borderColor: "#cbd5e1", color: "#475569" }}
+                      >
+                        Editar URL
                       </Button>
                     </div>
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                    <div style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "14px 16px",
-                      background: "#fff7f7",
-                      borderRadius: 8,
-                      border: "1.5px dashed #fca5a5",
-                    }}>
-                      <ShieldOff style={{ width: 20, height: 20, color: "#dc2626", flexShrink: 0 }} />
-                      <p style={{ fontSize: 13, fontWeight: 600, color: "#dc2626", margin: 0 }}>
-                        Ficha de Seguridad no disponible
-                      </p>
-                    </div>
+                    {!editingUrl && (
+                      <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "14px 16px",
+                        background: "#fff7f7",
+                        borderRadius: 8,
+                        border: "1.5px dashed #fca5a5",
+                      }}>
+                        <ShieldOff style={{ width: 20, height: 20, color: "#dc2626", flexShrink: 0 }} />
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "#dc2626", margin: 0 }}>
+                          Ficha de Seguridad no disponible
+                        </p>
+                      </div>
+                    )}
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       <label style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
-                        Registrar URL de MSDS
+                        {editingUrl ? "Editar URL de MSDS" : "Registrar URL de MSDS"}
                       </label>
                       <input
                         type="url"
@@ -550,6 +579,7 @@ export default function MsdsPage() {
                           {saveError}
                         </p>
                       )}
+                      <div style={{ display: "flex", gap: 8 }}>
                       <Button
                         onClick={() => void handleSaveMsds()}
                         disabled={saving || !msdsInput.trim()}
@@ -558,7 +588,6 @@ export default function MsdsPage() {
                           color: "#fff",
                           border: "none",
                           gap: 6,
-                          alignSelf: "flex-start",
                         }}
                       >
                         {saving
@@ -566,6 +595,17 @@ export default function MsdsPage() {
                           : <><Save style={{ width: 14, height: 14 }} />Guardar MSDS</>
                         }
                       </Button>
+                      {editingUrl && (
+                        <Button
+                          variant="outline"
+                          onClick={() => { setEditingUrl(false); setMsdsInput(""); setSaveError(null); }}
+                          disabled={saving}
+                          style={{ gap: 6 }}
+                        >
+                          Cancelar
+                        </Button>
+                      )}
+                      </div>
                     </div>
                   </div>
                 )}
