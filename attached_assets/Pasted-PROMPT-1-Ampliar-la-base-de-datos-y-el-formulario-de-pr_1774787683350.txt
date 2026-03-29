@@ -1,0 +1,30 @@
+PROMPT 1 — Ampliar la base de datos y el formulario de productosNecesito ampliar la tabla de productos y el formulario de edición para soportar datos adicionales requeridos para el álbum MSDS. Haz estos cambios en orden:1. Nueva migración de base de datos
+Crea lib/db/drizzle/0004_msds_fields.sql:
+sqlALTER TABLE products ADD COLUMN hazard_level text DEFAULT 'precaucion';
+ALTER TABLE products ADD COLUMN hazard_pictograms text DEFAULT '[]';
+ALTER TABLE products ADD COLUMN first_aid text DEFAULT 'Lavar con agua 15 min · Usar guantes · Avisar supervisor';Actualiza lib/db/src/schema/products.ts agregando:
+tshazardLevel: text("hazard_level").default("precaucion"),
+hazardPictograms: text("hazard_pictograms").default("[]"),
+firstAid: text("first_aid").default("Lavar con agua 15 min · Usar guantes · Avisar supervisor"),2. Backend
+En artifacts/api-server/src/routes/products.ts agrega al productSchema:
+tshazardLevel: z.enum(["alto_riesgo", "precaucion", "controlado"]).default("precaucion"),
+hazardPictograms: z.string().default("[]"), // JSON array de strings
+firstAid: z.string().optional(),3. Formulario de edición de producto
+En artifacts/legado/src/pages/modules/products.tsx, dentro del formulario de edición/creación de producto, agrega una nueva sección llamada "Información de Seguridad (MSDS)" con estos campos:
+Nivel de peligro (hazardLevel): un <Select> con tres opciones:
+
+alto_riesgo → "⚠️ Alto Riesgo"
+precaucion → "⚠️ Precaución"
+controlado → "⚠️ Uso Controlado"
+
+
+
+Pictogramas de peligro (hazardPictograms): un grupo de checkboxes donde el usuario puede seleccionar múltiples pictogramas GHS. Los valores son strings que se guardan como JSON array en el campo de texto. Las opciones son:
+
+explosivo, inflamable, oxidante, gas_presion, corrosivo, toxico, nocivo, peligro_ambiental, peligro_salud
+Muestra cada opción con su nombre en español y un emoji representativo
+
+
+
+Primeros auxilios (firstAid): un <Textarea> con placeholder "Ej: Lavar con agua 15 min · Usar guantes · Avisar supervisor" y máximo 300 caracteres
+Guarda estos campos junto con el resto del formulario usando los endpoints existentes de create/update producto. No cambies la estructura ni el estilo visual del formulario existente, solo agrega la nueva sección al final antes del botón guardar.No cambies nada más del proyecto.

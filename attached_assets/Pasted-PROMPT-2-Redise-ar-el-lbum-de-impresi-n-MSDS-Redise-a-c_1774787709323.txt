@@ -1,0 +1,54 @@
+PROMPT 2 — Rediseñar el álbum de impresión MSDS
+
+Rediseña completamente la función del álbum de impresión MSDS en msds.tsx para que cada tarjeta tenga un diseño visual profesional de seguridad química, similar a las fichas de emergencia industriales. Usa los nuevos campos hazardLevel, hazardPictograms y firstAid que ahora existen en cada producto.
+Layout general: igual que antes — A4 portrait, 2 columnas × 3 filas, 6 tarjetas por página.
+Encabezado de página (una banda roja que atraviesa todo el ancho):
+html<div style="background:#c0392b; color:white; text-align:center; padding:6px; font-size:13px; font-weight:bold; letter-spacing:1px; margin-bottom:8px;">
+  ⚠ PRODUCTOS QUÍMICOS – FICHAS DE SEGURIDAD MSDS
+</div>
+```
+
+**Diseño de cada tarjeta** según `hazardLevel`:
+
+Colores por nivel:
+- `alto_riesgo`: borde y header `#c0392b` (rojo)
+- `precaucion`: borde y header `#e67e22` (naranja/amarillo)
+- `controlado`: borde y header `#2c3e50` (azul oscuro)
+
+Estructura interna de cada tarjeta (de arriba hacia abajo):
+```
+┌─────────────────────────────────────┐
+│ ⚠ PRODUCTO QUÍMICO – ALTO RIESGO   │  ← banda de color según nivel, con ícono ⚠
+├──────────────────────────┬──────────┤
+│ NOMBRE DEL PRODUCTO      │ [pic][pic]│  ← nombre bold grande, pictogramas GHS a la derecha
+│ Código: XXXX-XXXX        │          │
+│ Área: Q1                 │          │
+│ Tipo: <category>         │          │
+├──────────────────────────┴──────────┤
+│ [QR]  ESCANEA PARA VER MSDS        │  ← fila QR + código de barras + código
+│       ║║║║║║║║  XXXX-XXXX         │
+├─────────────────────────────────────┤
+│ 🚨 En caso de contacto:            │  ← fondo crema/amarillo claro
+│ • <firstAid line 1>                │
+│ • <firstAid line 2>                │
+├─────────────────────────────────────┤
+│ ║║║║║║║║║║║║  XXXX-XXXX           │  ← código de barras grande al pie
+└─────────────────────────────────────┘
+Pictogramas GHS: renderízalos como diamantes SVG inline simples (rombo con borde negro y fondo blanco, con un emoji o letra dentro) de 28×28px. Mapea así:
+
+toxico → ☠️, inflamable → 🔥, corrosivo → símbolo corrosión, nocivo → ⚠️, oxidante → 🔶, explosivo → 💥, peligro_ambiental → 🌿, gas_presion → 🔵, peligro_salud → ❤️
+
+Cada pictograma va dentro de un <div style="width:28px;height:28px;border:2px solid #333;transform:rotate(45deg);display:flex;align-items:center;justify-content:center;"> con el emoji dentro con transform:rotate(-45deg).
+Sección de primeros auxilios: parsea el campo firstAid dividiendo por · o por salto de línea y muestra cada fragmento como un ítem de lista con bullet •. Fondo #fef9e7, borde izquierdo 3px del color del nivel de peligro.
+Los dos códigos de barras por tarjeta:
+
+Uno pequeño (height:25) en la fila del QR
+Uno más grande (height:35) al pie de la tarjeta
+Ambos con displayValue: false, generados con JsBarcode usando el código del producto.
+
+Pie de página de cada hoja:
+html<div style="text-align:center; font-size:8px; color:#999; border-top:1px solid #ddd; padding-top:4px; margin-top:6px;">
+  Documento confidencial · Uso interno de emergencia · Almacén: ${warehouse} · Emitido: ${fecha}
+</div>
+Elimina cualquier texto de instrucciones o comentarios visibles en la página impresa.
+No cambies nada más del proyecto.

@@ -37,6 +37,9 @@ const productSchema = z.object({
   hazardClass: z.string().optional(),
   storageConditions: z.string().optional(),
   notes: z.string().optional(),
+  hazardLevel: z.enum(["alto_riesgo", "precaucion", "controlado"]).default("precaucion"),
+  hazardPictograms: z.string().default("[]"),
+  firstAid: z.string().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
 });
 
