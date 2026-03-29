@@ -188,35 +188,43 @@ export default function MsdsPage() {
 
     const levelConfig = (level: string | null | undefined): { color: string; label: string } => {
       if (level === "alto_riesgo") return { color: "#c0392b", label: "⚠ PRODUCTO QUÍMICO – ALTO RIESGO" };
-      if (level === "controlado")  return { color: "#2c3e50", label: "⚠ USO CONTROLADO" };
+      if (level === "controlado")  return { color: "#1a3a5c", label: "⚠ PRODUCTO QUÍMICO – USO CONTROLADO" };
       return { color: "#e67e22", label: "⚠ PRODUCTO QUÍMICO – PRECAUCIÓN" };
     };
 
-    const pictoEmoji: Record<string, string> = {
-      toxico: "☠️", inflamable: "🔥", corrosivo: "🧪", nocivo: "⚠️",
-      oxidante: "🔶", explosivo: "💥", peligro_ambiental: "🌿",
-      gas_presion: "🔵", peligro_salud: "❤️",
+    // GHS symbols as Unicode text (black, print-safe)
+    const pictoSymbol: Record<string, string> = {
+      toxico:            "☠",
+      inflamable:        "♨",
+      corrosivo:         "⊛",
+      nocivo:            "!",
+      oxidante:          "⊙",
+      explosivo:         "✳",
+      peligro_ambiental: "♣",
+      gas_presion:       "⊕",
+      peligro_salud:     "✚",
     };
 
-    const renderPictos = (raw: string | null | undefined): string => {
+    const renderPictos = (raw: string | null | undefined, borderColor: string): string => {
       let keys: string[] = [];
       try { keys = JSON.parse(raw ?? "[]") as string[]; } catch { /* empty */ }
       if (!keys.length) return "";
       const diamonds = keys.map((k) => {
-        const emoji = pictoEmoji[k] ?? "⚠";
-        return `<div style="width:28px;height:28px;border:2px solid #333;transform:rotate(45deg);display:flex;align-items:center;justify-content:center;flex-shrink:0;background:white;">
-          <span style="transform:rotate(-45deg);font-size:14px;line-height:1;">${emoji}</span>
-        </div>`;
+        const sym = pictoSymbol[k] ?? "⚠";
+        return `<svg width="30" height="30" viewBox="0 0 40 40" style="flex-shrink:0;">
+          <rect x="4" y="4" width="32" height="32" rx="2" fill="white" stroke="${borderColor}" stroke-width="3" transform="rotate(45 20 20)"/>
+          <text x="20" y="25" text-anchor="middle" font-size="16" font-family="Arial" font-weight="bold" fill="#1a1a2e">${sym}</text>
+        </svg>`;
       }).join("");
-      return `<div style="display:flex;flex-wrap:wrap;gap:4px;max-width:80px;justify-content:flex-end;flex-shrink:0;">${diamonds}</div>`;
+      return `<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;flex-shrink:0;max-width:72px;">${diamonds}</div>`;
     };
 
-    const renderFirstAid = (text: string | null | undefined, borderColor: string): string => {
+    const renderFirstAid = (text: string | null | undefined, color: string): string => {
       if (!text?.trim()) return "";
       const items = text.split(/[·\n]/).map((s) => s.trim()).filter(Boolean);
-      const bullets = items.map((i) => `<div style="margin-bottom:2px;">• ${i}</div>`).join("");
-      return `<div style="background:#fef9e7;border-left:3px solid ${borderColor};padding:5px 7px;font-size:8px;color:#333;line-height:1.4;">
-        <div style="font-weight:bold;margin-bottom:2px;">🚨 En caso de contacto:</div>
+      const bullets = items.map((i) => `<div style="margin-bottom:1px;">• ${i}</div>`).join("");
+      return `<div style="background:#fff8e1;border-top:1px solid #eee;padding:4px 6px;font-size:7.5px;color:#333;line-height:1.4;">
+        <div style="font-weight:bold;color:${color};margin-bottom:2px;">ⓘ ⊖ En caso de contacto:</div>
         ${bullets}
       </div>`;
     };
@@ -227,30 +235,32 @@ export default function MsdsPage() {
     const pagesHtml = chunks.map((chunk) => {
       const cards = chunk.map((p) => {
         const { color, label } = levelConfig(p.hazardLevel);
-        const pictoHtml = renderPictos(p.hazardPictograms);
+        const pictoHtml = renderPictos(p.hazardPictograms, color);
         const firstAidHtml = renderFirstAid(p.firstAid, color);
         return `
-        <div class="card" style="border-color:${color};">
+        <div class="card" style="border:2px solid ${color};">
           <div style="background:${color};color:white;text-align:center;padding:4px 6px;font-size:9px;font-weight:bold;letter-spacing:0.5px;">${label}</div>
-          <div style="display:flex;align-items:flex-start;padding:5px 6px;gap:6px;border-bottom:1px solid #eee;">
+          <div style="display:flex;align-items:flex-start;padding:5px 7px;gap:5px;border-bottom:1px solid #eee;">
             <div style="flex:1;min-width:0;">
-              <div style="font-size:11px;font-weight:bold;color:#1a1a2e;text-transform:uppercase;line-height:1.2;">${p.name}</div>
-              <div style="font-size:8px;color:#666;margin-top:2px;">Código: ${p.code}</div>
-              <div style="font-size:8px;color:#666;">Área: ${p.warehouse}</div>
-              ${p.category ? `<div style="font-size:8px;color:#666;">Tipo: ${p.category}</div>` : ""}
+              <div style="font-size:12px;font-weight:bold;color:#111;text-transform:uppercase;line-height:1.2;">${p.name}</div>
+              <div style="font-size:8px;color:#555;margin-top:3px;">Código: <strong>${p.code}</strong></div>
+              <div style="font-size:8px;color:#555;">Área: <strong>${p.warehouse}</strong></div>
+              ${p.category ? `<div style="font-size:8px;color:#555;">Tipo: ${p.category}</div>` : ""}
             </div>
             ${pictoHtml}
           </div>
-          <div style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-bottom:1px solid #eee;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=50x50&data=${encodeURIComponent(p.msdsUrl!)}" width="50" height="50" alt="QR" style="flex-shrink:0;">
-            <div style="flex:1;min-width:0;">
-              <svg class="barcode-sm" data-code="${p.code}" style="width:100%;height:25px;display:block;"></svg>
-              <div style="font-size:8px;color:#666;margin-top:2px;">${p.code}</div>
+          <div style="display:flex;align-items:center;gap:0;border-bottom:1px solid #eee;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=52x52&data=${encodeURIComponent(p.msdsUrl!)}" width="52" height="52" alt="QR" style="flex-shrink:0;display:block;border-right:1px solid #eee;">
+            <div style="flex:1;min-width:0;padding:4px 6px;background:${color}10;">
+              <div style="font-size:7px;font-weight:bold;color:${color};letter-spacing:0.3px;margin-bottom:2px;">ESCANEA PARA VER MSDS COMPLETA</div>
+              <svg class="barcode-sm" data-code="${p.code}" style="width:100%;height:24px;display:block;"></svg>
+              <div style="font-size:7.5px;color:#555;margin-top:1px;text-align:center;">${p.code}</div>
             </div>
           </div>
           ${firstAidHtml}
-          <div style="padding:4px 6px;margin-top:auto;">
-            <svg class="barcode-lg" data-code="${p.code}" style="width:100%;height:35px;display:block;"></svg>
+          <div style="padding:3px 6px;margin-top:auto;border-top:1px solid #eee;">
+            <svg class="barcode-lg" data-code="${p.code}" style="width:100%;height:32px;display:block;"></svg>
+            <div style="font-size:7.5px;color:#555;text-align:center;">${p.code}</div>
           </div>
         </div>`;
       }).join("");
@@ -261,7 +271,7 @@ export default function MsdsPage() {
         </div>
         <div class="page">${cards}</div>
         <div style="text-align:center;font-size:8px;color:#999;border-top:1px solid #ddd;padding-top:4px;margin-top:6px;">
-          Documento confidencial · Uso interno de emergencia · Almacén: ${warehouseLabel} · Emitido: ${dateStr}
+          Documento confidencial de uso interno – en caso de emergencia contactar al responsable del almacén
         </div>
         <div class="page-break"></div>`;
     }).join("");
