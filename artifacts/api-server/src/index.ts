@@ -17,8 +17,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 app.listen(port, async () => {
-  logger.info({ port }, "Almacén Químico API - Server listening");
-  console.log(`✓ API Server running on port ${port}`);
+  logger.info({ port }, "API Server running");
 
   // -------------------------------------------------------------------
   // Seed demo data SOLO si RUN_SEED=true está definido explícitamente.

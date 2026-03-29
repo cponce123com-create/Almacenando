@@ -30,10 +30,10 @@ export const lookupLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === "test",
 });
 
-/** 100 requests per 15 minutes per IP — general API catch-all */
+/** 500 requests per 15 minutes per IP — general API catch-all */
 export const generalApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 100,
+  limit: 500,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Demasiadas solicitudes. Intenta más tarde." },

@@ -647,6 +647,7 @@ export default function MaestrodeProductosPage() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [showImportResult, setShowImportResult] = useState(false);
   const [showDeleteAll, setShowDeleteAll] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
   const canWrite = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
   const canDelete = user?.role && ["admin", "supervisor"].includes(user.role);
@@ -744,8 +745,11 @@ export default function MaestrodeProductosPage() {
   });
 
   const deleteAllMutation = useMutation({
-    mutationFn: () => fetch(`${BASE}/api/products/all`, { method: "DELETE", headers: getAuthHeaders() })
-      .then(r => { if (!r.ok) throw new Error("Error al eliminar"); return r.json(); }),
+    mutationFn: () => fetch(`${BASE}/api/products/all`, {
+      method: "DELETE",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: "ELIMINAR_TODO" }),
+    }).then(r => { if (!r.ok) throw new Error("Error al eliminar"); return r.json(); }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       queryClient.invalidateQueries({ queryKey: ["/api/reports/summary"] });
@@ -1118,20 +1122,31 @@ export default function MaestrodeProductosPage() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <AlertDialog open={showDeleteAll} onOpenChange={open => { if (!open) setShowDeleteAll(false); }}>
+        <AlertDialog open={showDeleteAll} onOpenChange={open => { if (!open) { setShowDeleteAll(false); setDeleteConfirmText(""); } }}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>¿Eliminar toda la maestra?</AlertDialogTitle>
               <AlertDialogDescription>
                 Se eliminarán <strong>todos los productos</strong> del almacén. Esta acción no se puede deshacer.
+                <br /><br />Escribe <strong>ELIMINAR TODO</strong> para confirmar:
               </AlertDialogDescription>
             </AlertDialogHeader>
+            <div className="px-0 pb-2">
+              <input
+                type="text"
+                value={deleteConfirmText}
+                onChange={e => setDeleteConfirmText(e.target.value)}
+                placeholder="ELIMINAR TODO"
+                className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                autoComplete="off"
+              />
+            </div>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={deleteAllMutation.isPending}>Cancelar</AlertDialogCancel>
+              <AlertDialogCancel disabled={deleteAllMutation.isPending} onClick={() => setDeleteConfirmText("")}>Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 className="bg-red-600 hover:bg-red-700"
                 onClick={() => deleteAllMutation.mutate()}
-                disabled={deleteAllMutation.isPending}
+                disabled={deleteAllMutation.isPending || deleteConfirmText !== "ELIMINAR TODO"}
               >
                 {deleteAllMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                 Sí, eliminar todo

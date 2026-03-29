@@ -30,7 +30,10 @@ const productSchema = z.object({
   minimumStock: z.string().default("0"),
   maximumStock: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   msds: z.boolean().default(false),
-  msdsUrl: z.string().optional().nullable(),
+  msdsUrl: z.preprocess(
+    v => (v === "" || v == null) ? null : v,
+    z.string().url("La URL de MSDS no es válida").nullable().optional()
+  ),
   controlled: z.boolean().default(false),
   location: z.string().optional(),
   supplier: z.string().optional(),
@@ -38,7 +41,9 @@ const productSchema = z.object({
   storageConditions: z.string().optional(),
   notes: z.string().optional(),
   hazardLevel: z.enum(["alto_riesgo", "precaucion", "controlado"]).default("precaucion"),
-  hazardPictograms: z.string().default("[]"),
+  hazardPictograms: z.string()
+    .refine(v => { try { JSON.parse(v); return true; } catch { return false; } }, { message: "hazardPictograms debe ser JSON válido" })
+    .default("[]"),
   firstAid: z.string().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
 });
@@ -46,6 +51,7 @@ const productSchema = z.object({
 const TEMPLATE_HEADERS = [
   "almacen", "tipo", "codigo", "descripcion", "um", "cantidad", "zona", "ubicacion",
   "familia", "lote", "tipo_producto", "estado", "msds", "controlado", "observacion", "ultimo_consumo",
+  "msds_url", "nivel_peligro", "primeros_auxilios",
 ];
 
 const REQUIRED_COLUMNS = ["codigo", "descripcion", "um"];
@@ -87,6 +93,9 @@ function rowToProduct(row: Record<string, unknown>, defaultWarehouse = "General"
     controlled: normalizeBool(row.controlado),
     status: normalizeStatus(String(row.estado ?? "activo")),
     notes,
+    msdsUrl: String(row.msds_url ?? "").trim() || undefined,
+    hazardLevel: String(row.nivel_peligro ?? "precaucion").trim() || "precaucion",
+    firstAid: String(row.primeros_auxilios ?? "").trim() || undefined,
   };
 }
 
@@ -136,6 +145,9 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
       msds: p.msds ? "si" : "no", controlado: p.controlled ? "si" : "no",
       observacion: p.notes ?? "",
       ultimo_consumo: lcMap.get(p.id) ?? "",
+      msds_url: p.msdsUrl ?? "",
+      nivel_peligro: p.hazardLevel ?? "precaucion",
+      primeros_auxilios: p.firstAid ?? "",
     };
   });
   const wb = XLSX.utils.book_new();
@@ -292,7 +304,15 @@ router.patch("/:id", requireAuth, requireRole("supervisor", "admin", "operator")
   res.json(updated);
 }));
 
-router.delete("/all", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
+router.delete("/all", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
+  const { confirm } = req.body as { confirm?: string };
+  if (confirm !== "ELIMINAR_TODO") {
+    res.status(400).json({ error: "Confirmación requerida. Envía confirm: 'ELIMINAR_TODO'" });
+    return;
+  }
+  const [{ value: totalProductos }] = await db.select({ value: count() }).from(productsTable);
+  await writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "products_all", details: { count: totalProductos }, ipAddress: req.ip });
   await db.transaction(async (tx) => {
     await tx.delete(dyeLotsTable);
     await tx.delete(finalDispositionTable);

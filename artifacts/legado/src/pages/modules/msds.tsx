@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import QRCode from "qrcode";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders } from "@/hooks/use-auth";
@@ -176,9 +177,23 @@ export default function MsdsPage() {
     win.document.close();
   }
 
-  function handlePrintAlbum() {
+  const handlePrintAlbum = useCallback(async () => {
     const withMsds = products.filter((p) => p.msds && p.msdsUrl);
     if (withMsds.length === 0) return;
+
+    // Generate all QR data URLs locally (no external network call)
+    const qrDataUrls: Record<string, string> = {};
+    await Promise.all(
+      withMsds.map(async (p) => {
+        try {
+          qrDataUrls[p.id] = await QRCode.toDataURL(p.msdsUrl!, {
+            width: 95, margin: 1, color: { dark: "#000000", light: "#ffffff" },
+          });
+        } catch {
+          qrDataUrls[p.id] = "";
+        }
+      })
+    );
 
     const win = window.open("", "_blank", "width=800,height=600");
     if (!win) return;
@@ -319,7 +334,7 @@ export default function MsdsPage() {
             ${pictoHtml}
           </div>
           <div style="display:flex;align-items:stretch;border-bottom:1px solid #eee;flex-shrink:0;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=95x95&data=${encodeURIComponent(p.msdsUrl!)}" width="95" height="95" alt="QR" style="flex-shrink:0;display:block;border-right:1px solid #eee;">
+            ${qrDataUrls[p.id] ? `<img src="${qrDataUrls[p.id]}" width="95" height="95" alt="QR" style="flex-shrink:0;display:block;border-right:1px solid #eee;">` : `<div style="width:95px;height:95px;flex-shrink:0;border-right:1px solid #eee;display:flex;align-items:center;justify-content:center;font-size:8px;color:#aaa;">Sin QR</div>`}
             <div style="flex:1;min-width:0;padding:6px 8px;background:${color}0d;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:4px;">
               <div style="font-size:7px;font-weight:bold;color:${color};letter-spacing:0.5px;text-transform:uppercase;">Escanea para ver</div>
               <div style="font-size:8px;font-weight:bold;color:${color};letter-spacing:0.5px;text-transform:uppercase;">MSDS Completa</div>
@@ -378,39 +393,20 @@ export default function MsdsPage() {
 <body>
   ${pagesHtml}
   <script>
-    function tryPrint(bcReady, imgsReady) {
-      if (bcReady && imgsReady) window.print();
-    }
-    var barcodeReady = false;
-    var imgsDone = false;
-
     var script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js';
     script.onload = function() {
       document.querySelectorAll('.barcode-lg').forEach(function(el) {
         JsBarcode(el, el.dataset.code, { format: 'CODE128', displayValue: false, height: 32, margin: 0, width: 1.4 });
       });
-      barcodeReady = true;
-      tryPrint(barcodeReady, imgsDone);
+      window.print();
     };
     document.head.appendChild(script);
-
-    var imgs = Array.from(document.querySelectorAll('img'));
-    if (imgs.length === 0) {
-      imgsDone = true;
-    } else {
-      var loaded = 0;
-      imgs.forEach(function(img) {
-        function onDone() { loaded++; if (loaded === imgs.length) { imgsDone = true; tryPrint(barcodeReady, imgsDone); } }
-        if (img.complete && img.naturalWidth > 0) { onDone(); }
-        else { img.onload = onDone; img.onerror = onDone; }
-      });
-    }
   <\/script>
 </body>
 </html>`);
     win.document.close();
-  }
+  }, [products]);
 
   const allWarehouses: (WarehouseType | "all")[] = ["all", ...WAREHOUSES];
 

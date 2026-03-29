@@ -1,0 +1,74 @@
+Necesito que corrijas todos los hallazgos de la auditoría de seguridad y calidad del proyecto. Hazlo en este orden exacto:
+1. CRÍTICO — Proteger DELETE /api/products/all
+En artifacts/api-server/src/routes/products.ts, modifica el endpoint DELETE /all para que:
+
+Requiera un campo confirm en el body con valor exacto "ELIMINAR_TODO". Si no coincide, retorna 400 con { error: "Confirmación requerida. Envía confirm: 'ELIMINAR_TODO'" }
+Escriba el audit log ANTES de ejecutar el delete, con action: "delete", resource: "products_all", y details: { count: totalProductos } donde totalProductos es el resultado de un count() previo al borrado
+En el frontend artifacts/legado/src/pages/modules/products.tsx, si existe un botón para eliminar todos los productos, muestra un AlertDialog que pida al usuario escribir el texto ELIMINAR TODO en un input antes de habilitar el botón de confirmar. El botón de confirmar solo se habilita cuando el texto del input coincide exactamente.
+
+2. CRÍTICO — Subir rate limit general
+En artifacts/api-server/src/lib/rate-limit.ts, cambia el generalApiLimiter de limit: 100 a limit: 500. No toques los otros limiters (authLoginLimiter sigue en 10, lookupLimiter en 10).
+3. CRÍTICO — Mover token de sessionStorage a memoria
+En artifacts/legado/src/hooks/use-auth.ts:
+
+Reemplaza el uso de sessionStorage por una variable de módulo en memoria: let memoryToken: string | null = null
+Las funciones getAuthToken() y setToken leen y escriben memoryToken en lugar de sessionStorage
+Al hacer logout, memoryToken = null
+Elimina el window.addEventListener("storage", ...) ya que ya no usa storage
+Mantén la misma interfaz pública del hook para que el resto del código no cambie
+
+Nota: No migrar a httpOnly cookie ya que requeriría cambios mayores en el backend. La variable en memoria es suficientemente más segura que sessionStorage porque no es accesible desde otras pestañas ni persiste entre sesiones.
+4. ADVERTENCIA — Eliminar archivo duplicado auth-route.ts
+Elimina el archivo artifacts/api-server/src/routes/auth-route.ts si existe y no está importado en ningún lado. Verifica primero que no esté referenciado en artifacts/api-server/src/routes/index.ts antes de eliminarlo.
+5. ADVERTENCIA — Validar msdsUrl como URL real
+En artifacts/api-server/src/routes/products.ts, cambia en el productSchema:
+tsmsdsUrl: z.string().optional().nullable(),
+por:
+tsmsdsUrl: z.preprocess(
+  v => (v === "" || v == null) ? null : v,
+  z.string().url("La URL de MSDS no es válida").nullable().optional()
+),
+6. ADVERTENCIA — Validar hazardPictograms como JSON válido
+En artifacts/api-server/src/routes/products.ts, cambia en el productSchema:
+tshazardPictograms: z.string().default("[]"),
+por:
+tshazardPictograms: z.string()
+  .refine(v => { try { JSON.parse(v); return true; } catch { return false; } }, { message: "hazardPictograms debe ser JSON válido" })
+  .default("[]"),
+7. ADVERTENCIA — Reemplazar console.log por logger en index.ts
+En artifacts/api-server/src/index.ts, reemplaza:
+tsconsole.log(`✓ API Server running on port ${port}`)
+por:
+tslogger.info({ port }, 'API Server running')
+Asegúrate de importar logger desde ./lib/logger.js si no está importado ya.
+8. MEJORA — Agregar campos MSDS al export e import Excel
+En artifacts/api-server/src/routes/products.ts:
+En TEMPLATE_HEADERS, agrega al final: "msds_url", "nivel_peligro", "primeros_auxilios"
+En la función rowToProduct, agrega:
+tsmsdsUrl: String(row.msds_url ?? "").trim() || undefined,
+hazardLevel: String(row.nivel_peligro ?? "precaucion").trim() || "precaucion",
+firstAid: String(row.primeros_auxilios ?? "").trim() || undefined,
+En el endpoint GET /export, en el objeto de cada fila agrega:
+tsmsds_url: p.msdsUrl ?? "",
+nivel_peligro: p.hazardLevel ?? "precaucion",
+primeros_auxilios: p.firstAid ?? "",
+9. MEJORA — QR local en álbum MSDS sin dependencia externa
+En artifacts/legado/src/pages/modules/msds.tsx, en la función handlePrintAlbum:
+Antes de abrir la ventana, genera data URLs de QR para todos los productos con MSDS usando la librería qrcode (instálala si no existe: pnpm add qrcode @types/qrcode --filter @workspace/legado):
+tsimport QRCode from 'qrcode';
+
+// Dentro de handlePrintAlbum, antes de win.document.write:
+const qrDataUrls: Record<string, string> = {};
+for (const p of withMsds) {
+  try {
+    qrDataUrls[p.id] = await QRCode.toDataURL(p.msdsUrl!, { width: 95, margin: 1 });
+  } catch {
+    qrDataUrls[p.id] = '';
+  }
+}
+Luego en el HTML de cada tarjeta, reemplaza:
+html<img src="https://api.qrserver.com/v1/create-qr-code/...">
+por:
+html<img src="${qrDataUrls[p.id]}" width="95" height="95">
+Cambia handlePrintAlbum a función async ya que ahora usa await.
+No cambies nada más del proyecto que no esté listado aquí.

@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-const TOKEN_KEY = "almacen_token";
+let memoryToken: string | null = null;
 
 export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
 
@@ -15,7 +15,7 @@ export interface AuthUser {
 }
 
 export function getAuthToken() {
-  return sessionStorage.getItem(TOKEN_KEY);
+  return memoryToken;
 }
 
 export function getAuthHeaders(): Record<string, string> {
@@ -25,13 +25,7 @@ export function getAuthHeaders(): Record<string, string> {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const [token, setToken] = useState<string | null>(getAuthToken());
-
-  useEffect(() => {
-    const handleStorage = () => setToken(getAuthToken());
-    window.addEventListener("storage", handleStorage);
-    return () => window.removeEventListener("storage", handleStorage);
-  }, []);
+  const [token, setToken] = useState<string | null>(memoryToken);
 
   const { data: user, isLoading, error } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
@@ -45,7 +39,7 @@ export function useAuth() {
 
       if (!res.ok) {
         if (res.status === 401) {
-          sessionStorage.removeItem(TOKEN_KEY);
+          memoryToken = null;
           setToken(null);
         }
         return null;
@@ -69,14 +63,14 @@ export function useAuth() {
     }
 
     const result = await res.json();
-    sessionStorage.setItem(TOKEN_KEY, result.token);
+    memoryToken = result.token;
     setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
     return result.user;
   };
 
   const logout = () => {
-    sessionStorage.removeItem(TOKEN_KEY);
+    memoryToken = null;
     setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();
