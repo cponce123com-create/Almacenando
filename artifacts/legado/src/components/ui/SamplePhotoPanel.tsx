@@ -15,6 +15,8 @@ interface SamplePhotoPanelProps {
   canUpload: boolean;
   canDelete: boolean;
   queryKey: unknown[];
+  uploadUrl?: string;
+  deleteUrl?: (idx: number) => string;
   onUpdate?: (photos: string[]) => void;
 }
 
@@ -60,6 +62,8 @@ export function SamplePhotoPanel({
   canUpload,
   canDelete,
   queryKey,
+  uploadUrl,
+  deleteUrl,
   onUpdate,
 }: SamplePhotoPanelProps) {
   const { toast } = useToast();
@@ -107,7 +111,8 @@ export function SamplePhotoPanel({
 
   const deleteMutation = useMutation({
     mutationFn: async (idx: number) => {
-      const res = await fetch(`/api/samples/${sampleId}/photos/${idx}`, {
+      const url = deleteUrl ? deleteUrl(idx) : `/api/samples/${sampleId}/photos/${idx}`;
+      const res = await fetch(url, {
         method: "DELETE",
         headers: getAuthHeaders() as Record<string, string>,
       });
@@ -137,7 +142,8 @@ export function SamplePhotoPanel({
     ));
 
     try {
-      const res = await fetch(`/api/samples/${sampleId}/photos`, {
+      const url = uploadUrl ?? `/api/samples/${sampleId}/photos`;
+      const res = await fetch(url, {
         method: "POST",
         headers: getAuthHeaders() as Record<string, string>,
         body: formData,

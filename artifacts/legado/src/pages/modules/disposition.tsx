@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Recycle, Plus, Loader2, AlertCircle, Pencil, Trash2, CheckCircle2, ChevronsUpDown, Check, Camera } from "lucide-react";
-import { PhotoUrlManager } from "@/components/ui/PhotoUrlManager";
+import { SamplePhotoPanel } from "@/components/ui/SamplePhotoPanel";
 
 interface Product { id: string; code: string; name: string; unit: string; }
 interface Disposition {
@@ -507,19 +507,27 @@ export default function DisposicionFinalPage() {
         </AlertDialog>
 
         <Dialog open={!!photoTarget} onOpenChange={o => { if (!o) setPhotoTarget(null); }}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Camera className="w-5 h-5 text-teal-600" />
                 Fotos — {photoTarget ? displayName(photoTarget) : ""}
               </DialogTitle>
+              <p className="text-xs text-slate-500 pt-1">
+                Las fotos se suben automáticamente a Google Drive y los enlaces quedan registrados en el sistema.
+              </p>
             </DialogHeader>
             {photoTarget && (
-              <PhotoUrlManager
+              <SamplePhotoPanel
+                sampleId={photoTarget.id}
+                sampleCode={displayName(photoTarget)}
                 photos={photoTarget.photos ?? []}
-                patchUrl={`/api/disposition/${photoTarget.id}/photos`}
+                canUpload={!!canWrite}
+                canDelete={!!canManage}
                 queryKey={["/api/disposition"]}
-                canEdit={!!canWrite}
+                uploadUrl={`/api/disposition/${photoTarget.id}/photos`}
+                deleteUrl={(idx) => `/api/disposition/${photoTarget.id}/photos/${idx}`}
+                onUpdate={newPhotos => setPhotoTarget(prev => prev ? { ...prev, photos: newPhotos } : null)}
               />
             )}
           </DialogContent>
