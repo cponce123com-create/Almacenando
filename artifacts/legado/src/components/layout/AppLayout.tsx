@@ -25,6 +25,7 @@ import {
   UserCog,
   ShieldCheck,
   Bell,
+  PackageX,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
@@ -77,7 +78,8 @@ export const modules: Array<{
   { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },
   { name: "Muestras",             href: "/samples",      icon: TestTube },
   { name: "Lotes / Tinturas",     href: "/dye-lots",     icon: Layers },
-  { name: "Cambio de Lote",       href: "/lot-change-notification", icon: Bell, roles: ["operator", "supervisor", "admin"] },
+  { name: "Cambio de Lote",       href: "/lot-change-notification",  icon: Bell,       roles: ["operator", "supervisor", "admin"] },
+  { name: "Fin de Producto",      href: "/product-out-notification", icon: PackageX,   roles: ["operator", "supervisor", "admin"] },
   { name: "Control de Lotes",     href: "/lot-evaluations", icon: Microscope },
   { name: "Disposición Final",    href: "/disposition",  icon: Recycle },
   { name: "MSDS",                 href: "/msds",         icon: ShieldCheck },

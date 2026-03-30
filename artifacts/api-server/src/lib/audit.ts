@@ -13,7 +13,8 @@ export type AuditAction =
   | "login"
   | "logout"
   | "view"
-  | "lot_change_notification";
+  | "lot_change_notification"
+  | "product_out_notification";
 
 export async function writeAuditLog({
   userId,

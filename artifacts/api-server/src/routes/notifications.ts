@@ -5,7 +5,10 @@ import { eq } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
-import { sendLotChangeNotificationEmail, LOT_CHANGE_RECIPIENTS } from "../lib/email.js";
+import {
+  sendLotChangeNotificationEmail, LOT_CHANGE_RECIPIENTS,
+  sendProductOutEmail, PRODUCT_OUT_TO, PRODUCT_OUT_CC,
+} from "../lib/email.js";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -77,6 +80,51 @@ router.post(
       message: "Notificación enviada correctamente",
       productName: product.name,
       recipients: LOT_CHANGE_RECIPIENTS.length,
+    });
+  })
+);
+
+const productOutSchema = z.object({
+  productCode: z.string(),
+  productName: z.string().min(1, "El nombre del producto es requerido"),
+});
+
+router.post(
+  "/product-out",
+  requireAuth,
+  requireRole("operator", "supervisor", "admin"),
+  asyncHandler(async (req, res) => {
+    const authedReq = req as AuthenticatedRequest;
+
+    const parsed = productOutSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+      return;
+    }
+
+    const { productCode, productName } = parsed.data;
+
+    await sendProductOutEmail({ productCode, productName });
+
+    await writeAuditLog({
+      userId: authedReq.userId,
+      action: "product_out_notification",
+      resource: "products",
+      resourceId: productCode || productName,
+      details: {
+        productCode,
+        productName,
+        to: PRODUCT_OUT_TO,
+        cc: [...PRODUCT_OUT_CC],
+      },
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      message: "Notificación enviada correctamente",
+      productName,
+      to: PRODUCT_OUT_TO,
+      cc: PRODUCT_OUT_CC.length,
     });
   })
 );

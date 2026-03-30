@@ -27,6 +27,7 @@ const AdminUsersPage     = lazy(() => import("@/pages/modules/admin-users"));
 const LotEvaluationsPage = lazy(() => import("@/pages/modules/lot-evaluations"));
 const MsdsPage                    = lazy(() => import("@/pages/modules/msds"));
 const LotChangeNotificationPage   = lazy(() => import("@/pages/modules/lot-change-notification"));
+const ProductOutNotificationPage  = lazy(() => import("@/pages/modules/product-out-notification"));
 const ProfilePage                 = lazy(() => import("@/pages/profile"));
 
 const queryClient = new QueryClient({
@@ -105,6 +106,7 @@ function Router() {
       <Route path="/lot-evaluations"><ProtectedRoute component={LotEvaluationsPage} /></Route>
       <Route path="/msds"><ProtectedRoute component={MsdsPage} /></Route>
       <Route path="/lot-change-notification"><ProtectedRoute component={LotChangeNotificationPage} /></Route>
+      <Route path="/product-out-notification"><ProtectedRoute component={ProductOutNotificationPage} /></Route>
       <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
 
       <Route component={NotFound} />

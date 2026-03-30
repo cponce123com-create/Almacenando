@@ -655,3 +655,109 @@ Accede al sistema para más detalles: ${appUrl}
     text,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notificación de fin de producto — Almacén Químico
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const PRODUCT_OUT_TO = "judith.yachachin@sanjacinto.com.pe";
+export const PRODUCT_OUT_CC = [
+  "laboratorio.tintoreria@sanjacinto.com.pe",
+  "laboratorista.tintoreria@sanjacinto.com.pe",
+  "ruben.roldan@sanjacinto.com.pe",
+  "denis.miranda@sanjacinto.com.pe",
+] as const;
+
+export async function sendProductOutEmail({
+  productCode,
+  productName,
+}: {
+  productCode: string;
+  productName: string;
+}): Promise<void> {
+  const smtpPass = process.env.SMTP_APP_PASSWORD;
+  if (!smtpPass) {
+    console.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — notificación de fin de producto no enviada");
+    return;
+  }
+
+  const SMTP_USER = "carlos.ponce@sanjacinto.com.pe";
+  const codeLabel = productCode.trim() ? ` (${productCode.trim()})` : "";
+  const subject = `Término de Producto${codeLabel} — ${productName}`;
+
+  const text = `Estimada Judith,
+
+Le informo que el siguiente producto ha llegado a su término total en nuestro almacén:
+
+  Código:   ${productCode.trim() || "—"}
+  Producto: ${productName}
+
+Por favor tomar las acciones correspondientes.
+
+Saludos Cordiales.
+
+Atentamente,
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  const html = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:580px;margin:0 auto;background:#f8fafc;padding:0;">
+
+  <div style="background:#1e3a5f;padding:24px 28px;border-radius:12px 12px 0 0;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:38px;height:38px;background:#ef4444;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;">📦</div>
+      <div>
+        <p style="margin:0;color:#93c5fd;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;font-weight:600;">Almacén Químico</p>
+        <p style="margin:2px 0 0;color:#ffffff;font-size:16px;font-weight:700;">Término de Producto</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#ffffff;padding:28px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
+    <p style="margin:0 0 18px;font-size:15px;color:#374151;line-height:1.6;">Estimada Judith,</p>
+    <p style="margin:0 0 18px;font-size:15px;color:#374151;line-height:1.6;">
+      Le informo que el siguiente producto ha llegado a su <strong>término total</strong> en nuestro almacén:
+    </p>
+
+    <div style="background:#fef2f2;border-radius:10px;padding:20px 24px;margin-bottom:20px;border-left:4px solid #ef4444;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding:7px 0;font-size:13px;color:#64748b;width:35%;font-weight:500;">Código</td>
+          <td style="padding:7px 0;font-size:14px;color:#1e293b;font-family:monospace;font-weight:700;">${productCode.trim() || "—"}</td>
+        </tr>
+        <tr>
+          <td style="padding:7px 0;font-size:13px;color:#64748b;font-weight:500;">Producto</td>
+          <td style="padding:7px 0;font-size:14px;color:#1e293b;font-weight:700;">${productName}</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">
+      Por favor tomar las acciones correspondientes.
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;">Saludos Cordiales.</p>
+  </div>
+
+  <div style="background:#f1f5f9;padding:16px 28px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none;">
+    <p style="margin:0;font-size:13px;color:#1e293b;font-weight:600;">Atentamente,</p>
+    <p style="margin:4px 0 0;font-size:13px;color:#475569;">Carlos Ponce — Supervisor de Cocina Colores</p>
+    <p style="margin:10px 0 0;font-size:11px;color:#94a3b8;">Notificación automática · Sistema de Gestión de Almacén Químico</p>
+  </div>
+</div>`.trim();
+
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    auth: { user: SMTP_USER, pass: smtpPass },
+  });
+
+  await transporter.sendMail({
+    from: `"Carlos Ponce — Almacén Químico" <${SMTP_USER}>`,
+    to: PRODUCT_OUT_TO,
+    cc: [...PRODUCT_OUT_CC],
+    subject,
+    text,
+    html,
+  });
+}
