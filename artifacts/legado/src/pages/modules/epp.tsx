@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
@@ -11,22 +11,32 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Shield, Plus, Loader2, AlertCircle, Pencil, Trash2, Package, Users, Bell } from "lucide-react";
+import { Shield, Plus, Loader2, AlertCircle, Pencil, Trash2, Package, Users, Bell, FileSpreadsheet, Upload, Download, CheckCircle2, XCircle } from "lucide-react";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface EppItem {
   id: string; code: string; name: string; category: string;
   description?: string | null; standardReference?: string | null;
   replacementPeriodDays?: number | null; status: string;
 }
-interface Personnel { id: string; employeeId: string; name: string; position: string; department: string; }
+interface Personnel {
+  id: string; employeeId: string; name: string; position: string;
+  department: string; status?: string | null;
+}
 interface EppDelivery {
   id: string; eppId: string; personnelId: string; deliveryDate: string;
   quantity: number; condition: string; returnDate?: string | null;
   returnCondition?: string | null; notes?: string | null; deliveredBy: string;
 }
+interface ImportResult {
+  inserted: number; updated: number;
+  errors: Array<{ row: number; code: string; error: string }>;
+  total: number;
+}
 
 const api = async (path: string, opts?: RequestInit) => {
-  const res = await fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
   return res.json();
 };
@@ -40,6 +50,18 @@ const EPP_CATEGORIES = [
 
 type ActiveTab = "catalog" | "deliveries" | "alerts";
 
+function downloadFile(res: Response, fallbackName: string) {
+  res.blob().then(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    a.href = url; a.download = match?.[1] ?? fallbackName;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
 export default function EquiposdeProtecciónPersonalPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -48,24 +70,40 @@ export default function EquiposdeProtecciónPersonalPage() {
   const canDeliver = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
 
   const [tab, setTab] = useState<ActiveTab>("catalog");
+
+  // ── Catalog state ─────────────────────────────────────────────────────────
   const [showEppForm, setShowEppForm] = useState(false);
   const [editEpp, setEditEpp] = useState<EppItem | null>(null);
   const [deleteEpp, setDeleteEpp] = useState<EppItem | null>(null);
-  const [showDeliveryForm, setShowDeliveryForm] = useState(false);
-
   const [eppForm, setEppForm] = useState({
     code: "", name: "", category: "", description: "",
     standardReference: "", replacementPeriodDays: "", status: "active",
   });
   const setE = (k: keyof typeof eppForm, v: string) => setEppForm(f => ({ ...f, [k]: v }));
 
+  // ── Import state ──────────────────────────────────────────────────────────
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  // ── Delivery state ────────────────────────────────────────────────────────
+  const [showDeliveryForm, setShowDeliveryForm] = useState(false);
+  const [editDelivery, setEditDelivery] = useState<EppDelivery | null>(null);
+  const [deleteDelivery, setDeleteDelivery] = useState<EppDelivery | null>(null);
   const [deliveryForm, setDeliveryForm] = useState({
+    eppId: "", personnelId: "", deliveryDate: today(),
+    quantity: 1, condition: "new", notes: "",
+  });
+  const [editDeliveryForm, setEditDeliveryForm] = useState({
     eppId: "", personnelId: "", deliveryDate: today(),
     quantity: 1, condition: "new", notes: "",
   });
   const setD = (k: keyof typeof deliveryForm, v: string | number) =>
     setDeliveryForm(f => ({ ...f, [k]: v }));
+  const setED = (k: keyof typeof editDeliveryForm, v: string | number) =>
+    setEditDeliveryForm(f => ({ ...f, [k]: v }));
 
+  // ── Queries ───────────────────────────────────────────────────────────────
   const { data: eppItems = [], isLoading: loadingEpp, isError: errEpp } = useQuery<EppItem[]>({
     queryKey: ["/api/epp"], queryFn: () => api("/api/epp"),
   });
@@ -82,6 +120,7 @@ export default function EquiposdeProtecciónPersonalPage() {
   const eppMap = useMemo(() => Object.fromEntries(eppItems.map(e => [e.id, e])), [eppItems]);
   const personnelMap = useMemo(() => Object.fromEntries(personnel.map(p => [p.id, p])), [personnel]);
 
+  // ── Mutations ─────────────────────────────────────────────────────────────
   const createEppMutation = useMutation({
     mutationFn: (data: typeof eppForm) => api("/api/epp", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -139,6 +178,57 @@ export default function EquiposdeProtecciónPersonalPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const updateDeliveryMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: typeof editDeliveryForm }) =>
+      api(`/api/epp/deliveries/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/epp/deliveries"] });
+      toast({ title: "Entrega actualizada" });
+      setEditDelivery(null);
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteDeliveryMutation = useMutation({
+    mutationFn: (id: string) => api(`/api/epp/deliveries/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/epp/deliveries"] });
+      toast({ title: "Entrega eliminada" });
+      setDeleteDelivery(null);
+    },
+    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); setDeleteDelivery(null); },
+  });
+
+  // ── Import handler ────────────────────────────────────────────────────────
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${BASE}/api/epp/import`, {
+        method: "POST", headers: getAuthHeaders(), body: form,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Error al importar");
+      setImportResult(json as ImportResult);
+      qc.invalidateQueries({ queryKey: ["/api/epp"] });
+    } catch (err: any) {
+      toast({ title: "Error al importar", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(false);
+      if (importFileRef.current) importFileRef.current.value = "";
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    const res = await fetch(`${BASE}/api/epp/template`, { headers: getAuthHeaders() });
+    if (!res.ok) { toast({ title: "Error", description: "No se pudo descargar la plantilla", variant: "destructive" }); return; }
+    downloadFile(res, "plantilla_epp.xlsx");
+  };
+
+  // ── EppForm sub-component ─────────────────────────────────────────────────
   const EppForm = ({ initial, onSubmit, onCancel, pending, isEdit }: {
     initial: typeof eppForm; onSubmit: (d: typeof eppForm) => void;
     onCancel: () => void; pending: boolean; isEdit: boolean;
@@ -175,8 +265,8 @@ export default function EquiposdeProtecciónPersonalPage() {
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Descripción</Label>
-          <Input placeholder="Descripción del equipo" value={f.description} onChange={e => s("description", e.target.value)} />
+          <Label>Presentación / Descripción</Label>
+          <Input placeholder="Incluye filtros, talla M, etc." value={f.description} onChange={e => s("description", e.target.value)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -200,6 +290,78 @@ export default function EquiposdeProtecciónPersonalPage() {
     );
   };
 
+  // ── DeliveryForm sub-component ────────────────────────────────────────────
+  const DeliveryFormFields = ({
+    form, setField, onSubmit, onCancel, pending, isEdit,
+  }: {
+    form: typeof deliveryForm;
+    setField: (k: keyof typeof deliveryForm, v: string | number) => void;
+    onSubmit: () => void;
+    onCancel: () => void;
+    pending: boolean;
+    isEdit: boolean;
+  }) => (
+    <form onSubmit={e => { e.preventDefault(); onSubmit(); }} className="space-y-4">
+      <div className="space-y-1.5">
+        <Label>EPP a Entregar *</Label>
+        <Select value={form.eppId} onValueChange={v => setField("eppId", v)}>
+          <SelectTrigger><SelectValue placeholder="Seleccionar EPP" /></SelectTrigger>
+          <SelectContent>
+            {eppItems.filter(e => e.status === "active").map(e =>
+              <SelectItem key={e.id} value={e.id}>{e.code} — {e.name}</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1.5">
+        <Label>Personal Receptor *</Label>
+        <Select value={form.personnelId} onValueChange={v => setField("personnelId", v)}>
+          <SelectTrigger><SelectValue placeholder="Seleccionar personal" /></SelectTrigger>
+          <SelectContent>
+            {personnel.filter(p => !p.status || p.status === "active").map(p =>
+              <SelectItem key={p.id} value={p.id}>{p.name} — {p.position}</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-1.5">
+          <Label>Fecha *</Label>
+          <Input type="date" value={form.deliveryDate} onChange={e => setField("deliveryDate", e.target.value)} required />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Cantidad</Label>
+          <Input type="number" min="1" value={form.quantity} onChange={e => setField("quantity", parseInt(e.target.value) || 1)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Condición</Label>
+          <Select value={form.condition} onValueChange={v => setField("condition", v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new">Nuevo</SelectItem>
+              <SelectItem value="good">Buen estado</SelectItem>
+              <SelectItem value="worn">Desgastado</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <Label>Notas</Label>
+        <Input placeholder="Observaciones de la entrega" value={form.notes} onChange={e => setField("notes", e.target.value)} />
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button type="submit"
+          disabled={pending || !form.eppId || !form.personnelId}
+          className="bg-indigo-600 hover:bg-indigo-700">
+          {pending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+          {isEdit ? "Guardar Cambios" : "Registrar Entrega"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
   const activeEpp = eppItems.filter(e => e.status === "active").length;
   const pendingAlerts = eppItems.filter(e => {
     if (!e.replacementPeriodDays) return false;
@@ -207,13 +369,15 @@ export default function EquiposdeProtecciónPersonalPage() {
     if (deliveriesForEpp.length === 0) return false;
     const latest = deliveriesForEpp.sort((a, b) => b.deliveryDate.localeCompare(a.deliveryDate))[0];
     const daysSince = Math.floor((Date.now() - new Date(latest.deliveryDate).getTime()) / 86400000);
-    return daysSince > e.replacementPeriodDays;
+    return daysSince > e.replacementPeriodDays!;
   }).length;
 
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
               <Shield className="w-6 h-6 text-indigo-600" />
@@ -223,20 +387,39 @@ export default function EquiposdeProtecciónPersonalPage() {
               <p className="text-slate-500 text-sm">Control de EPP y asignación al personal</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {canManage && tab === "catalog" && (
+              <>
+                <Button variant="outline" onClick={handleDownloadTemplate} className="gap-2 text-slate-600">
+                  <Download className="w-4 h-4" /> Plantilla
+                </Button>
+                <Button variant="outline" onClick={() => importFileRef.current?.click()}
+                  disabled={importing} className="gap-2 text-slate-600">
+                  {importing
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Importando...</>
+                    : <><Upload className="w-4 h-4" /> Importar</>}
+                </Button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImport(f); }}
+                />
+                <Button onClick={() => setShowEppForm(true)} className="gap-2 bg-indigo-600 hover:bg-indigo-700">
+                  <Plus className="w-4 h-4" /> Nuevo EPP
+                </Button>
+              </>
+            )}
             {canDeliver && tab === "deliveries" && (
               <Button onClick={() => setShowDeliveryForm(true)} className="gap-2 bg-indigo-600 hover:bg-indigo-700">
                 <Plus className="w-4 h-4" /> Registrar Entrega
               </Button>
             )}
-            {canManage && tab === "catalog" && (
-              <Button onClick={() => setShowEppForm(true)} className="gap-2 bg-indigo-600 hover:bg-indigo-700">
-                <Plus className="w-4 h-4" /> Nuevo EPP
-              </Button>
-            )}
           </div>
         </div>
 
+        {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "EPP en Catálogo", val: eppItems.length, color: "text-slate-900" },
@@ -263,29 +446,31 @@ export default function EquiposdeProtecciónPersonalPage() {
           </div>
         )}
 
+        {/* Tabs */}
         <div className="flex gap-1 bg-slate-100 p-1 rounded-lg w-fit">
-          <button
-            onClick={() => setTab("catalog")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${tab === "catalog" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-            <Package className="w-4 h-4" /> Catálogo EPP
-          </button>
-          <button
-            onClick={() => setTab("deliveries")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${tab === "deliveries" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-            <Users className="w-4 h-4" /> Entregas
-          </button>
-          <button
-            onClick={() => setTab("alerts")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${tab === "alerts" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-            <Bell className="w-4 h-4" /> Alertas
-            {eppAlerts.length > 0 && (
-              <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">
-                {eppAlerts.length}
-              </span>
-            )}
-          </button>
+          {(["catalog", "deliveries", "alerts"] as ActiveTab[]).map(t => {
+            const labels: Record<ActiveTab, React.ReactNode> = {
+              catalog: <><Package className="w-4 h-4" /> Catálogo EPP</>,
+              deliveries: <><Users className="w-4 h-4" /> Entregas</>,
+              alerts: <>
+                <Bell className="w-4 h-4" /> Alertas
+                {eppAlerts.length > 0 && (
+                  <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5 leading-none">
+                    {eppAlerts.length}
+                  </span>
+                )}
+              </>,
+            };
+            return (
+              <button key={t} onClick={() => setTab(t)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                {labels[t]}
+              </button>
+            );
+          })}
         </div>
 
+        {/* ── Catalog tab ────────────────────────────────────────────────── */}
         {tab === "catalog" && (
           <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
             {loadingEpp ? (
@@ -313,12 +498,11 @@ export default function EquiposdeProtecciónPersonalPage() {
                   <TableHeader>
                     <TableRow className="bg-slate-50">
                       <TableHead className="font-semibold text-slate-600 w-24">Código</TableHead>
-                      <TableHead className="font-semibold text-slate-600">Nombre</TableHead>
-                      <TableHead className="font-semibold text-slate-600 w-40">Categoría</TableHead>
-                      <TableHead className="font-semibold text-slate-600">Norma</TableHead>
+                      <TableHead className="font-semibold text-slate-600">Nombre / Presentación</TableHead>
+                      <TableHead className="font-semibold text-slate-600 w-44">Categoría</TableHead>
                       <TableHead className="font-semibold text-slate-600 w-28 text-right">Reemplazo</TableHead>
                       <TableHead className="font-semibold text-slate-600 w-24">Estado</TableHead>
-                      {canManage && <TableHead className="font-semibold text-slate-600 text-right w-20"></TableHead>}
+                      {canManage && <TableHead className="w-20" />}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -343,7 +527,6 @@ export default function EquiposdeProtecciónPersonalPage() {
                             {isExpired && <p className="text-xs text-red-500 font-medium mt-0.5">⚠ Requiere reemplazo</p>}
                           </TableCell>
                           <TableCell className="text-sm text-slate-600">{item.category}</TableCell>
-                          <TableCell className="text-sm text-slate-500">{item.standardReference ?? "—"}</TableCell>
                           <TableCell className="text-right text-sm text-slate-600">
                             {item.replacementPeriodDays ? `${item.replacementPeriodDays} días` : "—"}
                           </TableCell>
@@ -385,6 +568,7 @@ export default function EquiposdeProtecciónPersonalPage() {
           </div>
         )}
 
+        {/* ── Deliveries tab ──────────────────────────────────────────────── */}
         {tab === "deliveries" && (
           <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
             {loadingDel ? (
@@ -410,8 +594,9 @@ export default function EquiposdeProtecciónPersonalPage() {
                       <TableHead className="font-semibold text-slate-600">Personal</TableHead>
                       <TableHead className="font-semibold text-slate-600 w-28">Fecha</TableHead>
                       <TableHead className="font-semibold text-slate-600 w-20 text-center">Cant.</TableHead>
-                      <TableHead className="font-semibold text-slate-600 w-24">Condición</TableHead>
+                      <TableHead className="font-semibold text-slate-600 w-28">Condición</TableHead>
                       <TableHead className="font-semibold text-slate-600">Notas</TableHead>
+                      {canDeliver && <TableHead className="w-20" />}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -434,12 +619,37 @@ export default function EquiposdeProtecciónPersonalPage() {
                             <Badge className={
                               d.condition === "new"
                                 ? "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100 text-xs"
-                                : "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100 text-xs"
+                                : d.condition === "good"
+                                  ? "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-100 text-xs"
+                                  : "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-100 text-xs"
                             }>
-                              {d.condition === "new" ? "Nuevo" : d.condition}
+                              {d.condition === "new" ? "Nuevo" : d.condition === "good" ? "Buen estado" : d.condition === "worn" ? "Desgastado" : d.condition}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs text-slate-500">{d.notes ?? "—"}</TableCell>
+                          <TableCell className="text-xs text-slate-500 max-w-[160px] truncate">{d.notes ?? "—"}</TableCell>
+                          {canDeliver && (
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                                  onClick={() => {
+                                    setEditDelivery(d);
+                                    setEditDeliveryForm({
+                                      eppId: d.eppId, personnelId: d.personnelId,
+                                      deliveryDate: d.deliveryDate, quantity: d.quantity,
+                                      condition: d.condition, notes: d.notes ?? "",
+                                    });
+                                  }}>
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                {canManage && (
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                    onClick={() => setDeleteDelivery(d)}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}
@@ -450,6 +660,7 @@ export default function EquiposdeProtecciónPersonalPage() {
           </div>
         )}
 
+        {/* ── Alerts tab ──────────────────────────────────────────────────── */}
         {tab === "alerts" && (
           <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
             {eppAlerts.length === 0 ? (
@@ -502,6 +713,9 @@ export default function EquiposdeProtecciónPersonalPage() {
           </div>
         )}
 
+        {/* ── Dialogs ─────────────────────────────────────────────────────── */}
+
+        {/* Create EPP */}
         <Dialog open={showEppForm} onOpenChange={setShowEppForm}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
@@ -514,6 +728,7 @@ export default function EquiposdeProtecciónPersonalPage() {
           </DialogContent>
         </Dialog>
 
+        {/* Edit EPP */}
         <Dialog open={!!editEpp} onOpenChange={o => { if (!o) setEditEpp(null); }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
@@ -528,77 +743,101 @@ export default function EquiposdeProtecciónPersonalPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={showDeliveryForm} onOpenChange={setShowDeliveryForm}>
+        {/* Create Delivery */}
+        <Dialog open={showDeliveryForm} onOpenChange={v => { setShowDeliveryForm(v); if (!v) setDeliveryForm({ eppId: "", personnelId: "", deliveryDate: today(), quantity: 1, condition: "new", notes: "" }); }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-indigo-600" /> Registrar Entrega de EPP
               </DialogTitle>
             </DialogHeader>
-            <form onSubmit={e => { e.preventDefault(); createDeliveryMutation.mutate(deliveryForm); }} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>EPP a Entregar *</Label>
-                <Select value={deliveryForm.eppId} onValueChange={v => setD("eppId", v)}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar EPP" /></SelectTrigger>
-                  <SelectContent>
-                    {eppItems.filter(e => e.status === "active").map(e =>
-                      <SelectItem key={e.id} value={e.id}>{e.code} — {e.name}</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Personal Receptor *</Label>
-                <Select value={deliveryForm.personnelId} onValueChange={v => setD("personnelId", v)}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar personal" /></SelectTrigger>
-                  <SelectContent>
-                    {personnel.filter(p => p.status === "active").map(p =>
-                      <SelectItem key={p.id} value={p.id}>{p.name} — {p.position}</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Fecha *</Label>
-                  <Input type="date" value={deliveryForm.deliveryDate}
-                    onChange={e => setD("deliveryDate", e.target.value)} required />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Cantidad</Label>
-                  <Input type="number" min="1" value={deliveryForm.quantity}
-                    onChange={e => setD("quantity", parseInt(e.target.value) || 1)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Condición</Label>
-                  <Select value={deliveryForm.condition} onValueChange={v => setD("condition", v)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="new">Nuevo</SelectItem>
-                      <SelectItem value="good">Buen estado</SelectItem>
-                      <SelectItem value="worn">Desgastado</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Notas</Label>
-                <Input placeholder="Observaciones de la entrega" value={deliveryForm.notes}
-                  onChange={e => setD("notes", e.target.value)} />
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setShowDeliveryForm(false)}>Cancelar</Button>
-                <Button type="submit"
-                  disabled={createDeliveryMutation.isPending || !deliveryForm.eppId || !deliveryForm.personnelId}
-                  className="bg-indigo-600 hover:bg-indigo-700">
-                  {createDeliveryMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  Registrar Entrega
-                </Button>
-              </DialogFooter>
-            </form>
+            <DeliveryFormFields
+              form={deliveryForm} setField={setD}
+              onSubmit={() => createDeliveryMutation.mutate(deliveryForm)}
+              onCancel={() => setShowDeliveryForm(false)}
+              pending={createDeliveryMutation.isPending} isEdit={false}
+            />
           </DialogContent>
         </Dialog>
 
+        {/* Edit Delivery */}
+        <Dialog open={!!editDelivery} onOpenChange={o => { if (!o) setEditDelivery(null); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-indigo-600" /> Editar Entrega
+              </DialogTitle>
+            </DialogHeader>
+            {editDelivery && (
+              <DeliveryFormFields
+                form={editDeliveryForm} setField={setED}
+                onSubmit={() => updateDeliveryMutation.mutate({ id: editDelivery.id, data: editDeliveryForm })}
+                onCancel={() => setEditDelivery(null)}
+                pending={updateDeliveryMutation.isPending} isEdit={true}
+              />
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Import Result */}
+        <Dialog open={!!importResult} onOpenChange={o => { if (!o) setImportResult(null); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-indigo-600" /> Resultado de la Importación
+              </DialogTitle>
+            </DialogHeader>
+            {importResult && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-emerald-600">{importResult.inserted}</p>
+                    <p className="text-xs text-emerald-700 mt-0.5">Insertados</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{importResult.updated}</p>
+                    <p className="text-xs text-blue-700 mt-0.5">Actualizados</p>
+                  </div>
+                  <div className={`border rounded-lg p-3 text-center ${importResult.errors.length > 0 ? "bg-red-50 border-red-100" : "bg-slate-50 border-slate-100"}`}>
+                    <p className={`text-2xl font-bold ${importResult.errors.length > 0 ? "text-red-600" : "text-slate-400"}`}>{importResult.errors.length}</p>
+                    <p className={`text-xs mt-0.5 ${importResult.errors.length > 0 ? "text-red-700" : "text-slate-500"}`}>Errores</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <span>Total de filas procesadas: <strong className="text-slate-700">{importResult.total}</strong></span>
+                  <span>·</span>
+                  <span>Exitosos: <strong className="text-emerald-600">{importResult.inserted + importResult.updated}</strong></span>
+                </div>
+                {importResult.errors.length === 0 && (
+                  <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <p className="text-sm text-emerald-700 font-medium">Importación completada sin errores</p>
+                  </div>
+                )}
+                {importResult.errors.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-red-500" /> Detalle de errores:
+                    </p>
+                    <div className="max-h-48 overflow-y-auto space-y-1.5">
+                      {importResult.errors.map((e, i) => (
+                        <div key={i} className="bg-red-50 border border-red-100 rounded-md px-3 py-2">
+                          <p className="text-xs font-semibold text-red-700">Fila {e.row} — Código: <span className="font-mono">{e.code}</span></p>
+                          <p className="text-xs text-red-600 mt-0.5">{e.error}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={() => setImportResult(null)}>Cerrar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete EPP */}
         <AlertDialog open={!!deleteEpp} onOpenChange={o => { if (!o) setDeleteEpp(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -616,6 +855,26 @@ export default function EquiposdeProtecciónPersonalPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Delete Delivery */}
+        <AlertDialog open={!!deleteDelivery} onOpenChange={o => { if (!o) setDeleteDelivery(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Eliminar registro de entrega?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Se eliminará la entrega de <strong>{deleteDelivery ? eppMap[deleteDelivery.eppId]?.name ?? deleteDelivery.eppId : ""}</strong> del <strong>{deleteDelivery?.deliveryDate}</strong>. Esta acción no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction className="bg-red-600 hover:bg-red-700"
+                onClick={() => deleteDelivery && deleteDeliveryMutation.mutate(deleteDelivery.id)}>
+                {deleteDeliveryMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Eliminar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
       </div>
     </AppLayout>
   );
