@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { getAuthHeaders } from "@/hooks/use-auth";
+import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart2, Download, Loader2, AlertCircle, Filter } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { SamplePhotoPanel } from "@/components/ui/SamplePhotoPanel";
+import { BarChart2, Download, Loader2, AlertCircle, Filter, Camera } from "lucide-react";
 
 const api = async (path: string, opts?: RequestInit) => {
   const res = await fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
@@ -80,6 +82,89 @@ function InventoryEstadoBadge({ sys, phys }: { sys: unknown; phys: unknown }) {
   );
 }
 
+function ImmobilizedReportTable({ data }: { data: Record<string, unknown>[] }) {
+  const { user } = useAuth();
+  const canWrite = user?.role === "admin" || user?.role === "supervisor" || user?.role === "operator";
+  const canManage = user?.role === "admin" || user?.role === "supervisor";
+  const [photoTarget, setPhotoTarget] = useState<Record<string, unknown> | null>(null);
+
+  return (
+    <>
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-50">
+            <TableHead>Código</TableHead>
+            <TableHead>Producto</TableHead>
+            <TableHead className="text-right">Cantidad</TableHead>
+            <TableHead>Motivo</TableHead>
+            <TableHead>Fecha</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead className="text-center w-16">Fotos</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.map((r, i) => {
+            const photos = (r.photos as string[] | null) ?? [];
+            return (
+              <TableRow key={i}>
+                <TableCell className="font-mono text-xs">{r.productCode as string ?? "—"}</TableCell>
+                <TableCell className="text-sm">{r.productName as string}</TableCell>
+                <TableCell className="text-right font-mono text-sm">{r.quantity as string}</TableCell>
+                <TableCell className="text-sm text-slate-500">{r.reason as string}</TableCell>
+                <TableCell className="text-sm text-slate-500">{fmtDate(r.immobilizedDate)}</TableCell>
+                <TableCell><Badge className="text-xs">{r.status as string}</Badge></TableCell>
+                <TableCell className="text-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-slate-500 hover:text-orange-600 hover:bg-orange-50 relative"
+                    onClick={() => setPhotoTarget(r)}
+                    title="Ver / agregar fotos"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    {photos.length > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-orange-600 rounded-full text-[9px] text-white flex items-center justify-center font-bold">
+                        {photos.length}
+                      </span>
+                    )}
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+
+      <Dialog open={!!photoTarget} onOpenChange={o => { if (!o) setPhotoTarget(null); }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="w-5 h-5 text-orange-600" />
+              Fotos — {photoTarget ? (photoTarget.productName as string) ?? "Inmovilizado" : ""}
+            </DialogTitle>
+            <p className="text-xs text-slate-500 pt-1">
+              Las fotos se suben a Google Drive y los enlaces aparecen en el reporte Excel.
+            </p>
+          </DialogHeader>
+          {photoTarget && (
+            <SamplePhotoPanel
+              sampleId={photoTarget.id as string}
+              sampleCode={(photoTarget.productName as string) ?? (photoTarget.productCode as string) ?? ""}
+              photos={(photoTarget.photos as string[] | null) ?? []}
+              canUpload={!!canWrite}
+              canDelete={!!canManage}
+              queryKey={["/api/reports/immobilized"]}
+              uploadUrl={`/api/immobilized/${photoTarget.id}/photos`}
+              deleteUrl={(idx) => `/api/immobilized/${photoTarget.id}/photos/${idx}`}
+              onUpdate={newPhotos => setPhotoTarget(prev => prev ? { ...prev, photos: newPhotos } : null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function ReportTable({ type, data }: { type: ReportType; data: Record<string, unknown>[] }) {
   if (data.length === 0) return (
     <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
@@ -130,32 +215,7 @@ function ReportTable({ type, data }: { type: ReportType; data: Record<string, un
     </Table>
   );
 
-  if (type === "immobilized") return (
-    <Table>
-      <TableHeader>
-        <TableRow className="bg-slate-50">
-          <TableHead>Código</TableHead>
-          <TableHead>Producto</TableHead>
-          <TableHead className="text-right">Cantidad</TableHead>
-          <TableHead>Motivo</TableHead>
-          <TableHead>Fecha</TableHead>
-          <TableHead>Estado</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {data.map((r, i) => (
-          <TableRow key={i}>
-            <TableCell className="font-mono text-xs">{r.productCode as string ?? "—"}</TableCell>
-            <TableCell className="text-sm">{r.productName as string}</TableCell>
-            <TableCell className="text-right font-mono text-sm">{r.quantity as string}</TableCell>
-            <TableCell className="text-sm text-slate-500">{r.reason as string}</TableCell>
-            <TableCell className="text-sm text-slate-500">{fmtDate(r.immobilizedDate)}</TableCell>
-            <TableCell><Badge className="text-xs">{r.status as string}</Badge></TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
+  if (type === "immobilized") return <ImmobilizedReportTable data={data} />;
 
   if (type === "samples") return (
     <Table>

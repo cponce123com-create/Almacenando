@@ -102,6 +102,7 @@ router.get("/immobilized", requireAuth, asyncHandler(async (req, res) => {
     immobilizedDate: immobilizedProductsTable.immobilizedDate,
     releasedAt: immobilizedProductsTable.releasedAt,
     notes: immobilizedProductsTable.notes,
+    photos: immobilizedProductsTable.photos,
   }).from(immobilizedProductsTable)
     .leftJoin(productsTable, sql`${immobilizedProductsTable.productId} = ${productsTable.id}`)
     .orderBy(desc(immobilizedProductsTable.immobilizedDate));
@@ -310,13 +311,19 @@ router.get("/export/:type", requireAuth, asyncHandler(async (req, res) => {
       productCode: productsTable.code, productName: productsTable.name,
       quantity: immobilizedProductsTable.quantity, reason: immobilizedProductsTable.reason,
       status: immobilizedProductsTable.status, immobilizedDate: immobilizedProductsTable.immobilizedDate,
+      photos: immobilizedProductsTable.photos,
     }).from(immobilizedProductsTable)
       .leftJoin(productsTable, sql`${immobilizedProductsTable.productId} = ${productsTable.id}`)
       .orderBy(desc(immobilizedProductsTable.immobilizedDate));
-    data = records.map(r => ({
-      "Código": r.productCode, "Producto": r.productName, "Cantidad": r.quantity,
-      "Motivo": r.reason, "Estado": r.status, "Fecha Inmovilización": fmtDate(r.immobilizedDate),
-    }));
+    data = records.map(r => {
+      const photos = (r.photos as string[] | null) ?? [];
+      return {
+        "Código": r.productCode, "Producto": r.productName, "Cantidad": r.quantity,
+        "Motivo": r.reason, "Estado": r.status, "Fecha Inmovilización": fmtDate(r.immobilizedDate),
+        "Foto 1": photos[0] ?? "", "Foto 2": photos[1] ?? "",
+        "Foto 3": photos[2] ?? "", "Foto 4": photos[3] ?? "", "Foto 5": photos[4] ?? "",
+      };
+    });
     sheetName = "Inmovilizados";
   } else if (type === "samples") {
     const records = await db.select().from(samplesTable).orderBy(desc(samplesTable.sampleDate));

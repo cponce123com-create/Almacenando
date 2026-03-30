@@ -7,7 +7,7 @@ import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
-import { uploadToCloudinary } from "../lib/cloudinary.js";
+import { uploadFileToDrive } from "../lib/google-drive.js";
 import { writeAuditLog } from "../lib/audit.js";
 
 function parsePagination(q: Record<string, unknown>) {
@@ -21,14 +21,13 @@ const router = Router();
 const storage = multer.memoryStorage();
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 15 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Solo se permiten imágenes"));
   },
 });
 
-// Accept up to 5 box photos (photo0..photo4) + legacy single photo
 const boxUpload = upload.fields([
   { name: "photo", maxCount: 1 },
   { name: "photo0", maxCount: 1 },
@@ -49,24 +48,36 @@ const inventorySchema = z.object({
   finalBalance: z.string().default("0"),
   physicalCount: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   notes: z.string().optional(),
-  // JSON array of {weight, lot} objects for up to 5 boxes
   boxesData: z.string().optional(),
 });
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 type Files = { [fieldname: string]: Express.Multer.File[] };
 
-async function uploadBoxPhotos(files: Files): Promise<(string | null)[]> {
+function buildInventoryPhotoName(productLabel: string, date: string, boxIndex: number, ext: string): string {
+  const slug = productLabel
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .slice(0, 30)
+    .replace(/^_|_$/g, "");
+  const d = date.replace(/-/g, "");
+  return `inv_${slug}_${d}_caja${boxIndex}${ext}`;
+}
+
+async function uploadBoxPhotos(files: Files, productLabel: string, date: string): Promise<(string | null)[]> {
   const urls: (string | null)[] = [];
   for (let i = 0; i < 5; i++) {
     const fieldFiles = files[`photo${i}`];
     if (fieldFiles && fieldFiles.length > 0) {
-      const result = await uploadToCloudinary(fieldFiles[0]!.buffer, {
-        resource_type: "image",
-        folder: "almacenando/inventario",
-      });
-      urls.push(result.secure_url as string);
+      try {
+        const file = fieldFiles[0]!;
+        const ext = "." + (file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
+        const fileName = buildInventoryPhotoName(productLabel, date, i + 1, ext);
+        const { url } = await uploadFileToDrive(file.buffer, fileName, file.mimetype);
+        urls.push(url);
+      } catch {
+        urls.push(null);
+      }
     } else {
       urls.push(null);
     }
@@ -154,7 +165,6 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
 
   const ids = records.map(r => r.id);
 
-  // Boxes
   const boxes = await db.select().from(inventoryBoxesTable)
     .where(inArray(inventoryBoxesTable.inventoryRecordId, ids))
     .orderBy(inventoryBoxesTable.inventoryRecordId, inventoryBoxesTable.boxNumber);
@@ -165,7 +175,6 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
     boxMap.get(box.inventoryRecordId)!.push(box);
   }
 
-  // Last consumption date per product_id — typed Drizzle query
   const productIds = [...new Set(records.map(r => r.productId))];
   const lcRows = await db.select({
     productId: inventoryRecordsTable.productId,
@@ -222,31 +231,37 @@ router.post(
 
     const files = (req.files ?? {}) as Files;
 
-    // Parse box entries
     let boxEntries: { weight: string; lot: string }[] = [];
     if (parsed.data.boxesData) {
       try { boxEntries = JSON.parse(parsed.data.boxesData); } catch { /* ignore */ }
     }
     const activeBoxes = boxEntries.filter(b => b.weight && parseFloat(b.weight) > 0);
 
-    // Calculate total physicalCount from boxes (if any boxes have data)
     let physicalCount = parsed.data.physicalCount ?? null;
     if (activeBoxes.length > 0) {
       const total = activeBoxes.reduce((sum, b) => sum + (parseFloat(b.weight) || 0), 0);
       physicalCount = String(total);
     }
 
-    // Upload box photos
-    const photoUrls = await uploadBoxPhotos(files);
+    // Get product info for photo naming
+    const [product] = await db.select({ code: productsTable.code, name: productsTable.name })
+      .from(productsTable).where(eq(productsTable.id, parsed.data.productId)).limit(1);
+    const productLabel = product?.code ?? product?.name ?? parsed.data.productId;
+    const recordDate = parsed.data.recordDate;
+
+    // Upload box photos to Drive
+    const photoUrls = await uploadBoxPhotos(files, productLabel, recordDate);
 
     // Legacy single photo fallback
     let legacyPhotoUrl: string | null = null;
     if (files["photo"]?.[0]) {
-      const result = await uploadToCloudinary(files["photo"][0].buffer, {
-        resource_type: "image",
-        folder: "almacenando/inventario",
-      });
-      legacyPhotoUrl = result.secure_url as string;
+      try {
+        const file = files["photo"][0]!;
+        const ext = "." + (file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
+        const fileName = buildInventoryPhotoName(productLabel, recordDate, 0, ext);
+        const { url } = await uploadFileToDrive(file.buffer, fileName, file.mimetype);
+        legacyPhotoUrl = url;
+      } catch { /* ignore */ }
     }
     const mainPhotoUrl = photoUrls[0] ?? legacyPhotoUrl;
 
@@ -267,7 +282,6 @@ router.post(
       registeredBy: authedReq.userId,
     }).returning();
 
-    // Insert box records
     for (let i = 0; i < boxEntries.length; i++) {
       const box = boxEntries[i]!;
       if (!box.weight && !box.lot && !photoUrls[i]) continue;
@@ -307,11 +321,12 @@ router.put(
 
     let photoUrl: string | undefined;
     if (req.file) {
-      const result = await uploadToCloudinary(req.file.buffer, {
-        resource_type: "image",
-        folder: "almacenando/inventario",
-      });
-      photoUrl = result.secure_url as string;
+      try {
+        const ext = "." + (req.file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
+        const fileName = buildInventoryPhotoName(parsed.data.productId ?? id, parsed.data.recordDate ?? new Date().toISOString().slice(0, 10), 0, ext);
+        const { url } = await uploadFileToDrive(req.file.buffer, fileName, req.file.mimetype);
+        photoUrl = url;
+      } catch { /* ignore */ }
     }
 
     const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };

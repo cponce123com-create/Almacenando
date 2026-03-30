@@ -5,7 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
   Upload, X, ExternalLink, Trash2, Loader2, ImageIcon,
-  CheckCircle2, AlertCircle, CloudUpload, Image,
+  CheckCircle2, AlertCircle, CloudUpload, Image, Camera,
 } from "lucide-react";
 
 interface SamplePhotoPanelProps {
@@ -69,6 +69,7 @@ export function SamplePhotoPanel({
   const { toast } = useToast();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<string[]>(initialPhotos);
   const [pending, setPending] = useState<PendingFile[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -314,39 +315,59 @@ export function SamplePhotoPanel({
       )}
 
       {canUpload && photos.length < 5 && (
-        <div
-          className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-            dragging
-              ? "border-purple-400 bg-purple-50"
-              : "border-slate-200 hover:border-purple-300 hover:bg-slate-50"
-          }`}
-          onDragOver={e => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          onClick={() => inputRef.current?.click()}
-        >
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-              <Upload className="w-5 h-5 text-purple-600" />
+        <>
+          <div
+            className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+              dragging
+                ? "border-purple-400 bg-purple-50"
+                : "border-slate-200 hover:border-purple-300 hover:bg-slate-50"
+            }`}
+            onDragOver={e => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            onClick={() => inputRef.current?.click()}
+          >
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                <Upload className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700">
+                  Arrastrá fotos aquí o hacé clic para seleccionar
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Hasta {5 - photos.length} imagen(es) más · JPG, PNG, WEBP · máx. 15 MB c/u
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium text-slate-700">
-                Arrastrá fotos aquí o hacé clic para seleccionar
-              </p>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Hasta {5 - photos.length} imagen(es) más · JPG, PNG, WEBP · máx. 15 MB c/u
-              </p>
-            </div>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+            />
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+            />
           </div>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={e => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
-          />
-        </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-full h-9 text-xs gap-2 border-dashed border-purple-200 text-purple-700 hover:bg-purple-50 hover:border-purple-400"
+            onClick={e => { e.stopPropagation(); cameraRef.current?.click(); }}
+          >
+            <Camera className="w-3.5 h-3.5" />
+            Tomar foto con la cámara
+          </Button>
+        </>
       )}
 
       {!canUpload && photos.length === 0 && (
