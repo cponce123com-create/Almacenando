@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { hashPassword, comparePassword, signToken, requireAuth, type AuthenticatedRequest } from "../lib/auth.js";
+import { hashPassword, comparePassword, signToken, requireAuth, revokeToken, cleanupExpiredTokens, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod";
 import { authLoginLimiter } from "../lib/rate-limit.js";
@@ -58,7 +58,13 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
 }));
 
 router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
-  const { userId } = req as AuthenticatedRequest;
+  const authedReq = req as AuthenticatedRequest;
+  const { userId, jti, tokenExp } = authedReq;
+
+  // Revoke the JTI so this token is rejected immediately on any future request,
+  // even before the 8-hour natural expiry.
+  await revokeToken(jti, new Date(tokenExp * 1000));
+
   void writeAuditLog({ userId, action: "logout", resource: "session", resourceId: userId, ipAddress: req.ip });
   res.json({ message: "Sesión cerrada correctamente" });
 }));

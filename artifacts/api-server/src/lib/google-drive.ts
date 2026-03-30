@@ -1,5 +1,12 @@
 import { google } from "googleapis";
 import { Readable } from "stream";
+import type { drive_v3 } from "googleapis";
+
+// ── Singleton state ───────────────────────────────────────────────────────────
+// Parsed once on first use; never re-created per-request.
+
+let _driveClient: drive_v3.Drive | null = null;
+let _folderId: string | null = null;
 
 function parseServiceAccountJson() {
   let raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -13,7 +20,7 @@ function parseServiceAccountJson() {
   }
 }
 
-function getFolderId() {
+function resolveFolderId() {
   const raw = process.env.GOOGLE_DRIVE_FOLDER_ID;
   if (!raw) throw new Error("GOOGLE_DRIVE_FOLDER_ID no está configurado");
   const trimmed = raw.trim();
@@ -21,21 +28,33 @@ function getFolderId() {
   return match ? match[1]! : trimmed;
 }
 
-function getAuth() {
-  const credentials = parseServiceAccountJson();
-  return new google.auth.GoogleAuth({
-    credentials,
-    scopes: ["https://www.googleapis.com/auth/drive"],
-  });
+function getDriveClient(): drive_v3.Drive {
+  if (!_driveClient) {
+    const credentials = parseServiceAccountJson();
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ["https://www.googleapis.com/auth/drive"],
+    });
+    _driveClient = google.drive({ version: "v3", auth });
+  }
+  return _driveClient;
 }
+
+function getFolderId(): string {
+  if (!_folderId) {
+    _folderId = resolveFolderId();
+  }
+  return _folderId;
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 export async function uploadFileToDrive(
   buffer: Buffer,
   fileName: string,
   mimeType: string
 ): Promise<{ url: string; fileId: string }> {
-  const auth = getAuth();
-  const drive = google.drive({ version: "v3", auth });
+  const drive = getDriveClient();
   const folderId = getFolderId();
 
   const res = await drive.files.create({
@@ -53,7 +72,6 @@ export async function uploadFileToDrive(
 
   const fileId = res.data.id!;
 
-  // Make file publicly readable via link
   await drive.permissions.create({
     fileId,
     supportsAllDrives: true,
@@ -68,8 +86,7 @@ export async function uploadFileToDrive(
 
 export async function deleteFileFromDrive(fileId: string): Promise<void> {
   try {
-    const auth = getAuth();
-    const drive = google.drive({ version: "v3", auth });
+    const drive = getDriveClient();
     await drive.files.delete({ fileId, supportsAllDrives: true });
   } catch {
     // Silent fail — file may already be deleted or inaccessible

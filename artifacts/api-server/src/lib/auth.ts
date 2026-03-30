@@ -1,8 +1,9 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "crypto";
 import type { Request, Response, NextFunction } from "express";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, usersTable, revokedTokensTable } from "@workspace/db";
+import { eq, lt } from "drizzle-orm";
 import type { WarehouseRole } from "@workspace/db";
 
 const jwtSecret = process.env.SESSION_SECRET;
@@ -13,11 +14,24 @@ const JWT_SECRET = jwtSecret;
 
 // ---------------------------------------------------------------------------
 // Duración del token reducida de 30d → 8h.
-// Un turno de trabajo típico dura 8 horas. Si un token es robado,
-// el atacante solo tiene una ventana de horas, no un mes entero.
-// El usuario simplemente vuelve a iniciar sesión al día siguiente.
 // ---------------------------------------------------------------------------
 const JWT_EXPIRES_IN = "8h";
+const JWT_EXPIRES_SECONDS = 8 * 60 * 60;
+
+// ---------------------------------------------------------------------------
+// Blacklist cleanup: removes expired revoked tokens from the DB.
+// Runs at startup and every hour so the table stays lean.
+// ---------------------------------------------------------------------------
+export async function cleanupExpiredTokens(): Promise<void> {
+  try {
+    await db.delete(revokedTokensTable).where(lt(revokedTokensTable.expiresAt, new Date()));
+  } catch {
+    // Non-critical — cleanup failure should never block normal operation.
+  }
+}
+
+// Schedule periodic cleanup every hour (non-blocking).
+setInterval(() => void cleanupExpiredTokens(), 60 * 60 * 1000).unref();
 
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -28,25 +42,45 @@ export function comparePassword(password: string, hash: string): Promise<boolean
 }
 
 export function signToken(payload: { userId: string; email: string; role: WarehouseRole }): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  const jti = randomUUID();
+  return jwt.sign({ ...payload, jti }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
 
-export function verifyToken(token: string): { userId: string; email: string; role: WarehouseRole } | null {
+type TokenPayload = { userId: string; email: string; role: WarehouseRole; jti: string; exp: number };
+
+export function verifyToken(token: string): TokenPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string; role: WarehouseRole };
-    return decoded;
+    return jwt.verify(token, JWT_SECRET) as TokenPayload;
   } catch {
     return null;
   }
 }
 
-export type AuthenticatedRequest = Request & { userId: string; userRole: WarehouseRole; userEmail: string };
+// ---------------------------------------------------------------------------
+// Revoke a token by its JTI — call this on logout or forced session expiry.
+// ---------------------------------------------------------------------------
+export async function revokeToken(jti: string, expiresAt: Date): Promise<void> {
+  try {
+    await db.insert(revokedTokensTable).values({ jti, expiresAt }).onConflictDoNothing();
+  } catch {
+    // Best-effort: if insert fails, token will naturally expire via JWT exp.
+  }
+}
+
+export type AuthenticatedRequest = Request & {
+  userId: string;
+  userRole: WarehouseRole;
+  userEmail: string;
+  jti: string;
+  tokenExp: number;
+};
 
 // ---------------------------------------------------------------------------
-// requireAuth — verifies the JWT then does a lightweight DB check to confirm
-// the account is still active and reads the current role from the database.
-// This prevents a revoked/demoted user from continuing to act on stale JWT
-// permissions for up to the full 8-hour token lifetime.
+// requireAuth
+// 1. Verifies JWT signature and expiration.
+// 2. Checks the JTI blacklist (revoked by logout or admin).
+// 3. Confirms the account is still active and reads the live role from DB.
+// Both DB lookups are parallelized to minimize latency overhead.
 // ---------------------------------------------------------------------------
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -63,23 +97,36 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Lightweight DB check: confirm the account is still active and retrieve
-    // the current role from the source of truth rather than trusting the JWT.
-    const rows = await db
-      .select({ status: usersTable.status, role: usersTable.role })
-      .from(usersTable)
-      .where(eq(usersTable.id, payload.userId))
-      .limit(1);
+    // Parallel: user status check + JTI blacklist check
+    const [userRows, revokedRows] = await Promise.all([
+      db
+        .select({ status: usersTable.status, role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, payload.userId))
+        .limit(1),
+      db
+        .select({ jti: revokedTokensTable.jti })
+        .from(revokedTokensTable)
+        .where(eq(revokedTokensTable.jti, payload.jti))
+        .limit(1),
+    ]);
 
-    if (rows.length === 0 || rows[0]!.status !== "active") {
+    if (revokedRows.length > 0) {
+      res.status(401).json({ error: "Sesión cerrada. Inicia sesión nuevamente." });
+      return;
+    }
+
+    if (userRows.length === 0 || userRows[0]!.status !== "active") {
       res.status(401).json({ error: "Cuenta desactivada o no encontrada" });
       return;
     }
 
     const authedReq = req as AuthenticatedRequest;
     authedReq.userId = payload.userId;
-    authedReq.userRole = rows[0]!.role; // live role from DB, not from JWT
+    authedReq.userRole = userRows[0]!.role;
     authedReq.userEmail = payload.email;
+    authedReq.jti = payload.jti;
+    authedReq.tokenExp = payload.exp;
     next();
   } catch (err) {
     next(err);

@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedWarehouseData, purgeDemoData } from "./lib/seed.js";
+import { cleanupExpiredTokens } from "./lib/auth.js";
 
 const rawPort = process.env["PORT"];
 
@@ -18,6 +19,9 @@ if (Number.isNaN(port) || port <= 0) {
 
 app.listen(port, async () => {
   logger.info({ port }, "API Server running");
+
+  // Clean up any expired revoked tokens left over from a previous run.
+  void cleanupExpiredTokens();
 
   // -------------------------------------------------------------------
   // Seed demo data SOLO si RUN_SEED=true está definido explícitamente.

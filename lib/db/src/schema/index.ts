@@ -13,3 +13,4 @@ export * from "./personnel";
 export * from "./epp";
 export * from "./audit-logs";
 export * from "./lot-evaluations";
+export * from "./revoked-tokens";
