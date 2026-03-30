@@ -27,7 +27,7 @@ const cuadreSchema = z.object({
   items: z.array(cuadreItemSchema).optional(),
 });
 
-router.get("/", requireAuth, asyncHandler(async (req, res) => {
+router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
   let query = db.select().from(cuadreRecordsTable).$dynamic();
   if (warehouse && warehouse !== "all") {
@@ -87,7 +87,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
   res.json(records.map(r => ({ ...r, items: itemMap.get(r.id) ?? [] })));
 }));
 
-router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
+router.get("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const records = await db.select().from(cuadreRecordsTable).where(eq(cuadreRecordsTable.id, id as string)).limit(1);
   if (records.length === 0) { res.status(404).json({ error: "Cuadre no encontrado" }); return; }

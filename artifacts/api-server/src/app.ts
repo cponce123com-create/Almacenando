@@ -13,7 +13,7 @@ const app: Express = express();
 // Trust proxy — "loopback" solo confía en el proxy local de Render,
 // evitando que un atacante falsee su IP con el header X-Forwarded-For.
 // ---------------------------------------------------------------------------
-app.set("trust proxy", "loopback");
+app.set("trust proxy", 1);
 
 // ---------------------------------------------------------------------------
 // Helmet — agrega headers HTTP de seguridad automáticamente:
