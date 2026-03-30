@@ -396,6 +396,124 @@ export async function sendTimeCapsuleEmail({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Notificación de cambio de lote (pesador de turno) — Almacén Químico
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const LOT_CHANGE_RECIPIENTS = [
+  "judith.yachachin@sanjacinto.com.pe",
+  "laboratorio.quimico@sanjacinto.com.pe",
+  "laboratorista.tintoreria@sanjacinto.com.pe",
+  "controlistas.tintoreria@sanjacinto.com.pe",
+  "ruben.roldan@sanjacinto.com.pe",
+  "supervisor.tintoreria@sanjacinto.com.pe",
+] as const;
+
+export async function sendLotChangeNotificationEmail({
+  productName,
+  oldLot,
+  newLot,
+  productionOrder,
+  senderName,
+}: {
+  productName: string;
+  oldLot: string;
+  newLot: string;
+  productionOrder: string;
+  senderName: string;
+}): Promise<void> {
+  const subject = `Notificación de Cambio de Lote - ${productName}`;
+
+  const text = `Estimada Judith,
+
+Espero que este mensaje le encuentre bien. Me complace informarle sobre
+un cambio de lote en nuestro proceso de producción:
+
+- Colorante: ${productName}
+- Lote Antiguo: ${oldLot}
+- Nuevo Lote: ${newLot}
+- Orden de Producción: ${productionOrder}
+
+Este cambio ha sido realizado de manera cuidadosa y siguiendo nuestros
+procedimientos internos de calidad. Quedamos a su disposición para
+cualquier pregunta o aclaración adicional.
+
+Saludos Cordiales.
+
+Atentamente,
+${senderName} - Pesador de Turno`;
+
+  const html = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:580px;margin:0 auto;background:#f8fafc;padding:0;">
+
+  <div style="background:#1e3a5f;padding:24px 28px;border-radius:12px 12px 0 0;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="width:38px;height:38px;background:#3b82f6;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;">🧪</div>
+      <div>
+        <p style="margin:0;color:#93c5fd;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;font-weight:600;">Almacén Químico</p>
+        <p style="margin:2px 0 0;color:#ffffff;font-size:16px;font-weight:700;">Notificación de Cambio de Lote</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="background:#ffffff;padding:28px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
+    <p style="margin:0 0 18px;font-size:15px;color:#374151;line-height:1.6;">Estimada Judith,</p>
+    <p style="margin:0 0 18px;font-size:15px;color:#374151;line-height:1.6;">
+      Espero que este mensaje le encuentre bien. Me complace informarle sobre
+      un cambio de lote en nuestro proceso de producción:
+    </p>
+
+    <div style="background:#f1f5f9;border-radius:10px;padding:20px 24px;margin-bottom:20px;border-left:4px solid #3b82f6;">
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding:7px 0;font-size:13px;color:#64748b;width:45%;font-weight:500;">Colorante</td>
+          <td style="padding:7px 0;font-size:14px;color:#1e293b;font-weight:700;">${productName}</td>
+        </tr>
+        <tr>
+          <td style="padding:7px 0;font-size:13px;color:#64748b;font-weight:500;">Lote Antiguo</td>
+          <td style="padding:7px 0;font-size:14px;color:#1e293b;font-family:monospace;">${oldLot}</td>
+        </tr>
+        <tr>
+          <td style="padding:7px 0;font-size:13px;color:#64748b;font-weight:500;">Nuevo Lote</td>
+          <td style="padding:7px 0;font-size:14px;color:#1e293b;font-family:monospace;font-weight:600;">${newLot}</td>
+        </tr>
+        <tr>
+          <td style="padding:7px 0;font-size:13px;color:#64748b;font-weight:500;">Orden de Producción</td>
+          <td style="padding:7px 0;font-size:14px;color:#1e293b;">${productionOrder}</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.6;">
+      Este cambio ha sido realizado de manera cuidadosa y siguiendo nuestros
+      procedimientos internos de calidad. Quedamos a su disposición para
+      cualquier pregunta o aclaración adicional.
+    </p>
+    <p style="margin:0;font-size:14px;color:#374151;">Saludos Cordiales.</p>
+  </div>
+
+  <div style="background:#f1f5f9;padding:16px 28px;border-radius:0 0 12px 12px;border:1px solid #e2e8f0;border-top:none;">
+    <p style="margin:0;font-size:13px;color:#1e293b;font-weight:600;">Atentamente,</p>
+    <p style="margin:4px 0 0;font-size:13px;color:#475569;">${senderName} — Pesador de Turno</p>
+    <p style="margin:10px 0 0;font-size:11px;color:#94a3b8;">Notificación automática · Sistema de Gestión de Almacén Químico</p>
+  </div>
+</div>`.trim();
+
+  const resend = getResend();
+  if (resend) {
+    const fromEmail = process.env.RESEND_FROM_EMAIL ?? "Almacén Químico <noreply@almacenquimico.com>";
+    await resend.emails.send({
+      from: fromEmail,
+      to: [...LOT_CHANGE_RECIPIENTS],
+      subject,
+      html,
+      text,
+    });
+    return;
+  }
+  console.warn("[email] RESEND_API_KEY no configurado — notificación de cambio de lote no enviada");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Notificación de cambio de lote — Almacén Químico
 // ─────────────────────────────────────────────────────────────────────────────
 

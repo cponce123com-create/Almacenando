@@ -12,7 +12,8 @@ export type AuditAction =
   | "reject"
   | "login"
   | "logout"
-  | "view";
+  | "view"
+  | "lot_change_notification";
 
 export async function writeAuditLog({
   userId,

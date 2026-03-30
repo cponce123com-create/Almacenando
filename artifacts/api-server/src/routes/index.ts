@@ -15,6 +15,7 @@ import personnelRouter from "./personnel";
 import reportsRouter from "./reports";
 import adminUsersRouter from "./admin-users";
 import lotEvaluationsRouter from "./lot-evaluations";
+import notificationsRouter from "./notifications";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use("/personnel", personnelRouter);
 router.use("/reports", reportsRouter);
 router.use("/admin/users", adminUsersRouter);
 router.use("/lot-evaluations", lotEvaluationsRouter);
+router.use("/notifications", notificationsRouter);
 
 export default router;

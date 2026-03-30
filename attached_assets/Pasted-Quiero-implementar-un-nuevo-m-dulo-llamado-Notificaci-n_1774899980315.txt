@@ -1,0 +1,69 @@
+Quiero implementar un nuevo módulo llamado "Notificación de Cambio de Lote" en el sistema Almacenando.
+
+DESCRIPCIÓN DEL MÓDULO
+Un formulario simple que permite al Pesador de Turno notificar un cambio de lote de un colorante/producto químico enviando un correo automático a los destinatarios fijos del área.
+
+BACKEND — nuevo endpoint
+Crear POST /api/notifications/lot-change (solo roles: operator, supervisor, admin) que:
+
+Reciba: productId, oldLot, newLot, productionOrder
+Busque el nombre del producto en la tabla products por productId
+Envíe el correo usando el servicio Resend ya configurado en el proyecto
+Guarde un registro en la tabla audit_logs con action: "lot_change_notification" y los detalles del cambio
+
+Destinatarios fijos (hardcodeados como constante en el servidor, no en la BD):
+
+judith.yachachin@sanjacinto.com.pe
+laboratorio.quimico@sanjacinto.com.pe
+laboratorista.tintoreria@sanjacinto.com.pe
+controlistas.tintoreria@sanjacinto.com.pe
+ruben.roldan@sanjacinto.com.pe
+supervisor.tintoreria@sanjacinto.com.pe
+
+Plantilla del correo (replicar exactamente este formato):
+Asunto: Notificación de Cambio de Lote - {NOMBRE_PRODUCTO}
+
+Estimada Judith,
+
+Espero que este mensaje le encuentre bien. Me complace informarle sobre
+un cambio de lote en nuestro proceso de producción:
+
+- Colorante: {NOMBRE_PRODUCTO}
+- Lote Antiguo: {LOTE_ANTIGUO}
+- Nuevo Lote: {NUEVO_LOTE}
+- Orden de Producción: {ORDEN_PRODUCCION}
+
+Este cambio ha sido realizado de manera cuidadosa y siguiendo nuestros
+procedimientos internos de calidad. Quedamos a su disposición para
+cualquier pregunta o aclaración adicional.
+
+Saludos Cordiales.
+
+Atentamente,
+{NOMBRE_USUARIO} - Pesador de Turno
+
+FRONTEND — nueva página
+Crear src/pages/modules/lot-change-notification.tsx y agregarlo al sidebar con el nombre "Cambio de Lote" bajo la sección de operaciones.
+La página debe tener:
+
+Buscador de producto — un Select con búsqueda que cargue los productos activos del almacén actualmente seleccionado (igual que en otros módulos). Al seleccionar muestra el código del producto como referencia visual debajo.
+Campo "Lote Antiguo" — input de texto, obligatorio
+Campo "Nuevo Lote" — input de texto, obligatorio
+Campo "Orden de Producción" — input de texto, obligatorio
+Botón "Enviar Notificación" — al hacer clic:
+
+Deshabilitar el botón y mostrar spinner mientras se procesa
+Si éxito: mostrar toast verde "Notificación enviada correctamente" y limpiar el formulario
+Si error: mostrar toast rojo con el mensaje del error
+
+
+Mostrar debajo del formulario (en un recuadro informativo) la lista de destinatarios a quienes se enviará el correo, para que el usuario sepa antes de enviar.
+
+Validación: todos los campos son obligatorios. Mostrar errores inline si se intenta enviar vacío.
+
+CONSIDERACIONES
+
+Usar asyncHandler y requireAuth + requireRole igual que las otras rutas del proyecto
+Escribir en el audit log para tener trazabilidad de quién envió qué notificación y cuándo
+Agregar la ruta al lib/api-spec/openapi.yaml y regenerar el cliente con orval si aplica
+El módulo solo debe ser visible para roles: operator, supervisor, admin (oculto para quality y readonly)

@@ -24,6 +24,7 @@ import {
   Warehouse,
   UserCog,
   ShieldCheck,
+  Bell,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
@@ -60,7 +61,14 @@ const SB = {
   hoverBg: "rgba(255,255,255,0.07)",
 };
 
-export const modules = [
+type ModuleRole = "admin" | "supervisor" | "operator" | "quality" | "readonly";
+
+export const modules: Array<{
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  roles?: ModuleRole[];
+}> = [
   { name: "Dashboard",            href: "/dashboard",    icon: LayoutDashboard },
   { name: "Maestro de Productos", href: "/products",     icon: Package },
   { name: "Saldo Actualizado",    href: "/balances",     icon: Scale },
@@ -69,6 +77,7 @@ export const modules = [
   { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },
   { name: "Muestras",             href: "/samples",      icon: TestTube },
   { name: "Lotes / Tinturas",     href: "/dye-lots",     icon: Layers },
+  { name: "Cambio de Lote",       href: "/lot-change-notification", icon: Bell, roles: ["operator", "supervisor", "admin"] },
   { name: "Control de Lotes",     href: "/lot-evaluations", icon: Microscope },
   { name: "Disposición Final",    href: "/disposition",  icon: Recycle },
   { name: "MSDS",                 href: "/msds",         icon: ShieldCheck },
@@ -179,9 +188,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Navigation */}
       <nav style={{ flex: 1, padding: "12px 10px", overflowY: "auto" }}>
-        {modules.map((item) => (
-          <NavItem key={item.href} item={item} onClick={onNavClick} />
-        ))}
+        {modules
+          .filter(item => !item.roles || (user?.role && item.roles.includes(user.role as ModuleRole)))
+          .map((item) => (
+            <NavItem key={item.href} item={item} onClick={onNavClick} />
+          ))}
       </nav>
 
       {/* User footer */}
