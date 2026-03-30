@@ -18,7 +18,8 @@ export interface InventoryBox {
 export interface InventoryRecord {
   id: string; warehouse: string; productId: string; recordDate: string;
   previousBalance: string; inputs: string; outputs: string; finalBalance: string;
-  physicalCount?: string | null; photoUrl?: string | null; notes?: string | null;
+  physicalCount?: string | null; photoUrl?: string | null;
+  location?: string | null; notes?: string | null;
   registeredBy: string; createdAt: string; boxes?: InventoryBox[];
   lastConsumptionDate?: string | null;
 }

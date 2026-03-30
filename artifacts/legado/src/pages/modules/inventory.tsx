@@ -11,7 +11,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin } from 'lucide-react';
+
+const LOCATION_SUGGESTIONS = [
+  "Lata 1", "Lata 2", "Lata 3", "Lata 4", "Lata 5",
+  "Rack Colorantes C1", "Rack Colorantes C2", "Rack Colorantes C3", "Rack Colorantes C4",
+  "Rack Colorantes 1", "Rack Colorantes 2", "Rack Colorantes 3", "Rack Colorantes 4",
+  "Rack Auxiliares",
+  "Rack Auxiliares Tercer Nivel",
+  "Zona de Abastecimiento",
+  "Zona Auxiliares Abiertos 1", "Zona Auxiliares Abiertos 2", "Zona Auxiliares Abiertos 3",
+  "Zona Auxiliares Pasadizo Afuera",
+  "Zona Inmovilizados",
+  "Zona Muestras",
+  "Zona Disposición Final",
+];
 import {
   WAREHOUSES, NUM_BOXES, EMPTY_PRODUCTS, EMPTY_BALANCES, today, emptyBoxes, sinMovimiento, apiJson, apiForm,
   ProductCombobox, PhotoViewer, CoverageStats, BoxesDialog,
@@ -36,6 +50,7 @@ export default function TomaDeInventarioPage() {
     productId: "",
     recordDate: today(),
     previousBalance: "",
+    location: "",
     notes: "",
   });
   const [boxes, setBoxes] = useState<BoxEntry[]>(emptyBoxes());
@@ -79,7 +94,7 @@ export default function TomaDeInventarioPage() {
     : null;
 
   const resetForm = () => {
-    setForm({ productId: "", recordDate: today(), previousBalance: "", notes: "" });
+    setForm({ productId: "", recordDate: today(), previousBalance: "", location: "", notes: "" });
     setBoxes(emptyBoxes());
     setBoxPhotos(Array(NUM_BOXES).fill(null));
     setBoxPreviews(Array(NUM_BOXES).fill(null));
@@ -150,6 +165,7 @@ export default function TomaDeInventarioPage() {
       fd.append("outputs", "0");
       fd.append("finalBalance", hasBoxData ? String(totalPhysical) : form.previousBalance || "0");
       fd.append("physicalCount", hasBoxData ? String(totalPhysical) : "");
+      fd.append("location", form.location);
       fd.append("notes", form.notes);
       fd.append("boxesData", JSON.stringify(boxes));
       // Attach photos
@@ -287,6 +303,7 @@ export default function TomaDeInventarioPage() {
                     <TableHead className="font-semibold text-slate-600 text-right">Total Físico</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Diferencia</TableHead>
                     <TableHead className="font-semibold text-slate-600 text-center">Cajas</TableHead>
+                    <TableHead className="font-semibold text-slate-600">Ubicación</TableHead>
                     <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Últ. Consumo</TableHead>
                     <TableHead className="font-semibold text-slate-600 whitespace-nowrap">Sin movimiento</TableHead>
                     <TableHead className="font-semibold text-slate-600">Observaciones</TableHead>
@@ -342,6 +359,14 @@ export default function TomaDeInventarioPage() {
                           ) : (
                             <span className="text-slate-300 text-xs">—</span>
                           )}
+                        </TableCell>
+                        <TableCell className="text-sm max-w-[150px]">
+                          {r.location
+                            ? <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap">
+                                <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />{r.location}
+                              </span>
+                            : <span className="text-slate-300 text-xs">—</span>
+                          }
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
                           {(() => {
@@ -434,6 +459,23 @@ export default function TomaDeInventarioPage() {
                   </div>
                 );
               })()}
+
+              {/* Ubicación */}
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-emerald-600" /> Ubicación
+                </Label>
+                <Input
+                  list="inventory-locations"
+                  placeholder="Ej. Rack Colorantes C1, Lata 2, Zona Abastecimiento…"
+                  value={form.location}
+                  onChange={e => setField("location", e.target.value)}
+                  className="text-sm"
+                />
+                <datalist id="inventory-locations">
+                  {LOCATION_SUGGESTIONS.map(l => <option key={l} value={l} />)}
+                </datalist>
+              </div>
 
               {/* Tabla de cajas */}
               <div>

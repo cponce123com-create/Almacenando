@@ -18,6 +18,7 @@ export const inventoryRecordsTable = pgTable(
     physicalCount: numeric("physical_count"),
     photoUrl: text("photo_url"),
     responsible: text("responsible"),
+    location: text("location"),
     notes: text("notes"),
     registeredBy: text("registered_by").notNull().references(() => usersTable.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),
