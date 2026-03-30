@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
 
 function getResend(): Resend | null {
   const key = process.env.RESEND_API_KEY;
@@ -498,19 +499,28 @@ ${senderName} - Pesador de Turno`;
   </div>
 </div>`.trim();
 
-  const resend = getResend();
-  if (resend) {
-    const fromEmail = process.env.RESEND_FROM_EMAIL ?? "Almacén Químico <noreply@almacenquimico.com>";
-    await resend.emails.send({
-      from: fromEmail,
-      to: [...LOT_CHANGE_RECIPIENTS],
-      subject,
-      html,
-      text,
-    });
+  const smtpPass = process.env.SMTP_APP_PASSWORD;
+  if (!smtpPass) {
+    console.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — notificación de cambio de lote no enviada");
     return;
   }
-  console.warn("[email] RESEND_API_KEY no configurado — notificación de cambio de lote no enviada");
+
+  const SMTP_USER = "carlos.ponce@sanjacinto.com.pe";
+
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,
+    secure: false,
+    auth: { user: SMTP_USER, pass: smtpPass },
+  });
+
+  await transporter.sendMail({
+    from: `"Almacén Químico" <${SMTP_USER}>`,
+    to: [...LOT_CHANGE_RECIPIENTS],
+    subject,
+    text,
+    html,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
