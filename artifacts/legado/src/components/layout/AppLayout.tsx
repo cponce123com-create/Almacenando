@@ -334,7 +334,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   );
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", backgroundColor: "#f0f4f8" }}>
+    <div style={{ minHeight: "100vh", display: "flex", backgroundColor: "#f0f4f8", overflowX: "hidden" }}>
 
       {/* Desktop sidebar */}
       <aside
@@ -383,7 +383,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       )}
 
       {/* Main content */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "100vh" }}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: "100vh" }}
         className="lg:ml-64"
       >
         {/* Top header */}
