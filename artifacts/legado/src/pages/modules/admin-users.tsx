@@ -23,7 +23,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Settings, Plus, Pencil, Trash2, Loader2, AlertCircle, User,
-  ShieldCheck, Eye, EyeOff, UserCog, CheckCircle2,
+  ShieldCheck, Eye, EyeOff, UserCog, CheckCircle2, KeyRound, RefreshCw,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -236,11 +236,24 @@ function UserDialog({
             </div>
             <div className="col-span-2 space-y-1">
               <Label>Correo electrónico</Label>
-              <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="usuario@empresa.com" />
+              <Input
+                type="email"
+                value={form.email}
+                onChange={(e) => {
+                  const email = e.target.value;
+                  set("email", email);
+                  if (!isEdit) {
+                    const username = email.split("@")[0];
+                    if (username) set("password", username + "123");
+                  }
+                }}
+                placeholder="usuario@empresa.com"
+              />
             </div>
             <div className="col-span-2 space-y-1">
               <Label>
                 Contraseña {isEdit && <span className="text-slate-400 font-normal">(dejar en blanco para no cambiar)</span>}
+                {!isEdit && form.email && <span className="text-slate-400 font-normal"> (auto: {form.email.split("@")[0]}123)</span>}
               </Label>
               <PasswordInput value={form.password} onChange={(v) => set("password", v)} />
             </div>
@@ -328,6 +341,22 @@ export default function AdministracióndeUsuariosPage() {
     },
   });
 
+  const resetPasswordMutation = useMutation({
+    mutationFn: (id: string) => api(`/api/admin/users/${id}/reset-password`, { method: "POST" }),
+    onSuccess: (data: { temporaryPassword: string; user: AdminUser }) => {
+      toast({ title: `Contraseña restablecida → ${data.temporaryPassword}` });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const resetAllMutation = useMutation({
+    mutationFn: () => api("/api/admin/users/reset-all-passwords", { method: "POST" }),
+    onSuccess: (data: { message: string }) => {
+      toast({ title: data.message });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const isAdmin = currentUser?.role === "admin";
   const activeCount = users.filter((u) => u.status === "active").length;
 
@@ -354,11 +383,27 @@ export default function AdministracióndeUsuariosPage() {
               <p className="text-slate-500 text-sm">{activeCount} usuarios activos · {users.length} en total</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {/* Botón "Mi perfil" para cualquier usuario autenticado */}
             {currentUser && (
               <Button variant="outline" onClick={() => setShowMyProfile(true)} className="gap-2">
                 <UserCog className="w-4 h-4" /> Mi perfil
+              </Button>
+            )}
+            {/* Resetear todos - solo admin */}
+            {isAdmin && (
+              <Button
+                variant="outline"
+                className="gap-2 text-amber-700 border-amber-300 hover:bg-amber-50"
+                onClick={() => {
+                  if (window.confirm(`¿Restablecer contraseñas de TODOS los usuarios a usuario+123?\n\nEjemplo: jcastillo → jcastillo123`)) {
+                    resetAllMutation.mutate();
+                  }
+                }}
+                disabled={resetAllMutation.isPending}
+              >
+                {resetAllMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Resetear todos
               </Button>
             )}
             {/* Botón crear solo para admin */}
@@ -459,6 +504,20 @@ export default function AdministracióndeUsuariosPage() {
                               {isAdmin && (
                                 <TableCell className="text-right">
                                   <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 text-slate-400 hover:text-amber-600"
+                                      title={`Resetear contraseña → ${u.email.split("@")[0]}123`}
+                                      onClick={() => {
+                                        if (window.confirm(`¿Restablecer contraseña de "${u.name}"?\nNueva contraseña: ${u.email.split("@")[0]}123`)) {
+                                          resetPasswordMutation.mutate(u.id);
+                                        }
+                                      }}
+                                      disabled={resetPasswordMutation.isPending}
+                                    >
+                                      <KeyRound className="w-3.5 h-3.5" />
+                                    </Button>
                                     <Button
                                       variant="ghost"
                                       size="icon"

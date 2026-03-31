@@ -164,27 +164,12 @@ export default function Login() {
               </Button>
             </form>
 
-            {/* Demo credentials */}
-            <div className="mt-6 pt-5" style={{ borderTop: "1px solid #e2e8f0" }}>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Acceso rápido demo</p>
-              <div className="space-y-1.5">
-                {demoCredentials.map((c) => (
-                  <button
-                    key={c.email}
-                    type="button"
-                    onClick={() => { setEmail(c.email); setPassword("Almacen2024!"); }}
-                    className="w-full text-left text-xs px-3 py-2 rounded-lg transition-all duration-150 flex justify-between items-center group"
-                    style={{ border: "1px solid #e2e8f0", backgroundColor: "#f8fafc" }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = c.color; (e.currentTarget as HTMLElement).style.backgroundColor = "#f0fdfa"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#e2e8f0"; (e.currentTarget as HTMLElement).style.backgroundColor = "#f8fafc"; }}
-                  >
-                    <span className="font-medium" style={{ color: "#334155" }}>{c.label}</span>
-                    <span className="font-mono" style={{ color: c.color }}>{c.email}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-center mt-3" style={{ color: "#94a3b8" }}>
-                Contraseña: <span className="font-mono font-semibold text-slate-600">Almacen2024!</span>
+            {/* Password hint */}
+            <div className="mt-5 pt-4" style={{ borderTop: "1px solid #e2e8f0" }}>
+              <p className="text-xs text-center" style={{ color: "#94a3b8" }}>
+                Tu contraseña es tu usuario + <span className="font-mono font-semibold" style={{ color: "#0d9488" }}>123</span>
+                <br />
+                <span style={{ color: "#cbd5e1" }}>Ej: jcastillo → contraseña: <span className="font-mono font-semibold" style={{ color: "#64748b" }}>jcastillo123</span></span>
               </p>
             </div>
           </div>

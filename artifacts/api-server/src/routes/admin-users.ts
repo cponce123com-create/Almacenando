@@ -14,11 +14,7 @@ const router = Router();
 const createUserSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
-  password: z
-    .string()
-    .min(8, "La contraseña debe tener al menos 8 caracteres")
-    .regex(/[A-Z]/, "Debe tener al menos una mayúscula")
-    .regex(/[0-9]/, "Debe tener al menos un número"),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
   role: z.enum(["supervisor", "operator", "quality", "admin", "readonly"]),
 });
 
@@ -27,22 +23,8 @@ const updateUserSchema = z.object({
   email: z.string().email().optional(),
   role: z.enum(["supervisor", "operator", "quality", "admin", "readonly"]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
-  password: z
-    .string()
-    .min(8, "La contraseña debe tener al menos 8 caracteres")
-    .regex(/[A-Z]/, "Debe tener al menos una mayúscula")
-    .regex(/[0-9]/, "Debe tener al menos un número")
-    .optional(),
+  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres").optional(),
 });
-
-function generateTemporaryPassword(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
-  let password = "";
-  for (let i = 0; i < 12; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
 
 router.get("/", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (_req, res) => {
   const users = await db.select({
@@ -119,6 +101,19 @@ router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, r
   res.json(updated);
 }));
 
+router.post("/reset-all-passwords", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
+  const users = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable);
+  const results: Array<{ email: string; newPassword: string }> = [];
+  for (const user of users) {
+    const username = user.email.split("@")[0];
+    const newPassword = username + "123";
+    const passwordHash = await hashPassword(newPassword);
+    await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    results.push({ email: user.email, newPassword });
+  }
+  res.json({ message: `${results.length} contraseñas restablecidas`, results });
+}));
+
 router.post("/:id/reset-password", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const users = await db.select().from(usersTable).where(eq(usersTable.id, id as string)).limit(1);
@@ -126,17 +121,19 @@ router.post("/:id/reset-password", requireAuth, requireRole("admin"), asyncHandl
     res.status(404).json({ error: "Usuario no encontrado" });
     return;
   }
-  const temporaryPassword = generateTemporaryPassword();
-  const passwordHash = await hashPassword(temporaryPassword);
+  const user = users[0]!;
+  const username = user.email.split("@")[0];
+  const newPassword = username + "123";
+  const passwordHash = await hashPassword(newPassword);
   const [updated] = await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, id as string)).returning({
     id: usersTable.id,
     email: usersTable.email,
     name: usersTable.name,
   });
   res.json({
-    message: "Contraseña temporal generada",
+    message: "Contraseña restablecida",
     user: updated,
-    temporaryPassword,
+    temporaryPassword: newPassword,
   });
 }));
 
