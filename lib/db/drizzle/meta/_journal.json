@@ -22,6 +22,27 @@
       "when": 1774629600000,
       "tag": "0002_warehouse_and_new_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774629700000,
+      "tag": "0003_msds_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774629800000,
+      "tag": "0004_msds_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774629900000,
+      "tag": "0005_revoked_tokens",
+      "breakpoints": true
     }
   ]
 }
