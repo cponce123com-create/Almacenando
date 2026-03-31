@@ -18,20 +18,11 @@ function useSummary() {
     queryFn: async () => {
       const res = await fetch("/api/reports/summary", { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch summary");
-      return res.json() as Promise<{
-        products: number;
-        inventoryRecords: number;
-        immobilized: number;
-        samples: number;
-        dyeLots: number;
-        dispositions: number;
-      }>;
+      return res.json();
     },
   });
 }
 
-// Colores usando violet/emerald/orange/purple en lugar de blue
-// (más robustos en monitores con problemas de canal de color azul)
 const moduleColors = [
   "bg-violet-100 border-violet-200 hover:border-violet-400",
   "bg-emerald-100 border-emerald-200 hover:border-emerald-400",
@@ -46,6 +37,11 @@ const moduleColors = [
   "bg-lime-100 border-lime-200 hover:border-lime-400",
   "bg-red-100 border-red-200 hover:border-red-400",
   "bg-fuchsia-100 border-fuchsia-200 hover:border-fuchsia-400",
+  "bg-sky-100 border-sky-200 hover:border-sky-400",
+  "bg-green-100 border-green-200 hover:border-green-400",
+  "bg-yellow-100 border-yellow-200 hover:border-yellow-400",
+  "bg-pink-100 border-pink-200 hover:border-pink-400",
+  "bg-blue-100 border-blue-200 hover:border-blue-400",
 ];
 
 const moduleIconColors = [
@@ -62,6 +58,11 @@ const moduleIconColors = [
   "text-lime-600",
   "text-red-600",
   "text-fuchsia-600",
+  "text-sky-600",
+  "text-green-600",
+  "text-yellow-600",
+  "text-pink-600",
+  "text-blue-600",
 ];
 
 export default function Dashboard() {
@@ -78,6 +79,8 @@ export default function Dashboard() {
   return (
     <AppLayout>
       <div className="space-y-6">
+
+        {/* HEADER */}
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
             Bienvenido, {user?.name?.split(" ")[0]}
@@ -87,6 +90,7 @@ export default function Dashboard() {
           </p>
         </div>
 
+        {/* STATS */}
         {isLoading ? (
           <div className="flex items-center gap-2 text-slate-500">
             <Loader2 className="w-4 h-4 animate-spin" />
@@ -97,14 +101,25 @@ export default function Dashboard() {
             {quickStats.map((stat) => {
               const mod = modules[stat.module]!;
               const Icon = mod.icon;
+
               return (
                 <Link key={stat.label} href={mod.href}>
-                  <div className={cn("p-4 rounded-xl border cursor-pointer transition-all", moduleColors[stat.module])}>
+                  <div className={cn(
+                    "p-4 rounded-xl border cursor-pointer transition-all",
+                    moduleColors[stat.module % moduleColors.length]
+                  )}>
                     <div className="flex items-center gap-2 mb-2">
-                      <Icon className={cn("w-5 h-5", moduleIconColors[stat.module])} />
-                      <span className="text-xs font-medium text-slate-600">{stat.label}</span>
+                      <Icon className={cn(
+                        "w-5 h-5",
+                        moduleIconColors[stat.module % moduleIconColors.length]
+                      )} />
+                      <span className="text-xs font-medium text-slate-600">
+                        {stat.label}
+                      </span>
                     </div>
-                    <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {stat.value}
+                    </p>
                   </div>
                 </Link>
               );
@@ -112,23 +127,32 @@ export default function Dashboard() {
           </div>
         ) : null}
 
+        {/* MÓDULOS */}
         <div>
           <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-widest mb-3">
             Módulos del Sistema
           </h2>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {modules.map((module, i) => {
               const Icon = module.icon;
+
               return (
                 <Link key={module.href} href={module.href}>
                   <div className={cn(
                     "p-4 rounded-xl border cursor-pointer transition-all duration-150 group",
-                    moduleColors[i]
+                    moduleColors[i % moduleColors.length]
                   )}>
-                    <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center mb-3 bg-white/70 group-hover:scale-110 transition-transform", moduleIconColors[i])}>
+                    <div className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center mb-3 bg-white group-hover:scale-110 transition-transform",
+                      moduleIconColors[i % moduleIconColors.length]
+                    )}>
                       <Icon className="w-5 h-5" />
                     </div>
-                    <p className="text-sm font-semibold text-slate-800 leading-tight">{module.name}</p>
+
+                    <p className="text-sm font-semibold text-slate-800 leading-tight">
+                      {module.name}
+                    </p>
                   </div>
                 </Link>
               );
@@ -136,16 +160,22 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-violet-50 border border-violet-100 rounded-xl p-4">
+        {/* USER INFO */}
+        <div className="bg-violet-100 border border-violet-200 rounded-xl p-4">
           <div className="flex items-center gap-3">
-            <div className={cn("px-3 py-1 rounded-full text-xs font-semibold", user?.role ? ROLE_COLORS[user.role] : "")}>
+            <div className={cn(
+              "px-3 py-1 rounded-full text-xs font-semibold",
+              user?.role ? ROLE_COLORS[user.role] : ""
+            )}>
               {user?.role ? ROLE_LABELS[user.role] : ""}
             </div>
+
             <p className="text-sm text-slate-600">
               Sesión activa como <strong>{user?.email}</strong>
             </p>
           </div>
         </div>
+
       </div>
     </AppLayout>
   );
