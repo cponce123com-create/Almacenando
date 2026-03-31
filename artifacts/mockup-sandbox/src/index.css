@@ -132,6 +132,13 @@
   --sidebar-accent-foreground: 240 4.8% 95.9%;
   --sidebar-border: 240 3.7% 15.9%;
   --sidebar-ring: 240 4.9% 83.9%;
+  --primary: 174 62% 37%;           /* teal principal */
+  --primary-foreground: 0 0% 100%;  /* blanco */
+  --secondary: 174 30% 93%;         /* teal muy claro */
+  --secondary-foreground: 174 62% 25%;
+  --accent: 174 62% 37%;
+  --accent-foreground: 0 0% 100%;
+  --ring: 174 62% 37%;
 }
 
 @layer base {
