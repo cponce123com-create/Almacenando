@@ -183,6 +183,26 @@
 .bg-blue-50        { background-color: #eff6ff !important; }
 .bg-blue-100       { background-color: #dbeafe !important; }
 
+.bg-violet-600 { background-color: #7c3aed !important; }
+.bg-violet-700 { background-color: #6d28d9 !important; }
+
+.bg-purple-600 { background-color: #9333ea !important; }
+.bg-purple-700 { background-color: #7e22ce !important; }
+
+.bg-blue-600 { background-color: #2563eb !important; }
+.bg-blue-700 { background-color: #1d4ed8 !important; }
+
+.bg-red-600 { background-color: #dc2626 !important; }
+.bg-red-700 { background-color: #b91c1c !important; }
+
+.text-white { color: #ffffff !important; }
+
+.border-slate-300 { border-color: #d1d5db !important; }
+
+.bg-white { background-color: #ffffff !important; }
+.text-gray-800 { color: #1f2937 !important; }
+.hover\:bg-gray-100:hover { background-color: #f3f4f6 !important; }
+
 .border { border-width: 1px !important; border-style: solid !important; }
 .border-slate-100  { border-color: #e2e8f0 !important; }
 .border-slate-200  { border-color: #cbd5e1 !important; }
