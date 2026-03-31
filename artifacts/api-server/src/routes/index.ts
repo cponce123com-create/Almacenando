@@ -17,6 +17,7 @@ import adminUsersRouter from "./admin-users";
 import lotEvaluationsRouter from "./lot-evaluations";
 import notificationsRouter from "./notifications";
 import suppliesRouter from "./supplies";
+import surplusRouter from "./surplus";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use("/admin/users", adminUsersRouter);
 router.use("/lot-evaluations", lotEvaluationsRouter);
 router.use("/notifications", notificationsRouter);
 router.use("/supplies", suppliesRouter);
+router.use("/surplus", surplusRouter);
 
 export default router;

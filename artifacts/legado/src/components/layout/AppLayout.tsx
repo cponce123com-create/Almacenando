@@ -28,6 +28,7 @@ import {
   PackageX,
   PackageSearch,
   Mail,
+  ArchiveX,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
@@ -78,6 +79,7 @@ export const modules: Array<{
   { name: "Inventarios",          href: "/inventory",    icon: ClipboardList },
   { name: "Cuadre",               href: "/cuadre",       icon: Warehouse },
   { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },
+  { name: "Productos Sobrantes",  href: "/sobrantes",    icon: ArchiveX },
   { name: "Muestras",             href: "/samples",      icon: TestTube },
   { name: "Lotes / Tinturas",     href: "/dye-lots",     icon: Layers },
   { name: "Cambio de Lote",       href: "/lot-change-notification",  icon: Bell,         roles: ["operator", "supervisor", "admin"] },

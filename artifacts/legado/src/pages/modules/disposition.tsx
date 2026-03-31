@@ -15,6 +15,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Recycle, Plus, Loader2, AlertCircle, Pencil, Trash2, CheckCircle2, ChevronsUpDown, Check, Camera } from "lucide-react";
 import { SamplePhotoPanel } from "@/components/ui/SamplePhotoPanel";
+import { PhotoPickerInline, type PendingPhoto } from "@/components/ui/PhotoPickerInline";
 
 interface Product { id: string; code: string; name: string; unit: string; }
 interface Disposition {
@@ -128,6 +129,7 @@ function ProductCombobox({
 
 function DispositionForm({
   initial, products, onSubmit, onCancel, pending, isEdit,
+  pendingPhotos, onPhotosChange,
 }: {
   initial: ReturnType<typeof emptyForm>;
   products: Product[];
@@ -135,6 +137,8 @@ function DispositionForm({
   onCancel: () => void;
   pending: boolean;
   isEdit: boolean;
+  pendingPhotos?: PendingPhoto[];
+  onPhotosChange?: (photos: PendingPhoto[]) => void;
 }) {
   const [f, setF] = useState(initial);
   const s = (k: keyof typeof f, v: string) => setF(p => ({ ...p, [k]: v }));
@@ -219,6 +223,14 @@ function DispositionForm({
         <Input placeholder="Observaciones del proceso" value={f.notes} onChange={e => s("notes", e.target.value)} />
       </div>
 
+      {!isEdit && pendingPhotos !== undefined && onPhotosChange && (
+        <PhotoPickerInline
+          pendingPhotos={pendingPhotos}
+          onChange={onPhotosChange}
+          label="Fotos de la disposición"
+        />
+      )}
+
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onCancel}>Cancelar</Button>
         <Button type="submit"
@@ -245,6 +257,7 @@ export default function DisposicionFinalPage() {
   const [completeTarget, setCompleteTarget] = useState<Disposition | null>(null);
   const [photoTarget, setPhotoTarget] = useState<Disposition | null>(null);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [pendingPhotos, setPendingPhotos] = useState<PendingPhoto[]>([]);
 
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"], queryFn: () => api("/api/products?limit=500").then((r: any) => r.data ?? r),
@@ -261,14 +274,27 @@ export default function DisposicionFinalPage() {
     r.productId ? (productMap[r.productId]?.name ?? r.productId) : (r.productNameManual ?? "—");
 
   const createMutation = useMutation({
-    mutationFn: (data: ReturnType<typeof emptyForm>) => api("/api/disposition", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
-    }),
+    mutationFn: async (data: ReturnType<typeof emptyForm>) => {
+      const created = await api("/api/disposition", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+      });
+      if (pendingPhotos.length > 0) {
+        const fd = new FormData();
+        pendingPhotos.forEach(p => fd.append("photos", p.file));
+        await fetch(`/api/disposition/${created.id}/photos`, {
+          method: "POST",
+          headers: getAuthHeaders() as Record<string, string>,
+          body: fd,
+        }).catch(() => {});
+      }
+      return created;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/disposition"] });
       qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
       toast({ title: "Disposición registrada", description: "El proceso fue registrado exitosamente." });
       setShowForm(false);
+      setPendingPhotos([]);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -434,7 +460,7 @@ export default function DisposicionFinalPage() {
           )}
         </div>
 
-        <Dialog open={showForm} onOpenChange={setShowForm}>
+        <Dialog open={showForm} onOpenChange={v => { setShowForm(v); if (!v) setPendingPhotos([]); }}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -443,7 +469,11 @@ export default function DisposicionFinalPage() {
             </DialogHeader>
             <DispositionForm initial={emptyForm()} products={products}
               onSubmit={d => createMutation.mutate(d)}
-              onCancel={() => setShowForm(false)} pending={createMutation.isPending} isEdit={false} />
+              onCancel={() => { setShowForm(false); setPendingPhotos([]); }}
+              pending={createMutation.isPending} isEdit={false}
+              pendingPhotos={pendingPhotos}
+              onPhotosChange={setPendingPhotos}
+            />
           </DialogContent>
         </Dialog>
 

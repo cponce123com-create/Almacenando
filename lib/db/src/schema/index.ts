@@ -15,3 +15,4 @@ export * from "./audit-logs";
 export * from "./lot-evaluations";
 export * from "./revoked-tokens";
 export * from "./supplies";
+export * from "./surplus-products";
