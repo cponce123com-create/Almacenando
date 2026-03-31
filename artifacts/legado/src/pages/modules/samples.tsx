@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SamplePhotoPanel } from "@/components/ui/SamplePhotoPanel";
-import { TestTube, Plus, Loader2, AlertCircle, Pencil, Trash2, Search, Camera, X, Image as ImageIcon } from "lucide-react";
+import { TestTube, Plus, Loader2, AlertCircle, Pencil, Trash2, Search, Camera, X, Image as ImageIcon, RefreshCw } from "lucide-react";
 
 interface Sample {
   id: string; productId?: string | null; productName?: string | null;
@@ -159,6 +159,22 @@ function PhotoPickerInline({
   );
 }
 
+function generateCode(name: string): string {
+  const clean = name
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, "")
+    .trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  const prefix = words.length === 0
+    ? "MU"
+    : words.length === 1
+      ? words[0].slice(0, 4).padEnd(2, "X")
+      : words.slice(0, 3).map(w => w[0]).join("").padEnd(2, words[0][1] ?? "X");
+  const digits = Math.floor(1000 + Math.random() * 9000);
+  return `${prefix.slice(0, 4)}-${digits}`;
+}
+
 function SampleForm({
   initial, onSubmit, onCancel, pending, isEdit,
   pendingPhotos, onPhotosChange,
@@ -172,7 +188,27 @@ function SampleForm({
   onPhotosChange?: (photos: PendingPhoto[]) => void;
 }) {
   const [f, setF] = useState(initial);
+  const [codeAutoGen, setCodeAutoGen] = useState(!isEdit);
   const s = (k: keyof typeof f, v: string) => setF(p => ({ ...p, [k]: v }));
+
+  const handleNameChange = (name: string) => {
+    setF(p => ({
+      ...p,
+      productName: name,
+      sampleCode: codeAutoGen && name.trim().length > 0 ? generateCode(name) : p.sampleCode,
+    }));
+  };
+
+  const handleCodeChange = (code: string) => {
+    setCodeAutoGen(false);
+    s("sampleCode", code);
+  };
+
+  const regenerateCode = () => {
+    if (!f.productName.trim()) return;
+    setCodeAutoGen(true);
+    s("sampleCode", generateCode(f.productName));
+  };
 
   return (
     <form onSubmit={e => { e.preventDefault(); onSubmit(f); }} className="space-y-4">
@@ -182,7 +218,7 @@ function SampleForm({
           <Input
             placeholder="Ej: Ácido Cítrico — ingrese el nombre libremente"
             value={f.productName}
-            onChange={e => s("productName", e.target.value)}
+            onChange={e => handleNameChange(e.target.value)}
             required
           />
           <p className="text-xs text-slate-400">Puede ser un producto nuevo que aún no está en el inventario</p>
@@ -196,14 +232,30 @@ function SampleForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Código de Muestra *</Label>
+          <div className="flex items-center justify-between">
+            <Label>Código de Muestra</Label>
+            {!isEdit && (
+              <button
+                type="button"
+                onClick={regenerateCode}
+                className="flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-800 transition-colors"
+                title="Generar nuevo código"
+              >
+                <RefreshCw className="w-3 h-3" /> Regenerar
+              </button>
+            )}
+          </div>
           <Input
-            placeholder="MUEST-001"
+            placeholder="Auto-generado al escribir el nombre"
             value={f.sampleCode}
-            onChange={e => s("sampleCode", e.target.value)}
+            onChange={e => handleCodeChange(e.target.value)}
             required
             disabled={isEdit}
+            className={codeAutoGen && !isEdit ? "bg-purple-50 border-purple-200 text-purple-800 font-mono" : "font-mono"}
           />
+          {!isEdit && codeAutoGen && (
+            <p className="text-xs text-purple-500">Generado automáticamente · puedes editarlo si quieres</p>
+          )}
         </div>
       </div>
 
