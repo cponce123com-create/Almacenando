@@ -43,6 +43,13 @@
       "when": 1774629900000,
       "tag": "0005_fixes_and_revoked_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774984923000,
+      "tag": "0006_inventory_boxes_and_inventory_location",
+      "breakpoints": true
     }
   ]
 }
