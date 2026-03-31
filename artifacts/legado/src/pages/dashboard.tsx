@@ -33,19 +33,19 @@ function useSummary() {
 // Colores usando violet/emerald/orange/purple en lugar de blue
 // (más robustos en monitores con problemas de canal de color azul)
 const moduleColors = [
-  "bg-violet-50 border-violet-100 hover:border-violet-300",
-  "bg-emerald-50 border-emerald-100 hover:border-emerald-300",
-  "bg-orange-50 border-orange-100 hover:border-orange-300",
-  "bg-purple-50 border-purple-100 hover:border-purple-300",
-  "bg-teal-50 border-teal-100 hover:border-teal-300",
-  "bg-rose-50 border-rose-100 hover:border-rose-300",
-  "bg-indigo-50 border-indigo-100 hover:border-indigo-300",
-  "bg-amber-50 border-amber-100 hover:border-amber-300",
-  "bg-cyan-50 border-cyan-100 hover:border-cyan-300",
-  "bg-slate-50 border-slate-200 hover:border-slate-400",
-  "bg-lime-50 border-lime-100 hover:border-lime-300",
-  "bg-red-50 border-red-100 hover:border-red-300",
-  "bg-fuchsia-50 border-fuchsia-100 hover:border-fuchsia-300",
+  "bg-violet-100 border-violet-200 hover:border-violet-400",
+  "bg-emerald-100 border-emerald-200 hover:border-emerald-400",
+  "bg-orange-100 border-orange-200 hover:border-orange-400",
+  "bg-purple-100 border-purple-200 hover:border-purple-400",
+  "bg-teal-100 border-teal-200 hover:border-teal-400",
+  "bg-rose-100 border-rose-200 hover:border-rose-400",
+  "bg-indigo-100 border-indigo-200 hover:border-indigo-400",
+  "bg-amber-100 border-amber-200 hover:border-amber-400",
+  "bg-cyan-100 border-cyan-200 hover:border-cyan-400",
+  "bg-slate-100 border-slate-300 hover:border-slate-500",
+  "bg-lime-100 border-lime-200 hover:border-lime-400",
+  "bg-red-100 border-red-200 hover:border-red-400",
+  "bg-fuchsia-100 border-fuchsia-200 hover:border-fuchsia-400",
 ];
 
 const moduleIconColors = [
