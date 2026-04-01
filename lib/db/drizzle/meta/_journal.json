@@ -50,6 +50,13 @@
       "when": 1774984923000,
       "tag": "0006_inventory_boxes_and_inventory_location",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775050000000,
+      "tag": "0007_password_reset_permissions_audit",
+      "breakpoints": true
     }
   ]
 }
