@@ -1,12 +1,17 @@
 import OpenAI from "openai";
-import { createRequire } from "module";
 import { downloadDriveFileAsBuffer } from "./google-drive.js";
 import { logger } from "./logger.js";
 
-// pdf-parse is a CommonJS module — use createRequire for ESM compatibility
-const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string; numpages: number }>;
+// Lazy loader for pdf-parse — dynamic import works in both tsx ESM (dev)
+// and esbuild CJS bundles (prod) without needing import.meta or createRequire.
+type PdfParseFn = (buf: Buffer) => Promise<{ text: string; numpages: number }>;
+let _pdfParse: PdfParseFn | null = null;
+async function getPdfParse(): Promise<PdfParseFn> {
+  if (_pdfParse) return _pdfParse;
+  const mod = await import("pdf-parse");
+  _pdfParse = ((mod as any).default ?? mod) as PdfParseFn;
+  return _pdfParse;
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +47,7 @@ async function extractTextFromBuffer(buffer: Buffer, mimeType: string): Promise<
   }
 
   if (mimeType === "application/pdf" || mimeType.includes("pdf")) {
+    const pdfParse = await getPdfParse();
     const data = await pdfParse(buffer);
     return { text: data.text, pages: data.numpages };
   }
