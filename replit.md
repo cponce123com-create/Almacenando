@@ -61,6 +61,15 @@ Tables: `users`, `products`, `inventory_records`, `immobilized_products`, `sampl
 - `msds` — boolean, whether MSDS sheet is available
 - `controlled` — boolean, whether product is controlled/regulated
 
+### MSDS Smart Matching fields (migration 0003)
+- `msdsStatus` — EXACT | PROBABLE | MANUAL_REVIEW | NONE
+- `msdsScore` — numeric match score (0–200)
+- `msdsFileId` — matched Google Drive file ID
+- `msdsFileName` — matched file name
+- `msdsMatchReason` — human-readable reason for the match
+- `msdsMatchedBy` — "auto" or "manual"
+- `msdsLastCheckedAt` — last time the matcher ran for this product
+
 ## Modules (15 total)
 
 1. **Dashboard** — Overview, quick stats, module grid
@@ -98,6 +107,36 @@ All routes under `/api/`:
 - Reports: `/reports/summary`, `/reports/inventory`
 - Admin: `/admin/users` (CRUD, admin only)
 - Health: `GET /healthz`
+- MSDS Smart Matching: `/msds/stats`, `/msds/match`, `/msds/match/:productId`, `POST /msds/link`, `POST /msds/rescan`, `POST /msds/unlink`
+
+## MSDS Smart Matching System (v2)
+
+### Key files
+- `artifacts/api-server/src/lib/msds-matcher.ts` — core matching engine
+- `artifacts/api-server/src/lib/google-drive.ts` — now supports separate MSDS and Photos folders
+- `artifacts/api-server/src/routes/msds.ts` — API endpoints
+
+### Required environment variables
+- `GOOGLE_SERVICE_ACCOUNT_JSON` — service account credentials (JSON string)
+- `GOOGLE_DRIVE_MSDS_FOLDER_ID` — Google Drive folder ID for MSDS PDFs (separate from photos)
+- `GOOGLE_DRIVE_PHOTOS_FOLDER_ID` — Google Drive folder ID for photos (replaces GOOGLE_DRIVE_FOLDER_ID, which still works as fallback)
+
+### Match classification
+- **EXACT** (score ≥ 120) — code or formula exact match, or very high similarity
+- **PROBABLE** (score ≥ 60) — good match, verify before trusting
+- **MANUAL_REVIEW** (score ≥ 25) — weak similarity, needs human review
+- **NONE** (score < 25) — no valid match found
+
+### Score sources (cumulative, max 200)
+- +100 product code found in file name
+- +80 chemical formula match (H2SO4, NaCl, etc.)
+- +70 product name very similar (≥80% token match)
+- +50 partial name match (≥40% tokens)
+- +50 CAS number found in file name
+- +30 synonym match (ES↔EN chemical dictionary)
+- +20 supplier name found in file name
+- +15/+10/+5 folder priority bonus (APROBADOS > POR_VALIDAR)
+- -20 file is in obsolete folder
 
 ## Auth & Authorization
 

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, doublePrecision, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, boolean, uniqueIndex, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -25,6 +25,15 @@ export const productsTable = pgTable("products", {
   hazardPictograms: text("hazard_pictograms").default("[]"),
   firstAid: text("first_aid").default("Lavar con agua 15 min · Usar guantes · Avisar supervisor"),
   status: text("status").notNull().default("active"),
+  // ── MSDS Smart Matching fields ──────────────────────────────────────────
+  msdsStatus: text("msds_status").default("NONE"),
+  msdsScore: integer("msds_score").default(0),
+  msdsFileId: text("msds_file_id"),
+  msdsFileName: text("msds_file_name"),
+  msdsMatchReason: text("msds_match_reason"),
+  msdsMatchedBy: text("msds_matched_by"),
+  msdsLastCheckedAt: timestamp("msds_last_checked_at"),
+  // ───────────────────────────────────────────────────────────────────────
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [

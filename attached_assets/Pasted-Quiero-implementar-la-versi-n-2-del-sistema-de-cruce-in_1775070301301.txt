@@ -1,0 +1,242 @@
+Quiero implementar la versión 2 del sistema de cruce inteligente de MSDS, pero con una condición CRÍTICA:
+
+NO VOY A CAMBIAR LOS NOMBRES DE LOS ARCHIVOS MSDS.
+
+El sistema debe funcionar con nombres reales, desordenados, incompletos o no estructurados.
+
+NO quiero depender de convenciones tipo CODIGO__NOMBRE__PROVEEDOR.
+Eso solo debe ser un PLUS si existe, pero no obligatorio.
+
+OBJETIVO
+Crear un motor inteligente que compare la maestra de productos con archivos PDF en Google Drive usando lógica flexible y robusta.
+
+CLASIFICACION FINAL:
+- EXACT
+- PROBABLE
+- MANUAL_REVIEW
+- NONE
+
+--------------------------------------------------
+1. GOOGLE DRIVE (SEPARACION OBLIGATORIA)
+--------------------------------------------------
+
+Separar completamente:
+
+GOOGLE_DRIVE_MSDS_FOLDER_ID
+GOOGLE_DRIVE_PHOTOS_FOLDER_ID
+
+NO usar la carpeta de fotos para MSDS.
+
+--------------------------------------------------
+2. BUSQUEDA RECURSIVA
+--------------------------------------------------
+
+El sistema debe:
+
+- leer TODOS los PDFs dentro de la carpeta MSDS
+- incluir subcarpetas (APROBADOS, POR_VALIDAR, etc.)
+- devolver metadata completa:
+  - fileId
+  - name
+  - link
+  - folder name
+  - modifiedTime
+
+--------------------------------------------------
+3. NORMALIZACION DE TEXTO (CLAVE)
+--------------------------------------------------
+
+Crear funciones para normalizar texto:
+
+- quitar tildes (ácido → acido)
+- convertir a minúsculas
+- eliminar símbolos (% - _ . , etc.)
+- reemplazar múltiples espacios
+- convertir guiones y underscores a espacio
+
+Ejemplo:
+
+"Ácido Sulfúrico 98%" → "acido sulfurico 98"
+
+--------------------------------------------------
+4. TOKENIZACION INTELIGENTE
+--------------------------------------------------
+
+Separar palabras relevantes:
+
+"acido sulfurico 98" → ["acido", "sulfurico", "98"]
+
+Eliminar palabras basura tipo:
+- msds
+- ficha
+- seguridad
+- safety
+- sheet
+- pdf
+
+--------------------------------------------------
+5. MATCHING INTELIGENTE (SIN NOMBRE ESTRUCTURADO)
+--------------------------------------------------
+
+El sistema debe comparar:
+
+A. NOMBRE DEL PRODUCTO vs NOMBRE DEL ARCHIVO
+- coincidencia por palabras clave
+- porcentaje de coincidencia
+- orden no importa
+
+B. SINONIMOS BASICOS (MUY IMPORTANTE)
+Ejemplo:
+- sulfurico = sulfuric
+- cloruro = chloride
+- sodio = sodium
+- acido = acid
+
+Crear un pequeño diccionario interno de equivalencias.
+
+C. FORMULAS QUIMICAS
+Detectar cosas como:
+- H2SO4
+- NaCl
+- HCl
+
+Y compararlas si aparecen en el nombre.
+
+D. CODIGO
+Si el código del producto aparece en el nombre del archivo → peso alto
+
+E. PROVEEDOR (opcional)
+Si aparece en el nombre → sumar puntos
+
+--------------------------------------------------
+6. SISTEMA DE SCORE
+--------------------------------------------------
+
+Crear un score acumulativo, por ejemplo:
+
++100 → código exacto
++80 → fórmula química coincide
++70 → nombre muy similar (80%+)
++50 → coincidencia parcial fuerte
++20 → proveedor coincide
+
+Penalizar:
+- coincidencias débiles
+- solo una palabra genérica
+
+--------------------------------------------------
+7. CLASIFICACION FINAL
+--------------------------------------------------
+
+Definir thresholds claros:
+
+EXACT:
+- código o fórmula exacta
+o
+- score muy alto
+
+PROBABLE:
+- buena coincidencia pero no segura
+
+MANUAL_REVIEW:
+- similitud leve
+
+NONE:
+- no hay coincidencia
+
+--------------------------------------------------
+8. PRIORIDAD POR CARPETA
+--------------------------------------------------
+
+Si existe estructura:
+
+APROBADOS > POR_VALIDAR > OBSOLETOS
+
+Sumar bonus de score según carpeta.
+
+--------------------------------------------------
+9. MODULO NUEVO
+--------------------------------------------------
+
+Crear:
+
+src/lib/msds-matcher.ts
+
+Debe exponer funciones como:
+
+- normalizeText()
+- tokenize()
+- calculateScore()
+- matchProductWithFiles()
+- classifyMatch()
+
+Código limpio, bien comentado.
+
+--------------------------------------------------
+10. API BACKEND
+--------------------------------------------------
+
+Crear endpoints:
+
+GET /api/msds/match
+GET /api/msds/match/:productId
+POST /api/msds/link
+POST /api/msds/rescan
+
+--------------------------------------------------
+11. BASE DE DATOS
+--------------------------------------------------
+
+Agregar campos:
+
+msdsStatus
+msdsScore
+msdsFileId
+msdsFileName
+msdsUrl
+msdsMatchReason
+msdsMatchedBy
+msdsLastCheckedAt
+
+--------------------------------------------------
+12. UI
+--------------------------------------------------
+
+Pantalla MSDS con:
+
+- resumen (conteo por estado)
+- tabla de productos
+- filtros por estado
+- detalle con candidatos
+- botón de vinculación manual
+
+Colores:
+
+verde = exacto  
+amarillo = probable  
+naranja = revisar  
+rojo = sin MSDS  
+
+--------------------------------------------------
+13. IMPORTANTE
+--------------------------------------------------
+
+- NO depender de nombres perfectos
+- NO romper funcionalidades actuales
+- NO simplificar la lógica
+- hacer el sistema robusto
+- optimizar para datos reales, no ideales
+
+--------------------------------------------------
+14. ENTREGABLE
+--------------------------------------------------
+
+Quiero:
+
+- archivos completos
+- código listo para usar
+- variables de entorno necesarias
+- instrucciones de prueba
+
+No quiero pseudocódigo.
+Quiero implementación real.

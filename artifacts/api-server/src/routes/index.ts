@@ -19,6 +19,7 @@ import notificationsRouter from "./notifications";
 import suppliesRouter from "./supplies";
 import surplusRouter from "./surplus";
 import permissionsRouter from "./permissions";
+import msdsRouter from "./msds";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use("/notifications", notificationsRouter);
 router.use("/supplies", suppliesRouter);
 router.use("/surplus", surplusRouter);
 router.use("/admin/permissions", permissionsRouter);
+router.use("/msds", msdsRouter);
 
 export default router;
