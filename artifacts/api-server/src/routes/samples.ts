@@ -8,6 +8,7 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import { uploadFileToDrive, deleteFileFromDrive, extractFileId, isDriveConfigured } from "../lib/google-drive.js";
+import { validateMimeType } from "../lib/validate-mime.js";
 import { parsePagination } from "../lib/pagination.js";
 
 const upload = multer({
@@ -150,6 +151,7 @@ router.post(
     for (let i = 0; i < toUpload.length; i++) {
       const file = toUpload[i]!;
       try {
+        await validateMimeType(file.buffer, "image");
         const ext = "." + (file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
         const fileName = buildPhotoName(productName, sampleDate, startIndex + i, ext);
         const { url } = await uploadFileToDrive(file.buffer, fileName, file.mimetype);

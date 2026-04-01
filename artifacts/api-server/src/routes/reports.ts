@@ -5,8 +5,8 @@ import {
   productsTable, inventoryRecordsTable, immobilizedProductsTable,
   samplesTable, finalDispositionTable, eppMasterTable, eppDeliveriesTable, personnelTable, usersTable,
 } from "@workspace/db";
-import { count, sql, and, gte, lte, eq, desc } from "drizzle-orm";
-import { requireAuth } from "../lib/auth.js";
+import { count, sql, and, gte, lte, eq, desc, ilike, or } from "drizzle-orm";
+import { requireAuth, requireRole } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
@@ -45,6 +45,9 @@ router.get("/summary", requireAuth, asyncHandler(async (_req, res) => {
 router.get("/inventory", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, product } = req.query as Record<string, string | undefined>;
   const dateFilter = buildDateFilter(inventoryRecordsTable.recordDate, from, to);
+  const productFilter = product
+    ? or(ilike(productsTable.code, `%${product}%`), ilike(productsTable.name, `%${product}%`))
+    : undefined;
   const records = await db.select({
     productId: inventoryRecordsTable.productId,
     productCode: productsTable.code,
@@ -62,7 +65,7 @@ router.get("/inventory", requireAuth, asyncHandler(async (req, res) => {
   }).from(inventoryRecordsTable)
     .innerJoin(productsTable, sql`${inventoryRecordsTable.productId} = ${productsTable.id}`)
     .leftJoin(usersTable, sql`${inventoryRecordsTable.registeredBy} = ${usersTable.id}`)
-    .where(dateFilter)
+    .where(and(dateFilter, productFilter))
     .orderBy(desc(inventoryRecordsTable.recordDate), productsTable.code);
 
   // Last consumption date per product
@@ -76,13 +79,7 @@ router.get("/inventory", requireAuth, asyncHandler(async (req, res) => {
     if (row.last_consumption_date) lcMap.set(row.product_id, row.last_consumption_date);
   }
 
-  let filtered = records;
-  if (product) filtered = filtered.filter(r =>
-    r.productCode?.toLowerCase().includes(product.toLowerCase()) ||
-    r.productName?.toLowerCase().includes(product.toLowerCase())
-  );
-
-  res.json(filtered.map(r => ({
+  res.json(records.map(r => ({
     ...r,
     lastConsumptionDate: r.productId ? (lcMap.get(r.productId) ?? null) : null,
     operario: r.registeredByName ?? r.registeredByEmail ?? "",
@@ -155,6 +152,8 @@ router.get("/disposition", requireAuth, asyncHandler(async (req, res) => {
 
 router.get("/epp-deliveries", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, personnelId } = req.query as Record<string, string | undefined>;
+  const dateFilter = buildDateFilter(eppDeliveriesTable.deliveryDate, from, to);
+  const personnelFilter = personnelId ? eq(eppDeliveriesTable.personnelId, personnelId) : undefined;
   const records = await db.select({
     id: eppDeliveriesTable.id,
     eppId: eppDeliveriesTable.eppId,
@@ -172,12 +171,10 @@ router.get("/epp-deliveries", requireAuth, asyncHandler(async (req, res) => {
   }).from(eppDeliveriesTable)
     .leftJoin(eppMasterTable, sql`${eppDeliveriesTable.eppId} = ${eppMasterTable.id}`)
     .leftJoin(personnelTable, sql`${eppDeliveriesTable.personnelId} = ${personnelTable.id}`)
+    .where(and(dateFilter, personnelFilter))
     .orderBy(desc(eppDeliveriesTable.deliveryDate));
 
-  let filtered = records;
-  if (from) filtered = filtered.filter(r => !r.deliveryDate || r.deliveryDate >= from);
-  if (to) filtered = filtered.filter(r => !r.deliveryDate || r.deliveryDate <= to);
-  if (personnelId) filtered = filtered.filter(r => r.personnelId === personnelId);
+  const filtered = records;
 
   const today = new Date();
   const withAlerts = filtered.map(r => {
@@ -199,7 +196,7 @@ router.get("/epp-deliveries", requireAuth, asyncHandler(async (req, res) => {
   res.json(withAlerts);
 }));
 
-router.get("/epp-alerts", requireAuth, asyncHandler(async (_req, res) => {
+router.get("/epp-alerts", requireAuth, requireRole("admin", "supervisor", "quality"), asyncHandler(async (_req, res) => {
   const records = await db.select({
     id: eppDeliveriesTable.id,
     eppId: eppDeliveriesTable.eppId,
@@ -238,7 +235,7 @@ router.get("/epp-alerts", requireAuth, asyncHandler(async (_req, res) => {
   res.json(alerts);
 }));
 
-router.get("/export/:type", requireAuth, asyncHandler(async (req, res) => {
+router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "quality"), asyncHandler(async (req, res) => {
   const { type } = req.params;
   const { from, to, status, personnelId } = req.query as Record<string, string | undefined>;
 

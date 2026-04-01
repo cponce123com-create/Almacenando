@@ -8,6 +8,7 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import { uploadFileToDrive, isDriveConfigured } from "../lib/google-drive.js";
+import { validateMimeType } from "../lib/validate-mime.js";
 import path from "path";
 
 const upload = multer({
@@ -119,6 +120,7 @@ router.post("/:id/photos", requireAuth, upload.array("photos", 5), asyncHandler(
     const ext = path.extname(f.originalname || ".jpg") || ".jpg";
     const fname = buildPhotoName(record.surplusCode, existing.length + uploaded.length + 1, ext);
     try {
+      await validateMimeType(f.buffer, "image");
       const url = await uploadFileToDrive(f.buffer, fname, f.mimetype);
       uploaded.push(url);
     } catch (e) {

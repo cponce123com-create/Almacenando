@@ -16,3 +16,4 @@ export * from "./lot-evaluations";
 export * from "./revoked-tokens";
 export * from "./supplies";
 export * from "./surplus-products";
+export * from "./user-permissions";

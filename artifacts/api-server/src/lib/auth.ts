@@ -12,16 +12,9 @@ if (!jwtSecret) {
 }
 const JWT_SECRET = jwtSecret;
 
-// ---------------------------------------------------------------------------
-// Duración del token reducida de 30d → 8h.
-// ---------------------------------------------------------------------------
 const JWT_EXPIRES_IN = "8h";
 const JWT_EXPIRES_SECONDS = 8 * 60 * 60;
 
-// ---------------------------------------------------------------------------
-// Blacklist cleanup: removes expired revoked tokens from the DB.
-// Runs at startup and every hour so the table stays lean.
-// ---------------------------------------------------------------------------
 export async function cleanupExpiredTokens(): Promise<void> {
   try {
     await db.delete(revokedTokensTable).where(lt(revokedTokensTable.expiresAt, new Date()));
@@ -30,7 +23,6 @@ export async function cleanupExpiredTokens(): Promise<void> {
   }
 }
 
-// Schedule periodic cleanup every hour (non-blocking).
 setInterval(() => void cleanupExpiredTokens(), 60 * 60 * 1000).unref();
 
 export function hashPassword(password: string): Promise<string> {
@@ -57,14 +49,10 @@ export function verifyToken(token: string): TokenPayload | null {
 }
 
 // ---------------------------------------------------------------------------
-// Revoke a token by its JTI — call this on logout or forced session expiry.
+// Revoke a token — propagates errors so logout failures surface as 500.
 // ---------------------------------------------------------------------------
 export async function revokeToken(jti: string, expiresAt: Date): Promise<void> {
-  try {
-    await db.insert(revokedTokensTable).values({ jti, expiresAt }).onConflictDoNothing();
-  } catch {
-    // Best-effort: if insert fails, token will naturally expire via JWT exp.
-  }
+  await db.insert(revokedTokensTable).values({ jti, expiresAt }).onConflictDoNothing();
 }
 
 export type AuthenticatedRequest = Request & {
@@ -75,13 +63,6 @@ export type AuthenticatedRequest = Request & {
   tokenExp: number;
 };
 
-// ---------------------------------------------------------------------------
-// requireAuth
-// 1. Verifies JWT signature and expiration.
-// 2. Checks the JTI blacklist (revoked by logout or admin).
-// 3. Confirms the account is still active and reads the live role from DB.
-// Both DB lookups are parallelized to minimize latency overhead.
-// ---------------------------------------------------------------------------
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const authHeader = req.headers.authorization;
@@ -97,7 +78,6 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // Parallel: user status check + JTI blacklist check
     const [userRows, revokedRows] = await Promise.all([
       db
         .select({ status: usersTable.status, role: usersTable.role })
@@ -147,3 +127,6 @@ export function requireRole(...roles: WarehouseRole[]) {
     next();
   };
 }
+
+// Suppress unused warning (JWT_EXPIRES_SECONDS used for reference)
+void JWT_EXPIRES_SECONDS;

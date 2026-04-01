@@ -40,6 +40,16 @@ export const destructiveActionLimiter = rateLimit({
   skip: () => process.env.NODE_ENV === "test",
 });
 
+/** 3 password reset requests per hour per IP */
+export const passwordResetLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 3,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Demasiados intentos de restablecimiento. Espera una hora antes de intentar de nuevo." },
+  skip: () => process.env.NODE_ENV === "test",
+});
+
 /** 500 requests per 15 minutes per IP — general API catch-all */
 export const generalApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

@@ -103,6 +103,25 @@ All routes under `/api/`:
 
 JWT tokens signed with SESSION_SECRET env var. Role middleware via `requireRole(...roles)`. Token stored in sessionStorage as `almacen_token`.
 
+### Password Reset Flow (token-based)
+Admin triggers reset → API generates SHA-256 token (24h expiry) → sends email with link → user opens `/reset-password?token=...` → `POST /api/auth/reset-password` with token + new password → token cleared. Rate-limited: 3 resets per user per hour.
+
+### Security Features
+- Shared password policy in `api-server/src/lib/password-schema.ts` (min 8, uppercase, number)
+- MIME type validation via `file-type` library in all photo upload routes (inventory, samples, surplus)
+- Audit log indexes on `userId`, `resource`, `createdAt`; 180-day auto-cleanup job
+- `requireRole` guards on report export endpoints and EPP alerts
+- Granular permissions via `user_permissions` table (role + pageId flags)
+- Rate limiting: login (authLoginLimiter), password reset (passwordResetLimiter, 3/hr)
+
+### Key Auth Endpoints
+- `POST /api/auth/login` — issues JWT
+- `POST /api/auth/logout` — revokes token
+- `GET /api/auth/me` — current user
+- `PUT /api/auth/me` — update own profile (email uniqueness enforced)
+- `POST /api/auth/reset-password` — public; consumes reset token
+- `POST /api/admin/users/:id/reset-password` — admin; generates token + sends email
+
 ## Development Commands
 
 - `pnpm --filter @workspace/api-server run dev` — API server

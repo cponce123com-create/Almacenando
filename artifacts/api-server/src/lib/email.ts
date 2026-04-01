@@ -964,3 +964,63 @@ export async function sendPlasticBagEmail(items: Array<{ code: string; name: str
     html,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Restablecimiento de contraseña — Almacén Químico
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function sendPasswordResetEmail({
+  toEmail,
+  toName,
+  resetToken,
+  frontendUrl,
+}: {
+  toEmail: string;
+  toName: string;
+  resetToken: string;
+  frontendUrl: string;
+}): Promise<void> {
+  const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
+
+  const text = `Hola ${toName},
+
+Has solicitado restablecer tu contraseña en Almacén Químico.
+
+Accede al siguiente enlace para establecer una nueva contraseña:
+${resetUrl}
+
+Este enlace es válido por 24 horas. Si no solicitaste este cambio, puedes ignorar este correo.
+
+— Sistema de Gestión de Almacén Químico`;
+
+  const html = smtpWrap(
+    smtpHeader("Restablecimiento de Contraseña", "🔑", "#6d28d9"),
+    `<p style="margin:0 0 16px;font-size:15px;color:#374151;">Hola <strong>${toName}</strong>,</p>
+     <p style="margin:0 0 16px;font-size:14px;color:#374151;line-height:1.6;">
+       Un administrador ha solicitado restablecer tu contraseña en el sistema de Almacén Químico.
+     </p>
+     <div style="text-align:center;margin:24px 0;">
+       <a href="${resetUrl}" style="background:#6d28d9;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;display:inline-block;">
+         Restablecer contraseña
+       </a>
+     </div>
+     <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">
+       Este enlace es válido por <strong>24 horas</strong>. Si no esperabas este correo, puedes ignorarlo.
+     </p>`,
+    smtpFooter("Sistema de Gestión", "Almacén Químico")
+  );
+
+  const smtpPass = process.env.SMTP_APP_PASSWORD;
+  if (!smtpPass) {
+    console.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — email de reset no enviado a", toEmail);
+    return;
+  }
+  const transporter = buildTransporter();
+  await transporter.sendMail({
+    from: `"Almacén Químico" <${SMTP_USER}>`,
+    to: toEmail,
+    subject: "Restablecimiento de contraseña — Almacén Químico",
+    text,
+    html,
+  });
+}

@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { auditLogsTable } from "@workspace/db";
 import { generateId } from "./id.js";
 import { logger } from "./logger.js";
+import { lt } from "drizzle-orm";
 
 export type AuditAction =
   | "create"
@@ -43,8 +44,16 @@ export async function writeAuditLog({
       ipAddress: ipAddress ?? null,
     });
   } catch (err) {
-    // Usamos logger en lugar de console.error para que el error
-    // aparezca correctamente en los logs estructurados de Render/Pino.
     logger.error({ err }, "[audit] Failed to write audit log");
   }
 }
+
+export async function cleanupOldAuditLogs(): Promise<void> {
+  try {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 180);
+    await db.delete(auditLogsTable).where(lt(auditLogsTable.createdAt, cutoff));
+  } catch { /* non-critical */ }
+}
+
+setInterval(() => void cleanupOldAuditLogs(), 24 * 60 * 60 * 1000).unref();

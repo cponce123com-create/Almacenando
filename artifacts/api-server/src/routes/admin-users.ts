@@ -1,20 +1,25 @@
 import { Router } from "express";
+import { randomBytes, createHash } from "crypto";
 import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { usersTable, auditLogsTable } from "@workspace/db";
+import { eq, desc, count } from "drizzle-orm";
 import { requireAuth, requireRole, hashPassword, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import type { WarehouseRole } from "@workspace/db";
 import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
+import { passwordSchema } from "../lib/password-schema.js";
+import { passwordResetLimiter } from "../lib/rate-limit.js";
+import { sendPasswordResetEmail } from "../lib/email.js";
+import { parsePagination } from "../lib/pagination.js";
 
 const router = Router();
 
 const createUserSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1),
-  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+  password: passwordSchema,
   role: z.enum(["supervisor", "operator", "quality", "admin", "readonly"]),
 });
 
@@ -23,7 +28,7 @@ const updateUserSchema = z.object({
   email: z.string().email().optional(),
   role: z.enum(["supervisor", "operator", "quality", "admin", "readonly"]).optional(),
   status: z.enum(["active", "inactive"]).optional(),
-  password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres").optional(),
+  password: passwordSchema.optional(),
 });
 
 router.get("/", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (_req, res) => {
@@ -77,7 +82,7 @@ router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, r
   const { id } = req.params;
   const parsed = updateUserSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Datos inválidos" });
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
     return;
   }
   const { password, ...rest } = parsed.data;
@@ -101,20 +106,8 @@ router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, r
   res.json(updated);
 }));
 
-router.post("/reset-all-passwords", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
-  const users = await db.select({ id: usersTable.id, email: usersTable.email }).from(usersTable);
-  const results: Array<{ email: string; newPassword: string }> = [];
-  for (const user of users) {
-    const username = user.email.split("@")[0];
-    const newPassword = username + "123";
-    const passwordHash = await hashPassword(newPassword);
-    await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-    results.push({ email: user.email, newPassword });
-  }
-  res.json({ message: `${results.length} contraseñas restablecidas`, results });
-}));
-
-router.post("/:id/reset-password", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
+router.post("/:id/reset-password", requireAuth, requireRole("admin"), passwordResetLimiter, asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
   const { id } = req.params;
   const users = await db.select().from(usersTable).where(eq(usersTable.id, id as string)).limit(1);
   if (users.length === 0) {
@@ -122,19 +115,28 @@ router.post("/:id/reset-password", requireAuth, requireRole("admin"), asyncHandl
     return;
   }
   const user = users[0]!;
-  const username = user.email.split("@")[0];
-  const newPassword = username + "123";
-  const passwordHash = await hashPassword(newPassword);
-  const [updated] = await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, id as string)).returning({
-    id: usersTable.id,
-    email: usersTable.email,
-    name: usersTable.name,
+
+  const rawToken = randomBytes(32).toString("hex");
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  await db.update(usersTable)
+    .set({ passwordResetToken: tokenHash, passwordResetExpiresAt: expiresAt, updatedAt: new Date() })
+    .where(eq(usersTable.id, id as string));
+
+  const frontendUrl = process.env.FRONTEND_URL ?? process.env.REPLIT_DEV_DOMAIN
+    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+    : "http://localhost:5173";
+
+  await sendPasswordResetEmail({
+    toEmail: user.email,
+    toName: user.name,
+    resetToken: rawToken,
+    frontendUrl,
   });
-  res.json({
-    message: "Contraseña restablecida",
-    user: updated,
-    temporaryPassword: newPassword,
-  });
+
+  void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "user", resourceId: id, details: { action: "password_reset_requested" }, ipAddress: req.ip });
+  res.json({ message: `Email de reset enviado a ${user.email}` });
 }));
 
 router.delete("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
@@ -151,6 +153,19 @@ router.delete("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req
   }
   void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "user", resourceId: id, ipAddress: req.ip });
   res.json({ message: "Usuario eliminado" });
+}));
+
+router.get("/:id/audit-log", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+  const logs = await db.select()
+    .from(auditLogsTable)
+    .where(eq(auditLogsTable.userId, id as string))
+    .orderBy(desc(auditLogsTable.createdAt))
+    .limit(limit)
+    .offset(offset);
+  const [total] = await db.select({ count: count() }).from(auditLogsTable).where(eq(auditLogsTable.userId, id as string));
+  res.json({ data: logs, pagination: { page, limit, total: total?.count ?? 0 } });
 }));
 
 export default router;

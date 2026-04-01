@@ -9,6 +9,7 @@ import { WarehouseProvider } from "@/contexts/WarehouseContext";
 
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/auth/login";
+import ResetPassword from "@/pages/auth/reset-password";
 import Dashboard from "@/pages/dashboard";
 
 const ProductsPage       = lazy(() => import("@/pages/modules/products"));
@@ -91,6 +92,7 @@ function Router() {
     <Switch>
       <Route path="/"><PublicOnlyRoute component={Login} /></Route>
       <Route path="/login"><PublicOnlyRoute component={Login} /></Route>
+      <Route path="/reset-password" component={ResetPassword} />
 
       <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
       <Route path="/products"><ProtectedRoute component={ProductsPage} /></Route>

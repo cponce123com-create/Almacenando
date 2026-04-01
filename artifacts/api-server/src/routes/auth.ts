@@ -1,13 +1,14 @@
 import { Router } from "express";
+import { createHash } from "crypto";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { hashPassword, comparePassword, signToken, requireAuth, revokeToken, cleanupExpiredTokens, type AuthenticatedRequest } from "../lib/auth.js";
-import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
-import { authLoginLimiter } from "../lib/rate-limit.js";
+import { authLoginLimiter, passwordResetLimiter } from "../lib/rate-limit.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
+import { passwordSchema } from "../lib/password-schema.js";
 
 const router = Router();
 
@@ -61,8 +62,6 @@ router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const { userId, jti, tokenExp } = authedReq;
 
-  // Revoke the JTI so this token is rejected immediately on any future request,
-  // even before the 8-hour natural expiry.
   await revokeToken(jti, new Date(tokenExp * 1000));
 
   void writeAuditLog({ userId, action: "logout", resource: "session", resourceId: userId, ipAddress: req.ip });
@@ -91,12 +90,7 @@ const updateMeSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   currentPassword: z.string().optional(),
-  newPassword: z
-    .string()
-    .min(8, "La contraseña debe tener al menos 8 caracteres")
-    .regex(/[A-Z]/, "Debe tener al menos una mayúscula")
-    .regex(/[0-9]/, "Debe tener al menos un número")
-    .optional(),
+  newPassword: passwordSchema.optional(),
 });
 
 router.put("/me", requireAuth, asyncHandler(async (req, res) => {
@@ -110,6 +104,17 @@ router.put("/me", requireAuth, asyncHandler(async (req, res) => {
   const users = await db.select().from(usersTable).where(eq(usersTable.id, authedReq.userId)).limit(1);
   if (users.length === 0) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
   const user = users[0]!;
+
+  if (parsed.data.email && parsed.data.email !== user.email) {
+    const existing = await db.select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.email, parsed.data.email), ne(usersTable.id, authedReq.userId)))
+      .limit(1);
+    if (existing.length > 0) {
+      res.status(409).json({ error: "El correo ya está en uso por otra cuenta" });
+      return;
+    }
+  }
 
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.name) updateData.name = parsed.data.name;
@@ -134,6 +139,51 @@ router.put("/me", requireAuth, asyncHandler(async (req, res) => {
     status: updated!.status,
     createdAt: updated!.createdAt.toISOString(),
   });
+}));
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
+router.post("/reset-password", passwordResetLimiter, asyncHandler(async (req, res) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+
+  const { token, newPassword } = parsed.data;
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+
+  const users = await db.select().from(usersTable)
+    .where(eq(usersTable.passwordResetToken, tokenHash))
+    .limit(1);
+
+  if (users.length === 0) {
+    res.status(400).json({ error: "Token inválido o expirado" });
+    return;
+  }
+
+  const user = users[0]!;
+
+  if (!user.passwordResetExpiresAt || user.passwordResetExpiresAt < new Date()) {
+    res.status(400).json({ error: "El enlace de restablecimiento ha expirado. Solicita uno nuevo." });
+    return;
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await db.update(usersTable)
+    .set({
+      passwordHash,
+      passwordResetToken: null,
+      passwordResetExpiresAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(usersTable.id, user.id));
+
+  void writeAuditLog({ userId: user.id, action: "update", resource: "user", resourceId: user.id, details: { action: "password_reset_completed" } });
+  res.json({ message: "Contraseña restablecida correctamente. Ya puedes iniciar sesión." });
 }));
 
 export default router;

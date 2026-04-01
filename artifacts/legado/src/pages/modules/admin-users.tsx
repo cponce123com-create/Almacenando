@@ -23,7 +23,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Settings, Plus, Pencil, Trash2, Loader2, AlertCircle, User,
-  ShieldCheck, Eye, EyeOff, UserCog, CheckCircle2, KeyRound, RefreshCw,
+  ShieldCheck, Eye, EyeOff, UserCog, CheckCircle2, KeyRound,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -343,16 +343,9 @@ export default function AdministracióndeUsuariosPage() {
 
   const resetPasswordMutation = useMutation({
     mutationFn: (id: string) => api(`/api/admin/users/${id}/reset-password`, { method: "POST" }),
-    onSuccess: (data: { temporaryPassword: string; user: AdminUser }) => {
-      toast({ title: `Contraseña restablecida → ${data.temporaryPassword}` });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const resetAllMutation = useMutation({
-    mutationFn: () => api("/api/admin/users/reset-all-passwords", { method: "POST" }),
-    onSuccess: (data: { message: string }) => {
-      toast({ title: data.message });
+    onSuccess: (_data: unknown, id: string) => {
+      const user = users.find((u) => u.id === id);
+      toast({ title: "Enlace enviado", description: `Se envió un correo de restablecimiento a ${user?.email ?? "el usuario"}.` });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -388,22 +381,6 @@ export default function AdministracióndeUsuariosPage() {
             {currentUser && (
               <Button variant="outline" onClick={() => setShowMyProfile(true)} className="gap-2">
                 <UserCog className="w-4 h-4" /> Mi perfil
-              </Button>
-            )}
-            {/* Resetear todos - solo admin */}
-            {isAdmin && (
-              <Button
-                variant="outline"
-                className="gap-2 text-amber-700 border-amber-300 hover:bg-amber-50"
-                onClick={() => {
-                  if (window.confirm(`¿Restablecer contraseñas de TODOS los usuarios a usuario+123?\n\nEjemplo: jcastillo → jcastillo123`)) {
-                    resetAllMutation.mutate();
-                  }
-                }}
-                disabled={resetAllMutation.isPending}
-              >
-                {resetAllMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                Resetear todos
               </Button>
             )}
             {/* Botón crear solo para admin */}
@@ -508,9 +485,9 @@ export default function AdministracióndeUsuariosPage() {
                                       variant="ghost"
                                       size="icon"
                                       className="h-8 w-8 text-slate-400 hover:text-amber-600"
-                                      title={`Resetear contraseña → ${u.email.split("@")[0]}123`}
+                                      title={`Enviar enlace de restablecimiento a ${u.email}`}
                                       onClick={() => {
-                                        if (window.confirm(`¿Restablecer contraseña de "${u.name}"?\nNueva contraseña: ${u.email.split("@")[0]}123`)) {
+                                        if (window.confirm(`¿Enviar un correo de restablecimiento de contraseña a "${u.name}" (${u.email})?`)) {
                                           resetPasswordMutation.mutate(u.id);
                                         }
                                       }}

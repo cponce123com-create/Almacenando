@@ -11,6 +11,7 @@ import { uploadFileToDrive } from "../lib/google-drive.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { parsePagination } from "../lib/pagination.js";
 import { logger } from "../lib/logger.js";
+import { validateMimeType } from "../lib/validate-mime.js";
 
 
 const router = Router();
@@ -69,6 +70,7 @@ async function uploadBoxPhotos(files: Files, productLabel: string, date: string)
     if (fieldFiles && fieldFiles.length > 0) {
       try {
         const file = fieldFiles[0]!;
+        await validateMimeType(file.buffer, "image");
         const ext = "." + (file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
         const fileName = buildInventoryPhotoName(productLabel, date, i + 1, ext);
         const { url } = await uploadFileToDrive(file.buffer, fileName, file.mimetype);
@@ -336,6 +338,7 @@ router.put(
     let photoUrl: string | undefined;
     if (req.file) {
       try {
+        await validateMimeType(req.file.buffer, "image");
         const ext = "." + (req.file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
         const fileName = buildInventoryPhotoName(parsed.data.productId ?? id, parsed.data.recordDate ?? new Date().toISOString().slice(0, 10), 0, ext);
         const { url } = await uploadFileToDrive(req.file.buffer, fileName, req.file.mimetype);
