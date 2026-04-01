@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, date, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, date, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -10,7 +10,7 @@ export const balanceRecordsTable = pgTable("balance_records", {
   code: text("code").notNull(),
   productDescription: text("product_description").notNull(),
   unit: text("unit").notNull(),
-  quantity: numeric("quantity").notNull().default("0"),
+  quantity: doublePrecision("quantity").notNull().default(0),
   balanceDate: date("balance_date").notNull(),
   ultimoConsumo: date("ultimo_consumo"),
   batchId: text("batch_id"),

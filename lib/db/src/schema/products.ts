@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, boolean, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -11,8 +11,8 @@ export const productsTable = pgTable("products", {
   casNumber: text("cas_number"),
   category: text("category").notNull(),
   unit: text("unit").notNull(),
-  minimumStock: numeric("minimum_stock").notNull().default("0"),
-  maximumStock: numeric("maximum_stock"),
+  minimumStock: doublePrecision("minimum_stock").notNull().default(0),
+  maximumStock: doublePrecision("maximum_stock"),
   msds: boolean("msds").notNull().default(false),
   msdsUrl: text("msds_url"),
   controlled: boolean("controlled").notNull().default(false),

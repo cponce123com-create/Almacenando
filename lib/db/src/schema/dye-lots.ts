@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, date } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
@@ -8,7 +8,7 @@ export const dyeLotsTable = pgTable("dye_lots", {
   id: text("id").primaryKey(),
   productId: text("product_id").notNull().references(() => productsTable.id),
   lotNumber: text("lot_number").notNull(),
-  quantity: numeric("quantity").notNull(),
+  quantity: doublePrecision("quantity").notNull(),
   expirationDate: date("expiration_date"),
   receiptDate: date("receipt_date").notNull(),
   supplier: text("supplier"),

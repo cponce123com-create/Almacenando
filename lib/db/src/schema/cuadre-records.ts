@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, date } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -21,9 +21,9 @@ export const cuadreItemsTable = pgTable("cuadre_items", {
   code: text("code").notNull(),
   productDescription: text("product_description").notNull(),
   unit: text("unit").notNull(),
-  systemBalance: numeric("system_balance").notNull().default("0"),
-  physicalCount: numeric("physical_count").notNull().default("0"),
-  difference: numeric("difference").notNull().default("0"),
+  systemBalance: doublePrecision("system_balance").notNull().default(0),
+  physicalCount: doublePrecision("physical_count").notNull().default(0),
+  difference: doublePrecision("difference").notNull().default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

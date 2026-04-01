@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, date, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, date, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
@@ -11,11 +11,11 @@ export const inventoryRecordsTable = pgTable(
     warehouse: text("warehouse").notNull().default("General"),
     productId: text("product_id").notNull().references(() => productsTable.id),
     recordDate: date("record_date").notNull(),
-    previousBalance: numeric("previous_balance").notNull().default("0"),
-    inputs: numeric("inputs").notNull().default("0"),
-    outputs: numeric("outputs").notNull().default("0"),
-    finalBalance: numeric("final_balance").notNull().default("0"),
-    physicalCount: numeric("physical_count"),
+    previousBalance: doublePrecision("previous_balance").notNull().default(0),
+    inputs: doublePrecision("inputs").notNull().default(0),
+    outputs: doublePrecision("outputs").notNull().default(0),
+    finalBalance: doublePrecision("final_balance").notNull().default(0),
+    physicalCount: doublePrecision("physical_count"),
     photoUrl: text("photo_url"),
     responsible: text("responsible"),
     location: text("location"),

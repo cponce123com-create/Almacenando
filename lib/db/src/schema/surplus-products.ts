@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, numeric, date, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, date, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
@@ -9,7 +9,7 @@ export const surplusProductsTable = pgTable("surplus_products", {
   productId: text("product_id").references(() => productsTable.id),
   productName: text("product_name"),
   surplusCode: text("surplus_code").notNull().unique(),
-  quantity: numeric("quantity").notNull(),
+  quantity: doublePrecision("quantity").notNull(),
   unit: text("unit").notNull(),
   surplusDate: date("surplus_date").notNull(),
   origin: text("origin"),
