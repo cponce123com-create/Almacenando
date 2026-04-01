@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createHash } from "crypto";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, count } from "drizzle-orm";
 import { hashPassword, comparePassword, signToken, requireAuth, revokeToken, cleanupExpiredTokens, type AuthenticatedRequest } from "../lib/auth.js";
 import { z } from "zod/v4";
 import { authLoginLimiter, passwordResetLimiter } from "../lib/rate-limit.js";
@@ -184,6 +184,56 @@ router.post("/reset-password", passwordResetLimiter, asyncHandler(async (req, re
 
   void writeAuditLog({ userId: user.id, action: "update", resource: "user", resourceId: user.id, details: { action: "password_reset_completed" } });
   res.json({ message: "Contraseña restablecida correctamente. Ya puedes iniciar sesión." });
+}));
+
+// ── POST /api/auth/setup ──────────────────────────────────────────────────────
+// One-time bootstrap: creates the first admin user when the DB is empty.
+// Protected by ADMIN_SETUP_KEY env var. Safe to call multiple times.
+
+router.post("/setup", asyncHandler(async (req, res) => {
+  const setupKey = process.env.ADMIN_SETUP_KEY;
+  if (!setupKey) {
+    res.status(503).json({ error: "Bootstrap no disponible (ADMIN_SETUP_KEY no configurado)" });
+    return;
+  }
+
+  const { key } = z.object({ key: z.string() }).parse(req.body);
+  if (key !== setupKey) {
+    res.status(401).json({ error: "Clave de configuración inválida" });
+    return;
+  }
+
+  // Check how many users already exist
+  const [{ total }] = await db.select({ total: count() }).from(usersTable);
+  if (Number(total) > 0) {
+    res.status(409).json({ error: "El sistema ya tiene usuarios. Bootstrap solo funciona en una base de datos vacía." });
+    return;
+  }
+
+  // Read admin credentials from production env vars
+  const email = process.env.ADMIN_EMAIL;
+  const name = process.env.ADMIN_NAME ?? "Administrador";
+  const password = process.env.ADMIN_PASSWORD;
+
+  if (!email || !password) {
+    res.status(503).json({ error: "ADMIN_EMAIL y ADMIN_PASSWORD deben estar configurados en el entorno de producción" });
+    return;
+  }
+
+  const { randomBytes } = await import("crypto");
+  const id = randomBytes(16).toString("hex");
+  const passwordHash = await hashPassword(password);
+
+  await db.insert(usersTable).values({
+    id,
+    email,
+    name,
+    passwordHash,
+    role: "admin",
+    status: "active",
+  });
+
+  res.json({ message: `Admin creado correctamente: ${email}` });
 }));
 
 export default router;
