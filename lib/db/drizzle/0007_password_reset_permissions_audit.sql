@@ -1,3 +1,11 @@
+-- ─── warehouse_role: create enum type ────────────────────────────────────────
+DO $$ BEGIN
+  CREATE TYPE "warehouse_role" AS ENUM ('supervisor', 'operator', 'quality', 'admin', 'readonly');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+--> statement-breakpoint
+
 -- ─── users: add password reset columns ──────────────────────────────────────
 ALTER TABLE "users"
 ADD COLUMN IF NOT EXISTS "password_reset_token" text;
