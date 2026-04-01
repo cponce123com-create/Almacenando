@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Search, ShieldCheck, ShieldOff, Download, Printer, AlertCircle,
-  Loader2, Save, BookOpen, Trash2, Zap, RefreshCw, Link2, CheckCircle2,
+  Loader2, Save, BookOpen, Trash2, Zap, RefreshCw, Link2, CheckCircle2, FileSpreadsheet,
   Clock, HelpCircle, XCircle, ChevronDown, ChevronUp, ScanLine, FlaskConical,
   Skull, HeartPulse, Shield, AlertTriangle, Thermometer, Info,
 } from "lucide-react";
@@ -529,11 +529,36 @@ export default function MsdsPage() {
       <div style={{ maxWidth: 1300, margin: "0 auto" }}>
 
         {/* Page header */}
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0c1a2e", margin: 0 }}>Control de MSDS</h1>
-          <p style={{ fontSize: 14, color: "#64748b", margin: "4px 0 0 0" }}>
-            Gestión y cruce inteligente de Fichas de Seguridad
-          </p>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#0c1a2e", margin: 0 }}>Control de MSDS</h1>
+            <p style={{ fontSize: 14, color: "#64748b", margin: "4px 0 0 0" }}>
+              Gestión y cruce inteligente de Fichas de Seguridad
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              const warehouseParam = warehouse && warehouse !== "all" ? `?warehouse=${encodeURIComponent(warehouse)}` : "";
+              const res = await fetch(`${BASE}/api/msds/export${warehouseParam}`, {
+                headers: getAuthHeaders(),
+              });
+              if (!res.ok) { alert("Error al generar el informe"); return; }
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              const cd = res.headers.get("Content-Disposition") ?? "";
+              const match = cd.match(/filename="([^"]+)"/);
+              a.download = match?.[1] ?? "informe_msds.xlsx";
+              a.href = url;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            style={{ gap: 6, fontSize: 13, borderColor: "#0d9488", color: "#0d9488", background: "#f0fdf4", whiteSpace: "nowrap" }}
+          >
+            <FileSpreadsheet style={{ width: 15, height: 15 }} />
+            Exportar Excel
+          </Button>
         </div>
 
         {/* Warehouse selector */}

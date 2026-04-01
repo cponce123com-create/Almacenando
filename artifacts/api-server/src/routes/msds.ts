@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db, productsTable } from "@workspace/db";
 import type { Product } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, asc } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { getDriveMsdsFiles, isMsdsDriveConfigured } from "../lib/google-drive.js";
@@ -310,6 +311,147 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
     .limit(1);
 
   res.json(updated);
+}));
+
+// ── GET /api/msds/export ─────────────────────────────────────────────────────
+// Generates a colored Excel report with two sheets: "Con MSDS" and "Sin MSDS".
+
+const STATUS_LABEL: Record<string, string> = {
+  EXACT: "Exacto",
+  PROBABLE: "Probable",
+  MANUAL_REVIEW: "Revisión manual",
+  NONE: "Sin MSDS",
+};
+
+// Row fill colors by MSDS status
+const STATUS_FILL: Record<string, ExcelJS.Fill> = {
+  EXACT:         { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } }, // green-100
+  PROBABLE:      { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF9C3" } }, // yellow-100
+  MANUAL_REVIEW: { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEDD5" } }, // orange-100
+  NONE:          { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } }, // red-100
+};
+
+function applyHeaderRow(ws: ExcelJS.Worksheet, headers: string[]) {
+  const row = ws.addRow(headers);
+  row.eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F766E" } }; // teal-700
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      bottom: { style: "thin", color: { argb: "FF0D9488" } },
+    };
+  });
+  row.height = 22;
+}
+
+function applyDataRow(ws: ExcelJS.Worksheet, values: (string | number | null)[], status: string) {
+  const row = ws.addRow(values);
+  const fill = STATUS_FILL[status] ?? STATUS_FILL.NONE;
+  row.eachCell({ includeEmpty: true }, (cell) => {
+    cell.fill = fill;
+    cell.alignment = { vertical: "middle", wrapText: false };
+    cell.font = { size: 10 };
+  });
+  row.height = 18;
+}
+
+router.get("/export", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+  const condition = warehouse && warehouse !== "all"
+    ? eq(productsTable.warehouse, warehouse)
+    : undefined;
+
+  const products = await db
+    .select()
+    .from(productsTable)
+    .where(condition)
+    .orderBy(asc(productsTable.warehouse), asc(productsTable.type), asc(productsTable.name));
+
+  const withMsds    = products.filter(p => p.msds);
+  const withoutMsds = products.filter(p => !p.msds);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Almacén Químico";
+  wb.created = new Date();
+
+  const HEADERS = [
+    "Almacén", "Tipo", "Código", "Nombre", "Ubicación",
+    "Estado MSDS", "Puntuación", "Archivo MSDS", "Razón de coincidencia",
+    "Vinculado por", "Última verificación",
+  ];
+  const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 12, 34, 36, 14, 22];
+
+  function productRow(p: Product): (string | number | null)[] {
+    return [
+      p.warehouse ?? "",
+      p.type ?? "",
+      p.code,
+      p.name,
+      p.location ?? "",
+      STATUS_LABEL[p.msdsStatus ?? "NONE"] ?? (p.msdsStatus ?? ""),
+      p.msdsScore ?? 0,
+      p.msdsFileName ?? "",
+      p.msdsMatchReason ?? "",
+      p.msdsMatchedBy ?? "",
+      p.msdsLastCheckedAt ? new Date(p.msdsLastCheckedAt).toLocaleDateString("es-SV") : "",
+    ];
+  }
+
+  // ── Sheet 1: Con MSDS ──────────────────────────────────────────────────────
+  const ws1 = wb.addWorksheet("Con MSDS", { views: [{ state: "frozen", ySplit: 1 }] });
+  ws1.columns = COL_WIDTHS.map((width, i) => ({ header: "", key: `c${i}`, width }));
+  applyHeaderRow(ws1, HEADERS);
+  for (const p of withMsds) {
+    applyDataRow(ws1, productRow(p), p.msdsStatus ?? "NONE");
+  }
+  ws1.autoFilter = { from: "A1", to: `K1` };
+
+  // ── Sheet 2: Sin MSDS ─────────────────────────────────────────────────────
+  const ws2 = wb.addWorksheet("Sin MSDS", { views: [{ state: "frozen", ySplit: 1 }] });
+  ws2.columns = COL_WIDTHS.map((width, i) => ({ header: "", key: `c${i}`, width }));
+  applyHeaderRow(ws2, HEADERS);
+  for (const p of withoutMsds) {
+    applyDataRow(ws2, productRow(p), "NONE");
+  }
+  ws2.autoFilter = { from: "A1", to: `K1` };
+
+  // ── Sheet 3: Resumen ──────────────────────────────────────────────────────
+  const ws3 = wb.addWorksheet("Resumen");
+  ws3.columns = [{ width: 26 }, { width: 14 }];
+  const summaryTitle = ws3.addRow(["Resumen MSDS", ""]);
+  summaryTitle.getCell(1).font = { bold: true, size: 13, color: { argb: "FF0F766E" } };
+  ws3.addRow([]);
+  const hdr = ws3.addRow(["Estado", "Cantidad"]);
+  hdr.eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F766E" } }; });
+
+  const summary = [
+    { label: "Exacto",          key: "EXACT",         argb: "FFD1FAE5", text: "FF065F46" },
+    { label: "Probable",        key: "PROBABLE",       argb: "FFFEF9C3", text: "FF854D0E" },
+    { label: "Revisión manual", key: "MANUAL_REVIEW",  argb: "FFFFEDD5", text: "FF9A3412" },
+    { label: "Sin MSDS",        key: "NONE",           argb: "FFFEE2E2", text: "FF991B1B" },
+  ];
+  const counts: Record<string, number> = { EXACT: 0, PROBABLE: 0, MANUAL_REVIEW: 0, NONE: 0 };
+  for (const p of products) { const k = p.msdsStatus ?? "NONE"; counts[k] = (counts[k] ?? 0) + 1; }
+
+  for (const s of summary) {
+    const r = ws3.addRow([s.label, counts[s.key] ?? 0]);
+    r.eachCell(c => {
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: s.argb } };
+      c.font = { bold: true, color: { argb: s.text } };
+    });
+  }
+  ws3.addRow([]);
+  const total = ws3.addRow(["Total productos", products.length]);
+  total.eachCell(c => { c.font = { bold: true }; });
+
+  // ── Send ──────────────────────────────────────────────────────────────────
+  const warehouseSlug = (warehouse && warehouse !== "all" ? warehouse : "todos").replace(/\s+/g, "_");
+  const filename = `informe_msds_${warehouseSlug}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  await wb.xlsx.write(res);
+  res.end();
 }));
 
 // ── POST /api/msds/:productId/confirm ────────────────────────────────────────
