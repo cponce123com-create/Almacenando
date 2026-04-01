@@ -19,6 +19,19 @@ const permissionUpdateSchema = z.array(z.object({
   canDelete: z.boolean().default(false),
 }));
 
+// ---------------------------------------------------------------------------
+// IMPORTANT: /my-permissions MUST be declared BEFORE /:role.
+// Express matches routes in order — if /:role comes first, a request to
+// /my-permissions would be captured with role = "my-permissions" instead
+// of hitting this dedicated handler.
+// ---------------------------------------------------------------------------
+router.get("/my-permissions", requireAuth, asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
+  const perms = await db.select().from(userPermissionsTable)
+    .where(eq(userPermissionsTable.role, authedReq.userRole));
+  res.json(perms);
+}));
+
 router.get("/", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
   const perms = await db.select().from(userPermissionsTable);
   res.json(perms);
@@ -73,13 +86,6 @@ router.put("/:role", requireAuth, requireRole("admin"), asyncHandler(async (req,
   const updated = await db.select().from(userPermissionsTable)
     .where(eq(userPermissionsTable.role, role as WarehouseRole));
   res.json(updated);
-}));
-
-router.get("/my-permissions", requireAuth, asyncHandler(async (req, res) => {
-  const authedReq = req as AuthenticatedRequest;
-  const perms = await db.select().from(userPermissionsTable)
-    .where(eq(userPermissionsTable.role, authedReq.userRole));
-  res.json(perms);
 }));
 
 export default router;
