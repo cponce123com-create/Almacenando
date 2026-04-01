@@ -11,11 +11,25 @@ import { Button } from "@/components/ui/button";
 import {
   Search, ShieldCheck, ShieldOff, Download, Printer, AlertCircle,
   Loader2, Save, BookOpen, Trash2, Zap, RefreshCw, Link2, CheckCircle2,
-  Clock, HelpCircle, XCircle, ChevronDown, ChevronUp,
+  Clock, HelpCircle, XCircle, ChevronDown, ChevronUp, ScanLine, FlaskConical,
+  Skull, HeartPulse, Shield, AlertTriangle, Thermometer, Info,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface MsdsExtractedData {
+  cas: string | null;
+  familiaQuimica: string | null;
+  identificacionPeligro: string | null;
+  primerosAuxiliosContacto: string | null;
+  controlExposicion: string | null;
+  incompatibilidad: string | null;
+  riesgosAgudosSalud: string | null;
+  extractedAt: string;
+  pagesScanned: number;
+  charCount: number;
+}
 
 interface Product {
   id: string;
@@ -37,6 +51,8 @@ interface Product {
   msdsFileName?: string | null;
   msdsMatchReason?: string | null;
   msdsMatchedBy?: string | null;
+  msdsExtractedData?: MsdsExtractedData | null;
+  msdsExtractedAt?: string | null;
 }
 
 interface MsdsStats {
@@ -284,6 +300,8 @@ export default function MsdsPage() {
   const [activeTab, setActiveTab] = useState<"manual" | "smart">("smart");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showCandidates, setShowCandidates] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
 
   const isAdminOrSupervisor = user?.role === "admin" || user?.role === "supervisor";
   const canEdit = user?.role === "admin" || user?.role === "supervisor" || user?.role === "operator";
@@ -394,6 +412,44 @@ export default function MsdsPage() {
       setSaveError(err.message ?? "Error desconocido");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleExtract() {
+    if (!selected?.msdsFileId) return;
+    setIsExtracting(true);
+    setExtractError(null);
+    try {
+      const res = await fetch(`${BASE}/api/msds/${selected.id}/extract`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}));
+        throw new Error(e.error ?? "Error al escanear");
+      }
+      const { product } = await res.json();
+      setSelected(product);
+      void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+    } catch (err: any) {
+      setExtractError(err.message ?? "Error desconocido");
+    } finally {
+      setIsExtracting(false);
+    }
+  }
+
+  async function handleClearExtract() {
+    if (!selected) return;
+    if (!window.confirm("¿Eliminar los datos extraídos por IA de este producto?")) return;
+    try {
+      await fetch(`${BASE}/api/msds/${selected.id}/extract`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      setSelected({ ...selected, msdsExtractedData: null, msdsExtractedAt: null });
+      void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+    } catch {
+      /* silent */
     }
   }
 
@@ -852,6 +908,131 @@ export default function MsdsPage() {
                             setShowCandidates(false);
                           }}
                         />
+                      </div>
+                    )}
+
+                    {/* ── AI EXTRACTION SECTION ── */}
+                    {selected.msdsFileId && (
+                      <div style={{ marginTop: 16, borderTop: "1.5px solid #e2e8f0", paddingTop: 14 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <ScanLine style={{ width: 15, height: 15, color: "#7c3aed" }} />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>Extracción IA de Datos de Seguridad</span>
+                          </div>
+                          {selected.msdsExtractedAt && (
+                            <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                              {new Date(selected.msdsExtractedAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Scan button */}
+                        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                          <Button
+                            onClick={() => void handleExtract()}
+                            disabled={isExtracting}
+                            style={{
+                              background: isExtracting ? "#ede9fe" : "#7c3aed",
+                              color: isExtracting ? "#7c3aed" : "#fff",
+                              border: "none",
+                              gap: 6,
+                              fontSize: 12,
+                              padding: "6px 14px",
+                              height: "auto",
+                            }}
+                          >
+                            {isExtracting
+                              ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Escaneando PDF...</>
+                              : <><ScanLine style={{ width: 13, height: 13 }} />{selected.msdsExtractedData ? "Re-escanear MSDS" : "Escanear MSDS con IA"}</>
+                            }
+                          </Button>
+                          {selected.msdsExtractedData && isAdminOrSupervisor && (
+                            <Button
+                              variant="outline"
+                              onClick={() => void handleClearExtract()}
+                              style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
+                            >
+                              <Trash2 style={{ width: 11, height: 11 }} />
+                              Limpiar
+                            </Button>
+                          )}
+                        </div>
+
+                        {extractError && (
+                          <div style={{ padding: "8px 12px", background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 6, marginBottom: 10 }}>
+                            <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>{extractError}</p>
+                          </div>
+                        )}
+
+                        {isExtracting && (
+                          <div style={{ padding: "12px", background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, textAlign: "center" }}>
+                            <Loader2 style={{ width: 20, height: 20, color: "#7c3aed", margin: "0 auto 8px" }} className="animate-spin" />
+                            <p style={{ fontSize: 12, color: "#7c3aed", margin: 0, fontWeight: 600 }}>Descargando y procesando el PDF…</p>
+                            <p style={{ fontSize: 11, color: "#a78bfa", margin: "4px 0 0" }}>Esto puede tardar 15–30 segundos</p>
+                          </div>
+                        )}
+
+                        {/* Extracted data card */}
+                        {!isExtracting && selected.msdsExtractedData && (() => {
+                          const d = selected.msdsExtractedData;
+                          const fields: Array<{
+                            key: keyof MsdsExtractedData;
+                            label: string;
+                            icon: React.ReactNode;
+                            color: string;
+                            bg: string;
+                          }> = [
+                            { key: "cas", label: "Número CAS", icon: <Info style={{ width: 13, height: 13 }} />, color: "#0369a1", bg: "#e0f2fe" },
+                            { key: "familiaQuimica", label: "Familia Química", icon: <FlaskConical style={{ width: 13, height: 13 }} />, color: "#065f46", bg: "#d1fae5" },
+                            { key: "identificacionPeligro", label: "Identificación del Peligro", icon: <AlertTriangle style={{ width: 13, height: 13 }} />, color: "#92400e", bg: "#fef3c7" },
+                            { key: "primerosAuxiliosContacto", label: "Primeros Auxilios por Contacto", icon: <HeartPulse style={{ width: 13, height: 13 }} />, color: "#9f1239", bg: "#ffe4e6" },
+                            { key: "controlExposicion", label: "Control de la Exposición / EPP", icon: <Shield style={{ width: 13, height: 13 }} />, color: "#1e3a8a", bg: "#dbeafe" },
+                            { key: "incompatibilidad", label: "Incompatibilidades", icon: <Thermometer style={{ width: 13, height: 13 }} />, color: "#581c87", bg: "#f3e8ff" },
+                            { key: "riesgosAgudosSalud", label: "Riesgos Agudos para la Salud", icon: <Skull style={{ width: 13, height: 13 }} />, color: "#7f1d1d", bg: "#fee2e2" },
+                          ];
+                          return (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                {d.pagesScanned > 0 && (
+                                  <span style={{ fontSize: 10, color: "#64748b", background: "#f1f5f9", padding: "2px 8px", borderRadius: 12 }}>
+                                    📄 {d.pagesScanned} {d.pagesScanned === 1 ? "página" : "páginas"}
+                                  </span>
+                                )}
+                                {d.charCount > 0 && (
+                                  <span style={{ fontSize: 10, color: "#64748b", background: "#f1f5f9", padding: "2px 8px", borderRadius: 12 }}>
+                                    ~{(d.charCount / 1000).toFixed(1)}K caracteres leídos
+                                  </span>
+                                )}
+                              </div>
+                              {fields.map(({ key, label, icon, color, bg }) => {
+                                const val = d[key];
+                                if (key === "pagesScanned" || key === "charCount" || key === "extractedAt") return null;
+                                return (
+                                  <div
+                                    key={key}
+                                    style={{
+                                      border: `1px solid ${color}30`,
+                                      borderLeft: `3px solid ${color}`,
+                                      borderRadius: 6,
+                                      overflow: "hidden",
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", background: bg }}>
+                                      <span style={{ color }}>{icon}</span>
+                                      <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
+                                    </div>
+                                    <div style={{ padding: "7px 10px", background: "#fff" }}>
+                                      {val
+                                        ? <p style={{ fontSize: 12, color: "#1e293b", margin: 0, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{val}</p>
+                                        : <p style={{ fontSize: 12, color: "#94a3b8", margin: 0, fontStyle: "italic" }}>No encontrado en el documento</p>
+                                      }
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

@@ -5,6 +5,8 @@ import { eq, and, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { getDriveMsdsFiles, isMsdsDriveConfigured } from "../lib/google-drive.js";
+import { extractMsdsDataFromDrive } from "../lib/extract-msds-data.js";
+import { logger } from "../lib/logger.js";
 import {
   matchProductWithFiles,
   classifyMatch,
@@ -308,6 +310,65 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
     .limit(1);
 
   res.json(updated);
+}));
+
+// ── POST /api/msds/:productId/extract ────────────────────────────────────────
+// Downloads the linked MSDS PDF from Drive, extracts text, and uses AI to
+// parse the 7 key safety fields. Saves the result to the product record.
+
+router.post("/:productId/extract", requireAuth, requireRole(["admin", "supervisor", "quality"]), asyncHandler(async (req, res) => {
+  if (!guardDriveConfig(res as any)) return;
+
+  const { productId } = req.params;
+
+  const [product] = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+
+  if (!product) {
+    res.status(404).json({ error: "Producto no encontrado" });
+    return;
+  }
+
+  if (!product.msdsFileId) {
+    res.status(400).json({ error: "El producto no tiene una MSDS vinculada. Primero vincula una MSDS desde el Cruce Inteligente." });
+    return;
+  }
+
+  logger.info({ productId, fileId: product.msdsFileId }, "MSDS extraction requested");
+
+  const extracted = await extractMsdsDataFromDrive(product.msdsFileId);
+
+  await db.update(productsTable)
+    .set({
+      msdsExtractedData: extracted as any,
+      msdsExtractedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(productsTable.id, productId));
+
+  const [updated] = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+
+  res.json({ product: updated, extracted });
+}));
+
+// ── DELETE /api/msds/:productId/extract ──────────────────────────────────────
+// Clears the extracted MSDS data from a product.
+
+router.delete("/:productId/extract", requireAuth, requireRole(["admin", "supervisor"]), asyncHandler(async (req, res) => {
+  const { productId } = req.params;
+
+  await db.update(productsTable)
+    .set({ msdsExtractedData: null, msdsExtractedAt: null, updatedAt: new Date() })
+    .where(eq(productsTable.id, productId));
+
+  res.json({ message: "Datos extraídos eliminados correctamente" });
 }));
 
 export default router;

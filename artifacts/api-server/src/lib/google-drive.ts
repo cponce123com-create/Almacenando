@@ -174,6 +174,39 @@ export function extractFileId(driveUrl: string): string | null {
   return m?.[1] ?? null;
 }
 
+/**
+ * Downloads a file from Google Drive by fileId and returns its raw Buffer.
+ * Works for PDFs and any binary file. For Google Docs, use mimeType export.
+ */
+export async function downloadDriveFileAsBuffer(fileId: string): Promise<{ buffer: Buffer; mimeType: string }> {
+  const drive = getDriveClient();
+
+  // Get file metadata first to know the mimeType
+  const meta = await drive.files.get({
+    fileId,
+    fields: "mimeType, name",
+    supportsAllDrives: true,
+  });
+
+  const mimeType = meta.data.mimeType ?? "application/octet-stream";
+
+  // Google Docs → export as plain text
+  if (mimeType === "application/vnd.google-apps.document") {
+    const res = await drive.files.export(
+      { fileId, mimeType: "text/plain" },
+      { responseType: "arraybuffer" }
+    );
+    return { buffer: Buffer.from(res.data as ArrayBuffer), mimeType: "text/plain" };
+  }
+
+  // PDF and other files → download binary
+  const res = await drive.files.get(
+    { fileId, alt: "media", supportsAllDrives: true },
+    { responseType: "arraybuffer" }
+  );
+  return { buffer: Buffer.from(res.data as ArrayBuffer), mimeType };
+}
+
 export function isDriveConfigured(): boolean {
   return !!(
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON &&

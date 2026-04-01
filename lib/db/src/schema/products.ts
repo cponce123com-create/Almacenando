@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, doublePrecision, boolean, uniqueIndex, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, boolean, uniqueIndex, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -33,6 +33,9 @@ export const productsTable = pgTable("products", {
   msdsMatchReason: text("msds_match_reason"),
   msdsMatchedBy: text("msds_matched_by"),
   msdsLastCheckedAt: timestamp("msds_last_checked_at"),
+  // ── MSDS AI-extracted safety data ──────────────────────────────────────
+  msdsExtractedData: jsonb("msds_extracted_data"),
+  msdsExtractedAt: timestamp("msds_extracted_at"),
   // ───────────────────────────────────────────────────────────────────────
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
