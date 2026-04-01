@@ -1,7 +1,11 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedWarehouseData, purgeDemoData } from "./lib/seed.js";
-import { cleanupExpiredTokens } from "./lib/auth.js";
+import { cleanupExpiredTokens, hashPassword } from "./lib/auth.js";
+import { db } from "@workspace/db";
+import { usersTable } from "@workspace/db";
+import { count } from "drizzle-orm";
+import { randomBytes } from "crypto";
 
 const rawPort = process.env["PORT"];
 
@@ -17,8 +21,36 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
+async function bootstrapAdminIfNeeded() {
+  const email = process.env.ADMIN_EMAIL;
+  const password = process.env.ADMIN_PASSWORD;
+  if (!email || !password) return;
+
+  try {
+    const [{ total }] = await db.select({ total: count() }).from(usersTable);
+    if (Number(total) > 0) return;
+
+    const id = randomBytes(16).toString("hex");
+    const passwordHash = await hashPassword(password);
+    await db.insert(usersTable).values({
+      id,
+      email,
+      name: process.env.ADMIN_NAME ?? "Administrador",
+      passwordHash,
+      role: "admin",
+      status: "active",
+    });
+    logger.info({ email }, "Bootstrap admin created (empty database detected)");
+  } catch (err) {
+    logger.warn({ err }, "Bootstrap admin check failed — server will continue");
+  }
+}
+
 app.listen(port, async () => {
   logger.info({ port }, "API Server running");
+
+  // Auto-create first admin when the database is empty (production bootstrap)
+  await bootstrapAdminIfNeeded();
 
   // Clean up any expired revoked tokens left over from a previous run.
   void cleanupExpiredTokens();
