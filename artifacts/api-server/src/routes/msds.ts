@@ -316,7 +316,7 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
 // Downloads the linked MSDS PDF from Drive, extracts text, and uses AI to
 // parse the 7 key safety fields. Saves the result to the product record.
 
-router.post("/:productId/extract", requireAuth, requireRole(["admin", "supervisor", "quality"]), asyncHandler(async (req, res) => {
+router.post("/:productId/extract", requireAuth, requireRole("admin", "supervisor", "quality"), asyncHandler(async (req, res) => {
   if (!guardDriveConfig(res as any)) return;
 
   const { productId } = req.params;
@@ -361,7 +361,7 @@ router.post("/:productId/extract", requireAuth, requireRole(["admin", "superviso
 // ── DELETE /api/msds/:productId/extract ──────────────────────────────────────
 // Clears the extracted MSDS data from a product.
 
-router.delete("/:productId/extract", requireAuth, requireRole(["admin", "supervisor"]), asyncHandler(async (req, res) => {
+router.delete("/:productId/extract", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req, res) => {
   const { productId } = req.params;
 
   await db.update(productsTable)
