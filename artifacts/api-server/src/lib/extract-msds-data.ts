@@ -2,14 +2,19 @@ import OpenAI from "openai";
 import { downloadDriveFileAsBuffer } from "./google-drive.js";
 import { logger } from "./logger.js";
 
-// Lazy loader for pdf-parse — dynamic import works in both tsx ESM (dev)
-// and esbuild CJS bundles (prod) without needing import.meta or createRequire.
+// Lazy loader for pdf-parse (v1.x — Node.js compatible, no browser DOM APIs needed).
+// Dynamic import works in both tsx ESM (dev) and esbuild CJS bundles (prod).
 type PdfParseFn = (buf: Buffer) => Promise<{ text: string; numpages: number }>;
 let _pdfParse: PdfParseFn | null = null;
 async function getPdfParse(): Promise<PdfParseFn> {
   if (_pdfParse) return _pdfParse;
   const mod = await import("pdf-parse");
-  _pdfParse = ((mod as any).default ?? mod) as PdfParseFn;
+  // pdf-parse v1.x: module.exports is the function itself (no .default in CJS)
+  const fn = (mod as any).default ?? mod;
+  if (typeof fn !== "function") {
+    throw new Error(`pdf-parse no exportó una función válida (tipo: ${typeof fn})`);
+  }
+  _pdfParse = fn as PdfParseFn;
   return _pdfParse;
 }
 
