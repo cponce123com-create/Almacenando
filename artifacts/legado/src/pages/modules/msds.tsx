@@ -839,6 +839,27 @@ export default function MsdsPage() {
                               Ver MSDS
                             </Button>
                           )}
+                          {canEdit && (selected.msdsStatus === "PROBABLE" || selected.msdsStatus === "MANUAL_REVIEW") && (
+                            <Button
+                              onClick={async () => {
+                                if (!window.confirm("¿Confirmar este MSDS como coincidencia exacta?")) return;
+                                const res = await fetch(`${BASE}/api/msds/${selected.id}/confirm`, {
+                                  method: "POST",
+                                  headers: getAuthHeaders(),
+                                });
+                                if (res.ok) {
+                                  const updated = await res.json();
+                                  setSelected(updated);
+                                  void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+                                  void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                                }
+                              }}
+                              style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#16a34a", color: "#fff", border: "none" }}
+                            >
+                              <CheckCircle2 style={{ width: 12, height: 12 }} />
+                              Confirmar exacto
+                            </Button>
+                          )}
                           {canEdit && (
                             <Button
                               variant="outline"

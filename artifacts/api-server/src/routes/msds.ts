@@ -312,6 +312,54 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
   res.json(updated);
 }));
 
+// ── POST /api/msds/:productId/confirm ────────────────────────────────────────
+// Promotes a PROBABLE or MANUAL_REVIEW match to EXACT after human verification.
+
+router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor", "operator"), asyncHandler(async (req, res) => {
+  const { productId } = req.params;
+
+  const [product] = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+
+  if (!product) {
+    res.status(404).json({ error: "Producto no encontrado" });
+    return;
+  }
+
+  if (!product.msds || product.msdsStatus === "NONE") {
+    res.status(400).json({ error: "El producto no tiene un MSDS vinculado" });
+    return;
+  }
+
+  if (product.msdsStatus === "EXACT") {
+    res.status(400).json({ error: "El MSDS ya está marcado como exacto" });
+    return;
+  }
+
+  const now = new Date();
+  await db.update(productsTable)
+    .set({
+      msdsStatus: "EXACT",
+      msdsMatchedBy: "manual",
+      msdsMatchReason: product.msdsMatchReason
+        ? `${product.msdsMatchReason} (confirmado manualmente)`
+        : "Confirmado manualmente",
+      updatedAt: now,
+    })
+    .where(eq(productsTable.id, productId));
+
+  const [updated] = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+
+  res.json(updated);
+}));
+
 // ── POST /api/msds/:productId/extract ────────────────────────────────────────
 // Downloads the linked MSDS PDF from Drive, extracts text, and uses AI to
 // parse the 7 key safety fields. Saves the result to the product record.
