@@ -106,6 +106,11 @@ router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, r
   res.json(updated);
 }));
 
+// ---------------------------------------------------------------------------
+// Reset password — generates a secure token, stores its SHA-256 hash in DB,
+// and sends the raw token to the user's email. Never returns the token.
+// FIXED: frontendUrl now reads APP_URL correctly for Render production.
+// ---------------------------------------------------------------------------
 router.post("/:id/reset-password", requireAuth, requireRole("admin"), passwordResetLimiter, asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const { id } = req.params;
@@ -124,9 +129,9 @@ router.post("/:id/reset-password", requireAuth, requireRole("admin"), passwordRe
     .set({ passwordResetToken: tokenHash, passwordResetExpiresAt: expiresAt, updatedAt: new Date() })
     .where(eq(usersTable.id, id as string));
 
-  const frontendUrl = process.env.FRONTEND_URL ?? process.env.REPLIT_DEV_DOMAIN
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : "http://localhost:5173";
+  // APP_URL is the canonical production URL (e.g. https://almacenando.onrender.com).
+  // Falls back to localhost for local development only.
+  const frontendUrl = (process.env.APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
 
   await sendPasswordResetEmail({
     toEmail: user.email,
@@ -135,7 +140,14 @@ router.post("/:id/reset-password", requireAuth, requireRole("admin"), passwordRe
     frontendUrl,
   });
 
-  void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "user", resourceId: id, details: { action: "password_reset_requested" }, ipAddress: req.ip });
+  void writeAuditLog({
+    userId: authedReq.userId,
+    action: "update",
+    resource: "user",
+    resourceId: id,
+    details: { action: "password_reset_requested" },
+    ipAddress: req.ip,
+  });
   res.json({ message: `Email de reset enviado a ${user.email}` });
 }));
 
