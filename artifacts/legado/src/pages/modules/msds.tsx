@@ -885,6 +885,9 @@ export default function MsdsPage() {
                                   setSelected(updated);
                                   void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
                                   void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                                } else {
+                                  const err = await res.json().catch(() => ({}));
+                                  alert(`Error al confirmar: ${err.error ?? res.statusText}`);
                                 }
                               }}
                               style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#16a34a", color: "#fff", border: "none" }}

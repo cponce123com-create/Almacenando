@@ -471,8 +471,11 @@ router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor
     return;
   }
 
-  if (!product.msds || product.msdsStatus === "NONE") {
-    res.status(400).json({ error: "El producto no tiene un MSDS vinculado" });
+  // A confirmable product needs at least a fileId or existing msds link.
+  // MANUAL_REVIEW products have msdsFileId set but msds=false intentionally by rescan.
+  const hasLinkedFile = product.msdsFileId || product.msdsUrl;
+  if (!hasLinkedFile || product.msdsStatus === "NONE") {
+    res.status(400).json({ error: "El producto no tiene un MSDS candidato vinculado" });
     return;
   }
 
@@ -481,9 +484,17 @@ router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor
     return;
   }
 
+  // For MANUAL_REVIEW products the URL was not saved; reconstruct it from the fileId.
+  const msdsUrl = product.msdsUrl
+    ?? (product.msdsFileId
+      ? `https://drive.google.com/file/d/${product.msdsFileId}/view`
+      : null);
+
   const now = new Date();
   await db.update(productsTable)
     .set({
+      msds: true,
+      msdsUrl: msdsUrl ?? product.msdsUrl,
       msdsStatus: "EXACT",
       msdsMatchedBy: "manual",
       msdsMatchReason: product.msdsMatchReason
