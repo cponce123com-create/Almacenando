@@ -1,29 +1,53 @@
 import { Router } from "express";
 import { requireAuth } from "../lib/auth.js";
-import OpenAI from "openai";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-function getClient(): { client: OpenAI; model: string } {
-  // 1. Replit AI Integrations proxy (preferred — set up via Replit integrations panel)
-  const proxyBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-  const proxyKey  = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  if (proxyBase && proxyKey) {
-    return { client: new OpenAI({ baseURL: proxyBase, apiKey: proxyKey }), model: "gpt-4o-mini" };
-  }
+// ── Gemini REST helper ────────────────────────────────────────────────────────
+// Usa la API gratuita de Gemini. Obtené tu clave en: https://aistudio.google.com/apikey
+// Luego agregá GEMINI_API_KEY en las variables de entorno de Render.
 
-  // 2. Standard OpenAI API key configured manually in secrets as OPENAI_API_KEY
-  const directKey = process.env.OPENAI_API_KEY;
-  if (directKey) {
-    return { client: new OpenAI({ apiKey: directKey }), model: "gpt-4o-mini" };
+function getGeminiKey(): string {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error(
+      "IA no configurada. Agregá GEMINI_API_KEY en las variables de entorno de Render."
+    );
   }
-
-  throw new Error(
-    "IA no configurada. Agregá OPENAI_API_KEY en los secretos del proyecto."
-  );
+  return key;
 }
 
+async function callGemini(prompt: string): Promise<string> {
+  const key = getGeminiKey();
+  const model = "gemini-2.0-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+    },
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    const errMsg = (errBody as any)?.error?.message ?? `HTTP ${res.status}`;
+    throw new Error(`Gemini error: ${errMsg}`);
+  }
+
+  const data = await res.json() as any;
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+}
+
+// ── Sustancias a evaluar ──────────────────────────────────────────────────────
 const SUBSTANCES = [
   "Ácidos fuertes (HCl, H₂SO₄, HNO₃)",
   "Bases fuertes (NaOH, KOH)",
@@ -39,6 +63,7 @@ const SUBSTANCES = [
   "Materiales inflamables",
 ];
 
+// ── Ruta POST /api/compatibility/ai-analyze ───────────────────────────────────
 router.post("/ai-analyze", requireAuth, async (req, res) => {
   try {
     const { name, code, category } = req.body as {
@@ -48,12 +73,9 @@ router.post("/ai-analyze", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "El campo 'name' es requerido" });
     }
 
-    const { client, model } = getClient();
-
     const substList = SUBSTANCES.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
-    const content = `Eres un experto en seguridad química industrial latinoamericana. \
-Analiza este producto y determina su clase química y compatibilidades de almacenamiento seguro.
+    const prompt = `Eres un experto en seguridad química industrial latinoamericana. Analiza este producto y determina su clase química y compatibilidades de almacenamiento seguro.
 
 Producto: "${name.trim()}"${code ? ` (código: ${code})` : ""}${category ? ` (categoría registrada: ${category})` : ""}
 
@@ -71,38 +93,41 @@ Evaluá CADA UNA de las siguientes ${SUBSTANCES.length} sustancias y devolvé to
 ${substList}
 
 Reglas de incompatibilidad críticas:
-- Ácidos fuertes + Bases fuertes = incompatible (reacción exotérmica violenta, formación de sal + calor)
-- NaOH / Soda cáustica / Hidróxido de sodio + H₂O₂ / Peróxido de hidrógeno = incompatible (descomposición violenta con liberación de O₂)
+- Ácidos fuertes + Bases fuertes = incompatible (reacción exotérmica violenta)
+- NaOH / Soda cáustica + H₂O₂ / Peróxido de hidrógeno = incompatible (descomposición violenta con O₂)
 - Solventes orgánicos + Agentes oxidantes = incompatible (riesgo de incendio o explosión)
-- Solventes inflamables + Aire / Oxígeno = incompatible (vapores inflamables, riesgo de ignición)
+- Solventes inflamables + Aire / Oxígeno = incompatible (vapores inflamables)
 - Ácidos + Metales alcalinos = incompatible (liberación de H₂ inflamable)
-- Ácidos + Amoníaco = incompatible (gas tóxico, formación de sales de amonio)
+- Ácidos + Amoníaco = incompatible (gas tóxico)
 - Halógenos + Materiales inflamables = incompatible (oxidación violenta)
-- Colorantes reactivos / dispersos + Agentes oxidantes fuertes = incompatible (degradación, posible ignición)
-- Colorantes ácidos + Bases fuertes / Ácidos fuertes = caution (hidrólisis, cambio de color)
+- Colorantes reactivos / dispersos + Agentes oxidantes fuertes = incompatible
+- Colorantes ácidos + Bases fuertes / Ácidos fuertes = caution (hidrólisis)
 - Si la reacción exacta es desconocida o depende de concentración: usar "caution"
 - Si es claramente seguro almacenar juntos: "compatible"`;
 
-    const result = await client.chat.completions.create({
-      model,
-      messages: [{ role: "user", content }],
-      temperature: 0.1,
-      response_format: { type: "json_object" },
-    });
-
-    const raw  = result.choices[0]?.message?.content ?? "{}";
+    const raw = await callGemini(prompt);
     const parsed = JSON.parse(raw);
 
-    // Validate shape
     if (!parsed.claseDetectada || !Array.isArray(parsed.incompatibilidades)) {
-      logger.warn({ raw }, "AI response shape inesperado en compatibility/ai-analyze");
+      logger.warn({ raw }, "Gemini response shape inesperado en compatibility/ai-analyze");
       return res.status(500).json({ error: "Respuesta de IA con formato inesperado" });
     }
 
     return res.json(parsed);
   } catch (err) {
     logger.error({ err }, "Error en compatibility/ai-analyze");
-    return res.status(500).json({ error: "Error al analizar con IA" });
+    const message = err instanceof Error ? err.message : "Error desconocido";
+
+    if (message.includes("IA no configurada")) {
+      return res.status(503).json({ error: message });
+    }
+    if (message.includes("quota") || message.includes("429")) {
+      return res.status(429).json({ error: "Límite de la API de IA alcanzado. Intentá de nuevo en unos minutos." });
+    }
+    if (message.includes("Gemini error")) {
+      return res.status(502).json({ error: `Error de IA: ${message}` });
+    }
+    return res.status(500).json({ error: `Error al analizar con IA: ${message}` });
   }
 });
 
