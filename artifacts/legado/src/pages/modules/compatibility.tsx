@@ -16,8 +16,11 @@ import {
   Tooltip, TooltipContent, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Search, AlertTriangle, CheckCircle2, AlertCircle, Loader2, Beaker,
-  Download, Pencil, Sparkles, X, Check, BrainCircuit,
+  Download, Pencil, Sparkles, X, Check, BrainCircuit, TableProperties,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -42,12 +45,63 @@ interface AIIncompat {
 
 interface AIAnalysis {
   claseDetectada: string;
+  claseONU?: string;
   nombreQuimico?: string;
   incompatibilidades: AIIncompat[];
   razonamiento?: string;
 }
 
-// ── Sustancias generales ───────────────────────────────────────────────────────
+// ── Matriz ONU (SGA/GHS) ───────────────────────────────────────────────────────
+// Fuente: Anexo 1 – Matriz guía de almacenamiento químico (Naciones Unidas / SGA)
+// 0 = compatible · 1 = precaución · 2 = incompatible
+
+export const UN_CLASSES = [
+  { id: "1",   label: "Explosivos",             short: "Expl.",  color: "bg-orange-100 text-orange-800" },
+  { id: "2",   label: "Gases",                  short: "Gases",  color: "bg-sky-100 text-sky-800" },
+  { id: "3",   label: "Líquidos Inflamables",   short: "Líq.Inf.", color: "bg-red-100 text-red-800" },
+  { id: "4.1", label: "Sólidos Inflamables",    short: "Sól.Inf.", color: "bg-red-100 text-red-800" },
+  { id: "4.2", label: "Combustión Espontánea",  short: "Comb.Esp.", color: "bg-amber-100 text-amber-800" },
+  { id: "4.3", label: "Reactivos con Agua",     short: "React.Agua", color: "bg-blue-100 text-blue-800" },
+  { id: "5.1", label: "Comburentes (Oxidantes)",short: "Comburentes", color: "bg-yellow-100 text-yellow-800" },
+  { id: "5.2", label: "Peróxidos Orgánicos",    short: "Peróxidos", color: "bg-yellow-100 text-yellow-800" },
+  { id: "6.1", label: "Tóxicos",                short: "Tóxicos", color: "bg-purple-100 text-purple-800" },
+  { id: "8",   label: "Corrosivos",             short: "Corros.", color: "bg-slate-200 text-slate-800" },
+  { id: "9",   label: "Varios Peligrosos",      short: "Varios",  color: "bg-green-100 text-green-800" },
+] as const;
+
+// Matriz simétrica 11×11: filas/columnas = UN_CLASSES en orden
+// 0=compatible, 1=precaución, 2=incompatible
+export const UN_MATRIX: number[][] = [
+  //0  1  2  3  4  5  6  7  8  9  10
+  [ 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0], // 0  Explosivos (1)
+  [ 2, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0], // 1  Gases (2)
+  [ 2, 1, 0, 2, 1, 1, 2, 0, 1, 1, 0], // 2  Líquidos Inflamables (3)
+  [ 2, 0, 2, 0, 1, 1, 2, 2, 0, 1, 0], // 3  Sólidos Inflamables (4.1)
+  [ 2, 1, 1, 1, 0, 1, 2, 2, 0, 0, 0], // 4  Combustión Espontánea (4.2)
+  [ 2, 1, 1, 1, 1, 0, 2, 0, 0, 0, 0], // 5  Reactivos con Agua (4.3)
+  [ 2, 1, 2, 2, 2, 2, 0, 2, 1, 1, 1], // 6  Comburentes/Oxidantes (5.1)
+  [ 2, 0, 0, 2, 2, 0, 2, 0, 0, 0, 0], // 7  Peróxidos Orgánicos (5.2)
+  [ 0, 1, 1, 0, 0, 0, 1, 0, 0, 1, 0], // 8  Tóxicos (6.1)
+  [ 0, 1, 1, 1, 0, 0, 1, 0, 1, 0, 1], // 9  Corrosivos (8)
+  [ 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0], // 10 Varios Peligrosos (9)
+];
+
+// Mapeo de nuestras categorías internas a índice de clase ONU
+export const CAT_TO_UN: Record<string, number> = {
+  ACIDO:     9,  // Corrosivos (8)
+  BASE:      9,  // Corrosivos (8)
+  SOLVENTE:  2,  // Líquidos Inflamables (3)
+  COLORANTE: 8,  // Tóxicos (6.1) — muchos colorantes son tóxicos
+  AUXILIAR:  10, // Varios Peligrosos (9)
+  OXIDANTE:  6,  // Comburentes (5.1)
+  TOXICO:    8,  // Tóxicos (6.1)
+  PEROXIDO:  7,  // Peróxidos Orgánicos (5.2)
+  GAS:       1,  // Gases (2)
+  INFLAMABLE: 3, // Sólidos Inflamables (4.1)
+  OTRO:      10, // Varios Peligrosos (9)
+};
+
+// Sustancias generales de evaluación
 const GENERAL_SUBSTANCES = [
   "Ácidos fuertes (HCl, H₂SO₄, HNO₃)",
   "Bases fuertes (NaOH, KOH)",
@@ -63,9 +117,12 @@ const GENERAL_SUBSTANCES = [
   "Materiales inflamables",
 ];
 
-const KNOWN_CATEGORIES = ["ACIDO", "BASE", "SOLVENTE", "COLORANTE", "AUXILIAR", "OTRO"];
+const KNOWN_CATEGORIES = [
+  "ACIDO", "BASE", "SOLVENTE", "COLORANTE", "AUXILIAR",
+  "OXIDANTE", "TOXICO", "PEROXIDO", "GAS", "INFLAMABLE", "OTRO",
+];
 
-// ── Reglas por categoría ───────────────────────────────────────────────────────
+// ── Reglas por categoría (enriquecidas con clase ONU) ─────────────────────────
 const COMPATIBILITY_RULES: Record<string, Record<string, CompatStatus>> = {
   COLORANTE: {
     "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
@@ -137,6 +194,77 @@ const COMPATIBILITY_RULES: Record<string, Record<string, CompatStatus>> = {
     "Amoníaco": "caution",
     "Materiales inflamables": "incompatible",
   },
+  // ── Nuevas categorías basadas en clases ONU ──────────────────────────────────
+  OXIDANTE: {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "caution",
+    "Agentes reductores": "incompatible",
+    "Solventes orgánicos (acetona, etanol)": "incompatible",
+    "Hidrocarburos (gasolina, hexano)": "incompatible",
+    "Agua": "compatible",
+    "Aire / Oxígeno": "caution",
+    "Halógenos (cloro, bromo)": "caution",
+    "Metales alcalinos (sodio, potasio)": "incompatible",
+    "Amoníaco": "incompatible",
+    "Materiales inflamables": "incompatible",
+  },
+  TOXICO: {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "caution",
+    "Agentes reductores": "compatible",
+    "Solventes orgánicos (acetona, etanol)": "caution",
+    "Hidrocarburos (gasolina, hexano)": "compatible",
+    "Agua": "compatible",
+    "Aire / Oxígeno": "compatible",
+    "Halógenos (cloro, bromo)": "caution",
+    "Metales alcalinos (sodio, potasio)": "caution",
+    "Amoníaco": "caution",
+    "Materiales inflamables": "compatible",
+  },
+  PEROXIDO: {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "incompatible",
+    "Bases fuertes (NaOH, KOH)": "incompatible",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "incompatible",
+    "Agentes reductores": "incompatible",
+    "Solventes orgánicos (acetona, etanol)": "incompatible",
+    "Hidrocarburos (gasolina, hexano)": "incompatible",
+    "Agua": "caution",
+    "Aire / Oxígeno": "caution",
+    "Halógenos (cloro, bromo)": "incompatible",
+    "Metales alcalinos (sodio, potasio)": "incompatible",
+    "Amoníaco": "incompatible",
+    "Materiales inflamables": "incompatible",
+  },
+  GAS: {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "caution",
+    "Agentes reductores": "caution",
+    "Solventes orgánicos (acetona, etanol)": "caution",
+    "Hidrocarburos (gasolina, hexano)": "caution",
+    "Agua": "compatible",
+    "Aire / Oxígeno": "caution",
+    "Halógenos (cloro, bromo)": "caution",
+    "Metales alcalinos (sodio, potasio)": "caution",
+    "Amoníaco": "caution",
+    "Materiales inflamables": "caution",
+  },
+  INFLAMABLE: {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "incompatible",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "incompatible",
+    "Agentes reductores": "caution",
+    "Solventes orgánicos (acetona, etanol)": "compatible",
+    "Hidrocarburos (gasolina, hexano)": "compatible",
+    "Agua": "caution",
+    "Aire / Oxígeno": "incompatible",
+    "Halógenos (cloro, bromo)": "incompatible",
+    "Metales alcalinos (sodio, potasio)": "incompatible",
+    "Amoníaco": "caution",
+    "Materiales inflamables": "compatible",
+  },
   DEFAULT: {
     "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
     "Bases fuertes (NaOH, KOH)": "caution",
@@ -153,12 +281,20 @@ const COMPATIBILITY_RULES: Record<string, Record<string, CompatStatus>> = {
   },
 };
 
+// ── Matriz categoría vs categoría (basada en ONU, enriquecida) ────────────────
+// Nota: ACIDO/BASE son ambos "Corrosivos (8)" según ONU, pero químicamente
+// son incompatibles entre sí — se mantiene la evaluación individual.
 const CATEGORY_VS_CATEGORY: Record<string, Record<string, CompatStatus>> = {
-  ACIDO:     { ACIDO: "caution",      BASE: "incompatible", SOLVENTE: "caution",    COLORANTE: "caution",    AUXILIAR: "caution"    },
-  BASE:      { ACIDO: "incompatible", BASE: "caution",      SOLVENTE: "caution",    COLORANTE: "caution",    AUXILIAR: "compatible" },
-  SOLVENTE:  { ACIDO: "caution",      BASE: "caution",      SOLVENTE: "compatible", COLORANTE: "caution",    AUXILIAR: "compatible" },
-  COLORANTE: { ACIDO: "caution",      BASE: "caution",      SOLVENTE: "caution",    COLORANTE: "compatible", AUXILIAR: "compatible" },
-  AUXILIAR:  { ACIDO: "caution",      BASE: "compatible",   SOLVENTE: "compatible", COLORANTE: "compatible", AUXILIAR: "compatible" },
+  ACIDO:     { ACIDO:"caution",       BASE:"incompatible", SOLVENTE:"caution",       COLORANTE:"caution",   AUXILIAR:"caution",    OXIDANTE:"caution",    TOXICO:"caution",   PEROXIDO:"incompatible", GAS:"caution",    INFLAMABLE:"caution"    },
+  BASE:      { ACIDO:"incompatible",  BASE:"caution",      SOLVENTE:"caution",       COLORANTE:"caution",   AUXILIAR:"compatible", OXIDANTE:"caution",    TOXICO:"caution",   PEROXIDO:"incompatible", GAS:"caution",    INFLAMABLE:"caution"    },
+  SOLVENTE:  { ACIDO:"caution",       BASE:"caution",      SOLVENTE:"compatible",    COLORANTE:"caution",   AUXILIAR:"compatible", OXIDANTE:"incompatible",TOXICO:"caution",  PEROXIDO:"incompatible", GAS:"caution",    INFLAMABLE:"compatible" },
+  COLORANTE: { ACIDO:"caution",       BASE:"caution",      SOLVENTE:"caution",       COLORANTE:"compatible",AUXILIAR:"compatible", OXIDANTE:"incompatible",TOXICO:"caution",  PEROXIDO:"caution",      GAS:"caution",    INFLAMABLE:"compatible" },
+  AUXILIAR:  { ACIDO:"caution",       BASE:"compatible",   SOLVENTE:"compatible",    COLORANTE:"compatible",AUXILIAR:"compatible", OXIDANTE:"caution",    TOXICO:"compatible",PEROXIDO:"caution",      GAS:"compatible", INFLAMABLE:"compatible" },
+  OXIDANTE:  { ACIDO:"caution",       BASE:"caution",      SOLVENTE:"incompatible",  COLORANTE:"incompatible",AUXILIAR:"caution", OXIDANTE:"caution",    TOXICO:"caution",   PEROXIDO:"incompatible", GAS:"caution",    INFLAMABLE:"incompatible"},
+  TOXICO:    { ACIDO:"caution",       BASE:"caution",      SOLVENTE:"caution",       COLORANTE:"caution",   AUXILIAR:"compatible", OXIDANTE:"caution",    TOXICO:"compatible",PEROXIDO:"caution",      GAS:"caution",    INFLAMABLE:"caution"    },
+  PEROXIDO:  { ACIDO:"incompatible",  BASE:"incompatible", SOLVENTE:"incompatible",  COLORANTE:"caution",   AUXILIAR:"caution",    OXIDANTE:"incompatible",TOXICO:"caution",  PEROXIDO:"caution",      GAS:"caution",    INFLAMABLE:"incompatible"},
+  GAS:       { ACIDO:"caution",       BASE:"caution",      SOLVENTE:"caution",       COLORANTE:"caution",   AUXILIAR:"compatible", OXIDANTE:"caution",    TOXICO:"caution",   PEROXIDO:"caution",      GAS:"caution",    INFLAMABLE:"caution"    },
+  INFLAMABLE:{ ACIDO:"caution",       BASE:"caution",      SOLVENTE:"compatible",    COLORANTE:"compatible",AUXILIAR:"compatible", OXIDANTE:"incompatible",TOXICO:"caution",  PEROXIDO:"incompatible", GAS:"caution",    INFLAMABLE:"compatible" },
 };
 
 // ── Helpers de reglas ──────────────────────────────────────────────────────────
@@ -179,6 +315,12 @@ function countByStatus(list: { status: CompatStatus }[]) {
     caution:      list.filter(x => x.status === "caution").length,
     incompatible: list.filter(x => x.status === "incompatible").length,
   };
+}
+
+function unClassOf(category?: string | null) {
+  const key = category?.toUpperCase().trim() ?? "";
+  const idx = CAT_TO_UN[key] ?? -1;
+  return idx >= 0 ? UN_CLASSES[idx] : null;
 }
 
 // ── Helpers visuales ───────────────────────────────────────────────────────────
@@ -210,19 +352,147 @@ function incompatBadge(count: number) {
   );
 }
 
+// ── Panel: Matriz ONU de referencia ───────────────────────────────────────────
+function MatrizONUDialog({
+  open,
+  onClose,
+  highlightCat,
+}: {
+  open: boolean;
+  onClose: () => void;
+  highlightCat?: string | null;
+}) {
+  const highlightIdx = highlightCat ? (CAT_TO_UN[highlightCat.toUpperCase()] ?? -1) : -1;
+
+  const cellColor = (val: number, rowI: number, colI: number) => {
+    const isHighlight = highlightIdx >= 0 && (rowI === highlightIdx || colI === highlightIdx);
+    if (val === 2) return isHighlight ? "bg-red-300 font-bold text-red-900" : "bg-red-100 text-red-800";
+    if (val === 1) return isHighlight ? "bg-amber-200 font-bold text-amber-900" : "bg-amber-50 text-amber-800";
+    return isHighlight ? "bg-emerald-200 font-bold text-emerald-900" : "bg-emerald-50 text-emerald-700";
+  };
+
+  const cellLabel = (val: number) => {
+    if (val === 2) return <AlertTriangle className="w-3 h-3 mx-auto" />;
+    if (val === 1) return <AlertCircle className="w-3 h-3 mx-auto" />;
+    return <CheckCircle2 className="w-3 h-3 mx-auto" />;
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-5xl w-full overflow-y-auto max-h-[90vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <TableProperties className="w-5 h-5 text-slate-500" />
+            Matriz de Compatibilidad ONU / SGA
+          </DialogTitle>
+          <p className="text-xs text-slate-500 mt-1">
+            Fuente: Anexo 1 – Guía de almacenamiento químico mixto · Sistema Globalmente Armonizado (SGA) de Naciones Unidas.
+            Esta matriz indica compatibilidad entre <strong>clases de riesgo UN</strong>; para compatibilidad individual siempre consultá la MSDS (sección 10 y 14).
+          </p>
+          {highlightCat && highlightIdx >= 0 && (
+            <div className="flex items-center gap-2 mt-2 text-xs">
+              <span className="text-slate-500">Clase resaltada para</span>
+              <Badge variant="outline" className="text-xs">{highlightCat}</Badge>
+              <span className="text-slate-400">→</span>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${UN_CLASSES[highlightIdx].color}`}>
+                Clase {UN_CLASSES[highlightIdx].id} · {UN_CLASSES[highlightIdx].label}
+              </span>
+            </div>
+          )}
+        </DialogHeader>
+
+        {/* Leyenda */}
+        <div className="flex flex-wrap gap-4 text-xs mt-1 mb-3">
+          <span className="flex items-center gap-1.5 text-emerald-700">
+            <CheckCircle2 className="w-3.5 h-3.5" /> Compatible (pueden almacenarse juntos — verificar MSDS)
+          </span>
+          <span className="flex items-center gap-1.5 text-amber-600">
+            <AlertCircle className="w-3.5 h-3.5" /> Precaución (posibles restricciones — revisar incompatibilidades individuales)
+          </span>
+          <span className="flex items-center gap-1.5 text-red-700">
+            <AlertTriangle className="w-3.5 h-3.5" /> Incompatible (se requiere almacenamiento separado)
+          </span>
+        </div>
+
+        {/* Tabla */}
+        <div className="overflow-x-auto">
+          <table className="text-xs border-collapse w-full min-w-[700px]">
+            <thead>
+              <tr>
+                <th className="p-1 border border-slate-200 bg-slate-100 text-left text-[11px] min-w-[130px]">Clase</th>
+                {UN_CLASSES.map((cls, ci) => (
+                  <th
+                    key={cls.id}
+                    className={`p-1 border border-slate-200 text-center align-bottom min-w-[52px] ${
+                      ci === highlightIdx ? "bg-slate-200 font-bold" : "bg-slate-50"
+                    }`}
+                  >
+                    <div className="writing-vertical-lr" style={{ writingMode: "vertical-lr", transform: "rotate(180deg)", whiteSpace: "nowrap", fontSize: "10px" }}>
+                      {cls.id} · {cls.label}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {UN_CLASSES.map((rowCls, ri) => (
+                <tr key={rowCls.id} className={ri === highlightIdx ? "outline outline-2 outline-slate-400" : ""}>
+                  <td className={`p-1.5 border border-slate-200 font-medium text-[11px] ${
+                    ri === highlightIdx ? "bg-slate-200 font-bold" : "bg-slate-50"
+                  }`}>
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] mr-1 ${rowCls.color}`}>
+                      {rowCls.id}
+                    </span>
+                    {rowCls.label}
+                  </td>
+                  {UN_CLASSES.map((_, ci) => {
+                    const val = ri <= ci ? UN_MATRIX[ri][ci] : UN_MATRIX[ci][ri];
+                    return (
+                      <td
+                        key={ci}
+                        className={`border border-slate-200 text-center p-1 ${cellColor(val, ri, ci)}`}
+                        title={
+                          val === 2 ? "Incompatible — almacenamiento separado obligatorio"
+                          : val === 1 ? "Precaución — revisar incompatibilidades individuales en MSDS"
+                          : "Compatible — pueden almacenarse juntos (verificar MSDS individualmente)"
+                        }
+                      >
+                        {cellLabel(val)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Notas */}
+        <div className="mt-3 text-xs text-slate-500 space-y-1 border-t border-slate-100 pt-3">
+          <p><strong>Nota 1:</strong> Se permite el almacenamiento siempre que el riesgo evaluado no sea significativo.</p>
+          <p><strong>Nota 4:</strong> Líquidos corrosivos en envases quebradizos no deben almacenarse junto con líquidos inflamables, excepto que estén separados por gabinetes de seguridad.</p>
+          <p><strong>Nota 5:</strong> Sustancias que no reaccionen entre sí en caso de incidente pueden almacenarse juntas mediante separaciones físicas o distancia adecuada.</p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Panel: compatibilidad general ──────────────────────────────────────────────
 function GeneralPanel({
-  product, open, onClose, aiResult,
+  product, open, onClose, aiResult, effectiveCat,
 }: {
   product: Product | null;
   open: boolean;
   onClose: () => void;
   aiResult?: AIAnalysis;
+  effectiveCat?: string | null;
 }) {
   const [search, setSearch] = useState("");
   if (!product) return null;
 
   const isAI = !!aiResult?.incompatibilidades?.length;
+  const unClass = unClassOf(effectiveCat);
 
   const items: { name: string; status: CompatStatus; motivo?: string }[] = isAI
     ? GENERAL_SUBSTANCES
@@ -241,12 +511,17 @@ function GeneralPanel({
     <Sheet open={open} onOpenChange={v => !v && onClose()}>
       <SheetContent className="w-[440px] sm:max-w-[440px] overflow-y-auto">
         <SheetHeader className="mb-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <SheetTitle className="text-base leading-tight">Compatibilidad General</SheetTitle>
             {isAI && (
               <Badge className="text-xs bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-50 gap-1">
                 <BrainCircuit className="w-3 h-3" /> IA
               </Badge>
+            )}
+            {unClass && (
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${unClass.color}`}>
+                ONU Clase {unClass.id}
+              </span>
             )}
           </div>
           <p className="text-sm text-slate-500">{product.code} · {product.name}</p>
@@ -367,15 +642,14 @@ export default function CompatibilityPage() {
   const [search, setSearch] = useState("");
   const [generalProduct, setGeneralProduct] = useState<Product | null>(null);
   const [maestroProduct, setMaestroProduct] = useState<Product | null>(null);
+  const [showMatriz, setShowMatriz] = useState(false);
+  const [highlightCat, setHighlightCat] = useState<string | null>(null);
 
-  // Overrides manuales de categoría (localStorage)
   const [overrides, setOverrides] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem("compat-overrides") ?? "{}"); } catch { return {}; }
   });
-  // Edición inline
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Resultados de IA por producto
   const [aiResults, setAiResults] = useState<Record<string, AIAnalysis>>({});
   const [aiLoading, setAiLoading] = useState<Record<string, boolean>>({});
 
@@ -404,14 +678,12 @@ export default function CompatibilityPage() {
     );
   }, [activeProducts, search]);
 
-  // ── Categoría efectiva: AI > override manual > original ─────────────────────
   const effectiveCatOf = useCallback((p: Product): string | null | undefined => {
     if (aiResults[p.id]) return aiResults[p.id].claseDetectada;
     if (overrides[p.id])  return overrides[p.id];
     return p.category;
   }, [aiResults, overrides]);
 
-  // ── Conteos de incompatibles (pre-calculado) ─────────────────────────────────
   const incompatCounts = useMemo(() => {
     const result: Record<string, { general: number; maestro: number }> = {};
     for (const p of activeProducts) {
@@ -430,7 +702,6 @@ export default function CompatibilityPage() {
     return result;
   }, [activeProducts, aiResults, overrides, effectiveCatOf]);
 
-  // ── Override manual ──────────────────────────────────────────────────────────
   const saveOverride = (id: string, value: string) => {
     const next = { ...overrides };
     if (value === "__clear__" || !value) delete next[id];
@@ -440,7 +711,6 @@ export default function CompatibilityPage() {
     setEditingId(null);
   };
 
-  // ── Análisis IA ──────────────────────────────────────────────────────────────
   const analyzeWithAI = async (product: Product) => {
     setAiLoading(prev => ({ ...prev, [product.id]: true }));
     try {
@@ -462,10 +732,9 @@ export default function CompatibilityPage() {
     }
   };
 
-  // ── Exportar CSV ─────────────────────────────────────────────────────────────
   const exportCsv = () => {
     const rows: string[][] = [
-      ["Código", "Producto", "Categoría Original", "Clase Efectiva", "Fuente",
+      ["Código", "Producto", "Categoría Original", "Clase Efectiva", "Clase ONU", "Fuente",
        "Incompat. General", "Sustancias Incompatibles", "Incompat. Maestro"],
     ];
 
@@ -473,6 +742,7 @@ export default function CompatibilityPage() {
       const effCat = effectiveCatOf(p);
       const ai = aiResults[p.id];
       const source = ai ? "IA" : overrides[p.id] ? "Manual" : "Reglas";
+      const unCls = unClassOf(effCat);
 
       let generalN = 0;
       let incompatSubs: string[] = [];
@@ -489,14 +759,9 @@ export default function CompatibilityPage() {
       ).length;
 
       rows.push([
-        p.code,
-        p.name,
-        p.category ?? "",
-        effCat ?? "",
-        source,
-        String(generalN),
-        incompatSubs.join("; "),
-        String(maestroN),
+        p.code, p.name, p.category ?? "", effCat ?? "",
+        unCls ? `Clase ${unCls.id} - ${unCls.label}` : "",
+        source, String(generalN), incompatSubs.join("; "), String(maestroN),
       ]);
     }
 
@@ -512,7 +777,11 @@ export default function CompatibilityPage() {
     URL.revokeObjectURL(url);
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
+  const openGeneral = (product: Product) => {
+    setGeneralProduct(product);
+    setHighlightCat(effectiveCatOf(product) ?? null);
+  };
+
   return (
     <AppLayout>
       <div className="p-6 max-w-full">
@@ -535,6 +804,23 @@ export default function CompatibilityPage() {
                 className="pl-8 w-60 h-9 text-sm"
               />
             </div>
+
+            {/* Botón Matriz ONU */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowMatriz(true)}
+                  className="h-9 gap-1.5 border-slate-300 hover:border-slate-400"
+                >
+                  <TableProperties className="w-4 h-4" />
+                  Matriz ONU
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Ver matriz de compatibilidad ONU/SGA como referencia</TooltipContent>
+            </Tooltip>
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -548,7 +834,7 @@ export default function CompatibilityPage() {
                   Exportar CSV
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Exporta todos los productos con sus incompatibilidades</TooltipContent>
+              <TooltipContent>Exporta todos los productos con sus incompatibilidades y clase ONU</TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -561,6 +847,13 @@ export default function CompatibilityPage() {
           <span className="text-slate-300">·</span>
           <span className="flex items-center gap-1"><Pencil className="w-3 h-3" /> Editar clase química</span>
           <span className="flex items-center gap-1"><Sparkles className="w-3 h-3 text-violet-500" /> Analizar con IA</span>
+          <span className="text-slate-300">·</span>
+          <button
+            className="text-slate-400 hover:text-slate-600 underline underline-offset-2 transition-colors"
+            onClick={() => setShowMatriz(true)}
+          >
+            Ver Matriz ONU
+          </button>
         </div>
 
         {/* Tabla */}
@@ -572,12 +865,12 @@ export default function CompatibilityPage() {
         ) : (
           <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[820px]">
+              <table className="w-full text-sm min-w-[880px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200">
                     <th className="text-left px-4 py-3 font-semibold text-slate-600 w-28">Código</th>
                     <th className="text-left px-4 py-3 font-semibold text-slate-600">Producto</th>
-                    <th className="text-left px-4 py-3 font-semibold text-slate-600 w-56">Clase Química</th>
+                    <th className="text-left px-4 py-3 font-semibold text-slate-600 w-60">Clase Química</th>
                     <th className="text-left px-4 py-3 font-semibold text-slate-600 w-10 text-center">IA</th>
                     <th className="text-left px-4 py-3 font-semibold text-slate-600 w-44">Con Maestro</th>
                     <th className="text-left px-4 py-3 font-semibold text-slate-600 w-44">General</th>
@@ -599,6 +892,7 @@ export default function CompatibilityPage() {
                     const override = overrides[product.id];
                     const isAI    = !!ai;
                     const isEdit  = editingId === product.id;
+                    const unCls   = unClassOf(effCat);
 
                     return (
                       <tr key={product.id} className="hover:bg-slate-50/60 transition-colors group">
@@ -642,7 +936,7 @@ export default function CompatibilityPage() {
                               </Button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               {effCat ? (
                                 <Badge
                                   variant="outline"
@@ -652,6 +946,20 @@ export default function CompatibilityPage() {
                                 </Badge>
                               ) : (
                                 <span className="text-xs text-slate-400">—</span>
+                              )}
+                              {/* Clase ONU badge */}
+                              {unCls && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-medium cursor-pointer hover:opacity-80 ${unCls.color}`}
+                                      onClick={() => { setHighlightCat(effCat ?? null); setShowMatriz(true); }}
+                                    >
+                                      {unCls.id}
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>ONU Clase {unCls.id} · {unCls.label} — clic para ver en la matriz</TooltipContent>
+                                </Tooltip>
                               )}
                               {isAI && (
                                 <Badge className="text-xs bg-violet-50 text-violet-600 border-violet-200 hover:bg-violet-50 px-1 py-0">
@@ -708,7 +1016,7 @@ export default function CompatibilityPage() {
                         {/* General */}
                         <td className="px-4 py-3">
                           <Button variant="ghost" size="sm" className="h-7 px-2 hover:bg-slate-100"
-                            onClick={() => setGeneralProduct(product)}>
+                            onClick={() => openGeneral(product)}>
                             {incompatBadge(counts.general)}
                           </Button>
                         </td>
@@ -741,22 +1049,28 @@ export default function CompatibilityPage() {
             )}
           </div>
         )}
-      </div>
 
-      {/* Panels */}
-      <GeneralPanel
-        product={generalProduct}
-        open={!!generalProduct}
-        onClose={() => setGeneralProduct(null)}
-        aiResult={generalProduct ? aiResults[generalProduct.id] : undefined}
-      />
-      <MaestroPanel
-        product={maestroProduct}
-        allProducts={activeProducts}
-        effectiveCatOf={effectiveCatOf}
-        open={!!maestroProduct}
-        onClose={() => setMaestroProduct(null)}
-      />
+        {/* Panels */}
+        <GeneralPanel
+          product={generalProduct}
+          open={!!generalProduct}
+          onClose={() => setGeneralProduct(null)}
+          aiResult={generalProduct ? aiResults[generalProduct.id] : undefined}
+          effectiveCat={generalProduct ? effectiveCatOf(generalProduct) : null}
+        />
+        <MaestroPanel
+          product={maestroProduct}
+          allProducts={activeProducts}
+          effectiveCatOf={effectiveCatOf}
+          open={!!maestroProduct}
+          onClose={() => setMaestroProduct(null)}
+        />
+        <MatrizONUDialog
+          open={showMatriz}
+          onClose={() => setShowMatriz(false)}
+          highlightCat={highlightCat}
+        />
+      </div>
     </AppLayout>
   );
 }

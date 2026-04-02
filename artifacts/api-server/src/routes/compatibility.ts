@@ -81,27 +81,49 @@ Producto: "${name.trim()}"${code ? ` (código: ${code})` : ""}${category ? ` (ca
 
 Devuelve ÚNICAMENTE un JSON válido con esta estructura exacta:
 {
-  "claseDetectada": "ACIDO" | "BASE" | "SOLVENTE" | "COLORANTE" | "AUXILIAR" | "OTRO",
+  "claseDetectada": "ACIDO" | "BASE" | "SOLVENTE" | "COLORANTE" | "AUXILIAR" | "OXIDANTE" | "TOXICO" | "PEROXIDO" | "GAS" | "INFLAMABLE" | "OTRO",
+  "claseONU": "<número de clase ONU, ej: '3', '8', '5.1', '6.1', '4.1', etc.>",
   "nombreQuimico": "<nombre IUPAC o nombre común del compuesto, si lo podés identificar>",
   "incompatibilidades": [
     { "sustancia": "<nombre exacto de la lista>", "nivel": "incompatible" | "caution" | "compatible", "motivo": "<razón breve en español, máx 10 palabras>" }
   ],
-  "razonamiento": "<explicación de la clasificación y advertencias clave, en 1-2 oraciones en español>"
+  "razonamiento": "<explicación de la clasificación, clase ONU asignada y advertencias clave, en 2-3 oraciones en español>"
 }
 
 Evaluá CADA UNA de las siguientes ${SUBSTANCES.length} sustancias y devolvé todas en el array:
 ${substList}
 
-Reglas de incompatibilidad críticas:
+--- CONTEXTO: CLASES ONU / SGA ---
+Asigná la clase ONU según las siguientes equivalencias:
+- ACIDO → Clase 8 (Corrosivos)
+- BASE → Clase 8 (Corrosivos)
+- SOLVENTE → Clase 3 (Líquidos Inflamables)
+- OXIDANTE → Clase 5.1 (Comburentes/Oxidantes)
+- PEROXIDO → Clase 5.2 (Peróxidos Orgánicos)
+- TOXICO → Clase 6.1 (Tóxicos)
+- GAS → Clase 2 (Gases)
+- INFLAMABLE → Clase 4.1 (Sólidos Inflamables)
+- COLORANTE → Clase 6.1 (Tóxicos) o Clase 9 (Varios), según toxicidad
+- AUXILIAR / OTRO → Clase 9 (Varios Peligrosos)
+
+Matriz ONU de incompatibilidad entre clases (fuente: Anexo SGA Naciones Unidas):
+- Clase 3 (Líq. Inflamables) es INCOMPATIBLE con: 5.1 (Oxidantes), 4.1 (Sólidos Inflamables)
+- Clase 8 (Corrosivos) requiere PRECAUCIÓN con: 3 (Líq. Inf.), 4.1 (Sól. Inf.), 6.1 (Tóxicos), 9 (Varios)
+- Clase 5.1 (Oxidantes) es INCOMPATIBLE con: 3 (Líq. Inf.), 4.1 (Sól. Inf.), 4.2, 4.3, 5.2 (Peróxidos), 2 (Gases inflamables)
+- Clase 5.2 (Peróxidos) es INCOMPATIBLE con: 1, 4.1, 4.2, 5.1, 3 (Líq. Inf.)
+- Clase 4.1 (Sól. Inflamables) es INCOMPATIBLE con: 3 (Líq. Inf.), 5.1, 5.2
+- Clase 9 (Varios) requiere PRECAUCIÓN con: 8 (Corrosivos), 5.1 (Oxidantes)
+
+Reglas de incompatibilidad críticas individuales (prevalecen sobre la clase ONU):
 - Ácidos fuertes + Bases fuertes = incompatible (reacción exotérmica violenta)
-- NaOH / Soda cáustica + H₂O₂ / Peróxido de hidrógeno = incompatible (descomposición violenta con O₂)
-- Solventes orgánicos + Agentes oxidantes = incompatible (riesgo de incendio o explosión)
-- Solventes inflamables + Aire / Oxígeno = incompatible (vapores inflamables)
-- Ácidos + Metales alcalinos = incompatible (liberación de H₂ inflamable)
-- Ácidos + Amoníaco = incompatible (gas tóxico)
+- NaOH/Soda cáustica + H₂O₂/Peróxido de hidrógeno = incompatible (descomposición violenta)
+- Solventes orgánicos + Agentes oxidantes = incompatible (incendio/explosión)
+- Solventes inflamables + Aire/Oxígeno = incompatible (vapores inflamables)
+- Ácidos + Metales alcalinos = incompatible (H₂ inflamable)
+- Ácidos + Amoníaco = incompatible (gas tóxico NH₄⁺)
 - Halógenos + Materiales inflamables = incompatible (oxidación violenta)
-- Colorantes reactivos / dispersos + Agentes oxidantes fuertes = incompatible
-- Colorantes ácidos + Bases fuertes / Ácidos fuertes = caution (hidrólisis)
+- Colorantes reactivos/dispersos + Agentes oxidantes fuertes = incompatible
+- Colorantes ácidos + Bases fuertes/Ácidos fuertes = caution (hidrólisis)
 - Si la reacción exacta es desconocida o depende de concentración: usar "caution"
 - Si es claramente seguro almacenar juntos: "compatible"`;
 
