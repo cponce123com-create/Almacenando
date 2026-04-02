@@ -5,11 +5,23 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-function getClient(): OpenAI {
-  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
-  const apiKey  = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-  if (!baseURL || !apiKey) throw new Error("IA no configurada (AI_INTEGRATIONS_OPENAI_*)");
-  return new OpenAI({ baseURL, apiKey });
+function getClient(): { client: OpenAI; model: string } {
+  // 1. Replit AI Integrations proxy (preferred — set up via Replit integrations panel)
+  const proxyBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  const proxyKey  = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  if (proxyBase && proxyKey) {
+    return { client: new OpenAI({ baseURL: proxyBase, apiKey: proxyKey }), model: "gpt-5-mini" };
+  }
+
+  // 2. Standard OpenAI API key configured manually in secrets as OPENAI_API_KEY
+  const directKey = process.env.OPENAI_API_KEY;
+  if (directKey) {
+    return { client: new OpenAI({ apiKey: directKey }), model: "gpt-4o-mini" };
+  }
+
+  throw new Error(
+    "IA no configurada. Agregá OPENAI_API_KEY en los secretos del proyecto."
+  );
 }
 
 const SUBSTANCES = [
@@ -36,7 +48,7 @@ router.post("/ai-analyze", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "El campo 'name' es requerido" });
     }
 
-    const client = getClient();
+    const { client, model } = getClient();
 
     const substList = SUBSTANCES.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
@@ -72,7 +84,7 @@ Reglas de incompatibilidad críticas:
 - Si es claramente seguro almacenar juntos: "compatible"`;
 
     const result = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model,
       messages: [{ role: "user", content }],
       temperature: 0.1,
       response_format: { type: "json_object" },
