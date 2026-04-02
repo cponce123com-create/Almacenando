@@ -102,7 +102,7 @@ async function extractFieldsWithAI(text: string): Promise<Omit<MsdsExtractedData
     : text;
 
   const response = await client.chat.completions.create({
-    model: "gpt-5-mini",
+    model: "gpt-4o-mini",
     messages: [
       { role: "system", content: EXTRACTION_PROMPT },
       { role: "user", content: `TEXTO DE LA MSDS:\n\n${truncated}` },

@@ -10,7 +10,7 @@ function getClient(): { client: OpenAI; model: string } {
   const proxyBase = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
   const proxyKey  = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
   if (proxyBase && proxyKey) {
-    return { client: new OpenAI({ baseURL: proxyBase, apiKey: proxyKey }), model: "gpt-5-mini" };
+    return { client: new OpenAI({ baseURL: proxyBase, apiKey: proxyKey }), model: "gpt-4o-mini" };
   }
 
   // 2. Standard OpenAI API key configured manually in secrets as OPENAI_API_KEY
