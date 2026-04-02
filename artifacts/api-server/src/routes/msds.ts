@@ -61,22 +61,24 @@ router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
 
 router.get("/last-movements", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
-  const condition = warehouse && warehouse !== "all"
-    ? eq(balanceRecordsTable.warehouse, warehouse)
-    : undefined;
+  const useWarehouse = warehouse && warehouse !== "all";
 
-  const rows = await db
-    .select({
-      code: balanceRecordsTable.code,
-      lastDate: max(balanceRecordsTable.balanceDate),
-    })
-    .from(balanceRecordsTable)
-    .where(condition)
-    .groupBy(balanceRecordsTable.code);
+  // DISTINCT ON gets the most recent balance record's ultimoConsumo per code
+  // (mirrors how Maestro de Productos computes "sin movimiento")
+  const rows = await db.execute(
+    useWarehouse
+      ? sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
+             FROM balance_records
+             WHERE warehouse = ${warehouse}
+             ORDER BY code, balance_date DESC`
+      : sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
+             FROM balance_records
+             ORDER BY code, balance_date DESC`
+  ) as { rows: Array<{ code: string; ultimoConsumo: string | null }> };
 
   const result: Record<string, string> = {};
-  for (const row of rows) {
-    if (row.lastDate) result[row.code] = row.lastDate;
+  for (const row of rows.rows) {
+    if (row.ultimoConsumo) result[row.code] = row.ultimoConsumo;
   }
   res.json(result);
 }));
