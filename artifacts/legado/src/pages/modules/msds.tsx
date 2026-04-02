@@ -360,6 +360,20 @@ export default function MsdsPage() {
     },
   });
 
+  const confirmAllMutation = useMutation({
+    mutationFn: (payload: { warehouse?: string }) =>
+      apiJson("/api/msds/confirm-all", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/products/msds-stats", warehouse] });
+    },
+  });
+
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     return products.filter((p) => {
@@ -683,9 +697,25 @@ export default function MsdsPage() {
                 );
               })}
             </div>
-            <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
               {isAdminOrSupervisor && (
                 <>
+                  {(matchStats?.PROBABLE ?? 0) > 0 && (
+                    <Button
+                      onClick={() => {
+                        if (!window.confirm(`¿Confirmar los ${matchStats!.PROBABLE} productos PROBABLE como Exacto?\nEsto aplica solo a los que ya tienen un archivo MSDS vinculado.`)) return;
+                        confirmAllMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined });
+                      }}
+                      disabled={confirmAllMutation.isPending || rescanMutation.isPending}
+                      variant="outline"
+                      style={{ gap: 6, fontSize: 12, borderColor: "#16a34a", color: "#16a34a" }}
+                    >
+                      {confirmAllMutation.isPending
+                        ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Confirmando...</>
+                        : <><CheckCircle2 style={{ width: 13, height: 13 }} />Confirmar probables ({matchStats!.PROBABLE})</>
+                      }
+                    </Button>
+                  )}
                   <Button
                     onClick={() => rescanMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined })}
                     disabled={rescanMutation.isPending}
@@ -719,6 +749,18 @@ export default function MsdsPage() {
         {rescanMutation.isError && (
           <div style={{ background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#dc2626" }}>
             Error: {(rescanMutation.error as Error).message}
+          </div>
+        )}
+
+        {confirmAllMutation.isSuccess && (
+          <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#16a34a" }}>
+            ✓ {(confirmAllMutation.data as any).message}
+          </div>
+        )}
+
+        {confirmAllMutation.isError && (
+          <div style={{ background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#dc2626" }}>
+            Error: {(confirmAllMutation.error as Error).message}
           </div>
         )}
 

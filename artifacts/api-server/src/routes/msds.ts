@@ -547,6 +547,51 @@ router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor
   res.json(updated);
 }));
 
+// ── POST /api/msds/confirm-all ───────────────────────────────────────────────
+// Bulk-promotes PROBABLE products (that already have a linked MSDS file) to EXACT.
+// Designed to recover exact matches that were accidentally downgraded by a rescan.
+
+router.post("/confirm-all", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const warehouse = req.body?.warehouse as string | undefined;
+  const condition = warehouse && warehouse !== "all"
+    ? and(
+        eq(productsTable.warehouse, warehouse),
+        eq(productsTable.msdsStatus, "PROBABLE" as MsdsMatchStatus),
+      )
+    : eq(productsTable.msdsStatus, "PROBABLE" as MsdsMatchStatus);
+
+  // Only products that already have a valid MSDS file linked
+  const products = await db.select().from(productsTable)
+    .where(and(condition, sql`msds_file_id IS NOT NULL`));
+
+  if (products.length === 0) {
+    res.json({ confirmed: 0, message: "No hay productos PROBABLE con archivo vinculado" });
+    return;
+  }
+
+  const now = new Date();
+  let confirmed = 0;
+  for (const p of products) {
+    const msdsUrl = p.msdsUrl ?? (p.msdsFileId ? `https://drive.google.com/file/d/${p.msdsFileId}/view` : null);
+    if (!msdsUrl) continue;
+    await db.update(productsTable)
+      .set({
+        msds: true,
+        msdsUrl,
+        msdsStatus: "EXACT" as MsdsMatchStatus,
+        msdsMatchedBy: "manual",
+        msdsMatchReason: p.msdsMatchReason
+          ? `${p.msdsMatchReason} (confirmado masivamente)`
+          : "Confirmado masivamente",
+        updatedAt: now,
+      })
+      .where(eq(productsTable.id, p.id));
+    confirmed++;
+  }
+
+  res.json({ confirmed, message: `${confirmed} producto(s) confirmados como Exacto` });
+}));
+
 // ── POST /api/msds/:productId/extract ────────────────────────────────────────
 // Downloads the linked MSDS PDF from Drive, extracts text, and uses AI to
 // parse the 7 key safety fields. Saves the result to the product record.
