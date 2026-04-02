@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,129 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, FlaskConical, Lock, Mail } from "lucide-react";
 
+// ── Neural-network canvas background ─────────────────────────────────────────
+interface Node {
+  x: number; y: number;
+  vx: number; vy: number;
+  r: number;
+  pulse: number; pulseSpeed: number;
+}
+
+function NeuralCanvas() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    let animId: number;
+
+    const COUNT = 38;
+    const MAX_DIST = 160;
+    const nodes: Node[] = [];
+
+    const resize = () => {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    for (let i = 0; i < COUNT; i++) {
+      nodes.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: (Math.random() - 0.5) * 0.35,
+        r: Math.random() * 2 + 1.5,
+        pulse: Math.random() * Math.PI * 2,
+        pulseSpeed: 0.012 + Math.random() * 0.018,
+      });
+    }
+
+    const draw = () => {
+      const W = canvas.width;
+      const H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // Update positions
+      for (const n of nodes) {
+        n.x += n.vx;
+        n.y += n.vy;
+        n.pulse += n.pulseSpeed;
+        if (n.x < 0 || n.x > W) n.vx *= -1;
+        if (n.y < 0 || n.y > H) n.vy *= -1;
+      }
+
+      // Draw edges
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i], b = nodes[j];
+          const dx = a.x - b.x, dy = a.y - b.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist > MAX_DIST) continue;
+          const fade = 1 - dist / MAX_DIST;
+          const alpha = fade * 0.22;
+          const grad = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+          grad.addColorStop(0, `rgba(13,212,196,${alpha})`);
+          grad.addColorStop(1, `rgba(8,145,178,${alpha})`);
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = fade * 1.1;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+
+      // Draw nodes
+      for (const n of nodes) {
+        const glow = (Math.sin(n.pulse) + 1) / 2; // 0..1
+        const baseAlpha = 0.45 + glow * 0.45;
+        const radius = n.r + glow * 1.2;
+
+        // Outer glow
+        const glowGrad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, radius * 3.5);
+        glowGrad.addColorStop(0, `rgba(13,212,196,${baseAlpha * 0.25})`);
+        glowGrad.addColorStop(1, "rgba(13,212,196,0)");
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, radius * 3.5, 0, Math.PI * 2);
+        ctx.fillStyle = glowGrad;
+        ctx.fill();
+
+        // Core dot
+        const dotGrad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, radius);
+        dotGrad.addColorStop(0, `rgba(180,255,248,${baseAlpha})`);
+        dotGrad.addColorStop(1, `rgba(13,148,136,${baseAlpha * 0.6})`);
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = dotGrad;
+        ctx.fill();
+      }
+
+      animId = requestAnimationFrame(draw);
+    };
+
+    draw();
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: "absolute", inset: 0,
+        width: "100%", height: "100%",
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
+
+// ── Login page ────────────────────────────────────────────────────────────────
 export default function Login() {
   const [_, setLocation] = useLocation();
   const { login } = useAuth();
@@ -18,7 +141,6 @@ export default function Login() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email || !password) return;
-
     setIsPending(true);
     try {
       await login(email, password);
@@ -34,89 +156,149 @@ export default function Login() {
     }
   }
 
-  const demoCredentials = [
-    { label: "Administrador", email: "admin@almacen.com", color: "#0d9488" },
-    { label: "Supervisor", email: "supervisor@almacen.com", color: "#0891b2" },
-    { label: "Operario", email: "operario@almacen.com", color: "#0369a1" },
-  ];
-
   return (
     <div
-      className="min-h-screen flex"
       style={{
-        background: "linear-gradient(135deg, #071525 0%, #0c2340 40%, #0c3a38 100%)",
+        minHeight: "100vh",
+        display: "flex",
+        position: "relative",
+        overflow: "hidden",
+        background: "linear-gradient(135deg, #050f1a 0%, #091e35 45%, #091f2e 70%, #071c1a 100%)",
       }}
     >
-      {/* Left panel — branding */}
-      <div className="hidden lg:flex flex-col justify-between w-96 p-10" style={{ borderRight: "1px solid rgba(255,255,255,0.07)" }}>
+      {/* Animated background */}
+      <NeuralCanvas />
+
+      {/* Subtle radial accent */}
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        background: "radial-gradient(ellipse 70% 60% at 20% 50%, rgba(13,148,136,0.08) 0%, transparent 70%)",
+      }} />
+
+      {/* Left branding panel — hidden on mobile */}
+      <div
+        className="hidden lg:flex"
+        style={{
+          width: 380, flexShrink: 0,
+          flexDirection: "column", justifyContent: "space-between",
+          padding: "48px 44px",
+          position: "relative",
+          borderRight: "1px solid rgba(13,212,196,0.1)",
+          backdropFilter: "blur(2px)",
+        }}
+      >
+        {/* Logo */}
         <div>
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-xl"
-            style={{ background: "linear-gradient(135deg, #0d9488 0%, #0891b2 100%)" }}
-          >
-            <FlaskConical className="w-8 h-8 text-white" />
+          <div style={{
+            width: 56, height: 56, borderRadius: 16,
+            background: "linear-gradient(135deg, #0d9488 0%, #0891b2 100%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 0 32px rgba(13,212,196,0.3)",
+            marginBottom: 24,
+          }}>
+            <FlaskConical style={{ width: 28, height: 28, color: "#fff" }} />
           </div>
-          <h2 className="text-3xl font-bold text-white mb-3 leading-tight font-serif">
+          <h2 style={{
+            fontSize: 34, fontWeight: 800, color: "#f0fdfa",
+            lineHeight: 1.15, marginBottom: 14,
+            letterSpacing: "-0.5px",
+          }}>
             Almacén<br />Químico
           </h2>
-          <p className="text-sm leading-relaxed" style={{ color: "rgba(148,215,208,0.7)" }}>
+          <p style={{ fontSize: 13.5, color: "rgba(148,215,208,0.65)", lineHeight: 1.65, maxWidth: 270 }}>
             Sistema integral de gestión para el control, trazabilidad e inventario de productos químicos industriales.
           </p>
+
+          {/* Divider */}
+          <div style={{
+            width: 40, height: 2, borderRadius: 2,
+            background: "linear-gradient(90deg, #0d9488, transparent)",
+            margin: "28px 0",
+          }} />
+
+          {/* Features */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {[
+              { label: "Control de inventario multi-almacén", icon: "🏭" },
+              { label: "Trazabilidad de productos químicos", icon: "🔬" },
+              { label: "Gestión de EPP y seguridad", icon: "🦺" },
+              { label: "Reportes y disposición final", icon: "📊" },
+            ].map((f) => (
+              <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <div style={{
+                  width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+                  background: "rgba(13,148,136,0.12)",
+                  border: "1px solid rgba(13,212,196,0.15)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 16,
+                }}>
+                  {f.icon}
+                </div>
+                <span style={{ fontSize: 13, color: "rgba(203,230,228,0.78)", lineHeight: 1.4 }}>
+                  {f.label}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Feature list */}
-        <div className="space-y-4">
-          {[
-            { label: "Control de inventario multi-almacén", icon: "🏭" },
-            { label: "Trazabilidad de productos químicos", icon: "🔬" },
-            { label: "Gestión de EPP y seguridad", icon: "🦺" },
-            { label: "Reportes y disposición final", icon: "📊" },
-          ].map((f) => (
-            <div key={f.label} className="flex items-center gap-3">
-              <span className="text-lg">{f.icon}</span>
-              <span className="text-sm" style={{ color: "rgba(203,230,228,0.75)" }}>{f.label}</span>
-            </div>
-          ))}
-        </div>
-
-        <p className="text-xs" style={{ color: "rgba(148,215,208,0.4)" }}>
+        <p style={{ fontSize: 11, color: "rgba(148,215,208,0.3)" }}>
           © {new Date().getFullYear()} Sistema de Gestión de Almacén Químico
         </p>
       </div>
 
-      {/* Right panel — login form */}
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm">
+      {/* Right — login form */}
+      <div style={{
+        flex: 1,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "24px",
+        position: "relative",
+      }}>
+        <div style={{ width: "100%", maxWidth: 400 }}>
+
           {/* Mobile logo */}
-          <div className="lg:hidden flex flex-col items-center mb-8">
-            <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 shadow-xl"
-              style={{ background: "linear-gradient(135deg, #0d9488 0%, #0891b2 100%)" }}
-            >
-              <FlaskConical className="w-8 h-8 text-white" />
+          <div className="lg:hidden flex flex-col items-center" style={{ marginBottom: 32 }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 14,
+              background: "linear-gradient(135deg, #0d9488, #0891b2)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 0 28px rgba(13,212,196,0.3)", marginBottom: 12,
+            }}>
+              <FlaskConical style={{ width: 26, height: 26, color: "#fff" }} />
             </div>
-            <h1 className="text-2xl font-bold text-white font-serif">Almacén Químico</h1>
-            <p className="text-sm mt-1" style={{ color: "rgba(148,215,208,0.7)" }}>Sistema de Gestión</p>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: "#f0fdfa" }}>Almacén Químico</h1>
+            <p style={{ fontSize: 13, color: "rgba(148,215,208,0.6)", marginTop: 4 }}>Sistema de Gestión</p>
           </div>
 
-          {/* Card */}
-          <div
-            className="rounded-2xl p-8 shadow-2xl"
-            style={{
-              backgroundColor: "rgba(255,255,255,0.97)",
-              border: "1px solid rgba(255,255,255,0.15)",
-            }}
-          >
-            <div className="mb-7">
-              <h3 className="text-xl font-bold text-slate-900 font-serif">Iniciar Sesión</h3>
-              <p className="text-sm text-slate-500 mt-1">Ingresa tus credenciales para continuar</p>
+          {/* Glass card */}
+          <div style={{
+            borderRadius: 20,
+            background: "rgba(255,255,255,0.96)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            boxShadow: "0 24px 60px rgba(0,0,0,0.35), 0 0 0 1px rgba(13,212,196,0.08)",
+            padding: "36px 36px 30px",
+          }}>
+            {/* Card header */}
+            <div style={{ marginBottom: 28 }}>
+              <h3 style={{ fontSize: 22, fontWeight: 800, color: "#0c1a2e", marginBottom: 4 }}>
+                Iniciar Sesión
+              </h3>
+              <p style={{ fontSize: 13.5, color: "#64748b" }}>
+                Ingresa tus credenciales para continuar
+              </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-slate-700 font-medium">Correo Electrónico</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+              {/* Email */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <Label htmlFor="email" style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+                  Correo Electrónico
+                </Label>
+                <div style={{ position: "relative" }}>
+                  <Mail style={{
+                    position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+                    width: 16, height: 16, color: "#94a3b8", pointerEvents: "none",
+                  }} />
                   <Input
                     id="email"
                     type="email"
@@ -125,15 +307,21 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
                     required
-                    className="h-11 pl-10"
+                    style={{ height: 44, paddingLeft: 38, fontSize: 14 }}
                   />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="password" className="text-slate-700 font-medium">Contraseña</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              {/* Password */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <Label htmlFor="password" style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
+                  Contraseña
+                </Label>
+                <div style={{ position: "relative" }}>
+                  <Lock style={{
+                    position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
+                    width: 16, height: 16, color: "#94a3b8", pointerEvents: "none",
+                  }} />
                   <Input
                     id="password"
                     type="password"
@@ -142,34 +330,48 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="current-password"
                     required
-                    className="h-11 pl-10"
+                    style={{ height: 44, paddingLeft: 38, fontSize: 14 }}
                   />
                 </div>
               </div>
 
+              {/* Submit */}
               <Button
                 type="submit"
-                className="w-full h-11 font-semibold text-white shadow-md transition-all duration-150"
-                style={{ background: "linear-gradient(135deg, #0d9488 0%, #0891b2 100%)", border: "none" }}
                 disabled={isPending}
+                style={{
+                  height: 46, fontWeight: 700, fontSize: 15,
+                  background: "linear-gradient(135deg, #0d9488 0%, #0891b2 100%)",
+                  border: "none", color: "#fff",
+                  borderRadius: 10,
+                  boxShadow: "0 4px 18px rgba(13,148,136,0.35)",
+                  transition: "opacity 0.15s, box-shadow 0.15s",
+                  marginTop: 4,
+                }}
               >
                 {isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+                    <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
                     Iniciando sesión...
-                  </>
-                ) : (
-                  "Iniciar Sesión"
-                )}
+                  </span>
+                ) : "Iniciar Sesión"}
               </Button>
             </form>
 
-            {/* Password hint */}
-            <div className="mt-5 pt-4" style={{ borderTop: "1px solid #e2e8f0" }}>
-              <p className="text-xs text-center" style={{ color: "#94a3b8" }}>
-                Tu contraseña es tu usuario + <span className="font-mono font-semibold" style={{ color: "#0d9488" }}>123</span>
+            {/* Hint */}
+            <div style={{
+              marginTop: 22, paddingTop: 18,
+              borderTop: "1px solid #f1f5f9",
+              textAlign: "center",
+            }}>
+              <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
+                Tu contraseña es tu usuario +{" "}
+                <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#0d9488" }}>123</span>
                 <br />
-                <span style={{ color: "#cbd5e1" }}>Ej: jcastillo → contraseña: <span className="font-mono font-semibold" style={{ color: "#64748b" }}>jcastillo123</span></span>
+                <span style={{ color: "#cbd5e1" }}>
+                  Ej: jcastillo → contraseña:{" "}
+                  <span style={{ fontFamily: "monospace", fontWeight: 600, color: "#64748b" }}>jcastillo123</span>
+                </span>
               </p>
             </div>
           </div>
