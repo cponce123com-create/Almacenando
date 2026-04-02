@@ -158,10 +158,12 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
   );
 }
 
-function ScoreBar({ score }: { score: number | null | undefined }) {
+function ScoreBar({ score, status }: { score: number | null | undefined; status?: string | null }) {
   const s = score ?? 0;
   const pct = Math.min(100, Math.round((s / 200) * 100));
-  const color = s >= 120 ? "#16a34a" : s >= 60 ? "#ca8a04" : s >= 25 ? "#ea580c" : "#dc2626";
+  // Prefer status-based color so the bar matches the badge (EXACT=green, etc.)
+  const derivedStatus = status ?? (s >= 120 ? "EXACT" : s >= 60 ? "PROBABLE" : s >= 25 ? "MANUAL_REVIEW" : "NONE");
+  const color = STATUS_CONFIG[derivedStatus as keyof typeof STATUS_CONFIG]?.color ?? "#dc2626";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 80 }}>
       <div style={{ flex: 1, height: 4, background: "#e2e8f0", borderRadius: 2 }}>
@@ -181,7 +183,7 @@ function CandidateList({
 }: {
   candidates: MatchCandidate[];
   productId: string;
-  onLinked: () => void;
+  onLinked: (updatedProduct?: Product) => void;
 }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -200,9 +202,9 @@ function CandidateList({
           reason: candidate.reason,
         }),
       }),
-    onSuccess: () => {
+    onSuccess: (updatedProduct: Product) => {
       void queryClient.invalidateQueries();
-      onLinked();
+      onLinked(updatedProduct);
     },
   });
 
@@ -216,8 +218,14 @@ function CandidateList({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {linkMutation.error && (
+        <div style={{ padding: "8px 12px", background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 6, fontSize: 12, color: "#dc2626" }}>
+          ⚠ {(linkMutation.error as Error).message}
+        </div>
+      )}
       {candidates.map((c, i) => {
-        const cfg = STATUS_CONFIG[c.score >= 120 ? "EXACT" : c.score >= 60 ? "PROBABLE" : "MANUAL_REVIEW"];
+        const candidateStatus = c.score >= 120 ? "EXACT" : c.score >= 60 ? "PROBABLE" : "MANUAL_REVIEW";
+        const cfg = STATUS_CONFIG[candidateStatus];
         const isExpanded = expanded === c.fileId;
         return (
           <div
@@ -243,7 +251,7 @@ function CandidateList({
                 </p>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 11, color: "#64748b" }}>{c.folderName}</span>
-                  <ScoreBar score={c.score} />
+                  <ScoreBar score={c.score} status={candidateStatus} />
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
@@ -252,8 +260,8 @@ function CandidateList({
                   disabled={linkMutation.isPending}
                   style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#0d9488", color: "#fff", border: "none" }}
                 >
-                  <Link2 style={{ width: 11, height: 11 }} />
-                  Vincular
+                  {linkMutation.isPending ? <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" /> : <Link2 style={{ width: 11, height: 11 }} />}
+                  {linkMutation.isPending ? "Guardando…" : "Vincular"}
                 </Button>
                 <button
                   onClick={() => setExpanded(isExpanded ? null : c.fileId)}
@@ -781,7 +789,7 @@ export default function MsdsPage() {
                         {activeTab === "smart" ? (
                           <>
                             <StatusBadge status={status} />
-                            {(p.msdsScore ?? 0) > 0 && <ScoreBar score={p.msdsScore} />}
+                            {(p.msdsScore ?? 0) > 0 && <ScoreBar score={p.msdsScore} status={p.msdsStatus} />}
                           </>
                         ) : (
                           <Badge style={{
@@ -853,7 +861,7 @@ export default function MsdsPage() {
                             {selected.msdsMatchReason}
                           </p>
                         )}
-                        <ScoreBar score={selected.msdsScore} />
+                        <ScoreBar score={selected.msdsScore} status={selected.msdsStatus} />
                         <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                           {selected.msdsUrl && (
                             <Button
@@ -948,7 +956,8 @@ export default function MsdsPage() {
                         <CandidateList
                           candidates={productMatch.match.candidates}
                           productId={selected.id}
-                          onLinked={() => {
+                          onLinked={(updatedProduct) => {
+                            if (updatedProduct) setSelected(updatedProduct);
                             void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
                             void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
                             setShowCandidates(false);
