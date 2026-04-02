@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { db, productsTable } from "@workspace/db";
+import { db, productsTable, balanceRecordsTable } from "@workspace/db";
 import type { Product } from "@workspace/db";
-import { eq, and, sql, asc } from "drizzle-orm";
+import { eq, and, sql, asc, max } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -53,6 +53,32 @@ router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
     stats[key] = (stats[key] ?? 0) + row.count;
   }
   res.json(stats);
+}));
+
+// ── GET /api/msds/last-movements ─────────────────────────────────────────────
+// Returns { [code]: lastBalanceDate } for all products in the warehouse.
+// Used by the MSDS panel to show "last movement" age per product.
+
+router.get("/last-movements", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+  const condition = warehouse && warehouse !== "all"
+    ? eq(balanceRecordsTable.warehouse, warehouse)
+    : undefined;
+
+  const rows = await db
+    .select({
+      code: balanceRecordsTable.code,
+      lastDate: max(balanceRecordsTable.balanceDate),
+    })
+    .from(balanceRecordsTable)
+    .where(condition)
+    .groupBy(balanceRecordsTable.code);
+
+  const result: Record<string, string> = {};
+  for (const row of rows) {
+    if (row.lastDate) result[row.code] = row.lastDate;
+  }
+  res.json(result);
 }));
 
 // ── GET /api/msds/match ───────────────────────────────────────────────────────

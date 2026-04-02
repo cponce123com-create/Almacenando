@@ -158,6 +158,23 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
   );
 }
 
+function formatMovementAge(dateStr: string | undefined): { label: string; color: string; bg: string } | null {
+  if (!dateStr) return null;
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const years = Math.floor(days / 365);
+  const months = Math.floor((days % 365) / 30);
+  let label: string;
+  if (days < 30) label = "< 1m";
+  else if (years === 0) label = `${months}m`;
+  else if (months === 0) label = `${years}a`;
+  else label = `${years}a ${months}m`;
+  if (days < 183)  return { label, color: "#15803d", bg: "#dcfce7" };
+  if (days < 365)  return { label, color: "#92400e", bg: "#fef9c3" };
+  if (days < 730)  return { label, color: "#9a3412", bg: "#ffedd5" };
+  return               { label, color: "#991b1b", bg: "#fee2e2" };
+}
+
 function ScoreBar({ score, status }: { score: number | null | undefined; status?: string | null }) {
   const s = score ?? 0;
   const pct = Math.min(100, Math.round((s / 200) * 100));
@@ -331,6 +348,12 @@ export default function MsdsPage() {
     queryKey: ["/api/msds/stats", warehouse],
     queryFn: () => apiJson(`/api/msds/stats${warehouseStats}`),
     enabled: activeTab === "smart",
+  });
+
+  const { data: lastMovements = {} } = useQuery<Record<string, string>>({
+    queryKey: ["/api/msds/last-movements", warehouse],
+    queryFn: () => apiJson(`/api/msds/last-movements${warehouseStats}`),
+    staleTime: 5 * 60 * 1000,
   });
 
   const { data: productMatch, isLoading: isMatchLoading } = useQuery<ProductMatchResponse>({
@@ -770,6 +793,7 @@ export default function MsdsPage() {
                   const status = p.msdsStatus ?? "NONE";
                   const cfg = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.NONE;
                   const Icon = cfg.Icon;
+                  const movAge = formatMovementAge(lastMovements[p.code]);
                   return (
                     <div
                       key={p.id}
@@ -783,7 +807,20 @@ export default function MsdsPage() {
                     >
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.code}</p>
-                        <p style={{ fontSize: 12, color: "#64748b", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
+                        <p style={{ fontSize: 12, color: "#64748b", margin: "1px 0 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
+                        {movAge ? (
+                          <span style={{
+                            display: "inline-block", marginTop: 3, fontSize: 10, fontWeight: 700,
+                            padding: "1px 6px", borderRadius: 4,
+                            background: movAge.bg, color: movAge.color,
+                          }}>⏱ {movAge.label}</span>
+                        ) : (
+                          <span style={{
+                            display: "inline-block", marginTop: 3, fontSize: 10, fontWeight: 600,
+                            padding: "1px 6px", borderRadius: 4,
+                            background: "#f1f5f9", color: "#94a3b8",
+                          }}>Sin movimiento</span>
+                        )}
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginLeft: 10, flexShrink: 0 }}>
                         {activeTab === "smart" ? (
@@ -826,6 +863,18 @@ export default function MsdsPage() {
                       <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0c1a2e", margin: "0 0 2px 0", lineHeight: 1.3 }}>{selected.name}</h2>
                       <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Código: <strong>{selected.code}</strong></p>
                       {selected.supplier && <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0 0" }}>Proveedor: {selected.supplier}</p>}
+                      {(() => {
+                        const a = formatMovementAge(lastMovements[selected.code]);
+                        return a ? (
+                          <span style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: a.bg, color: a.color }}>
+                            ⏱ Último mov: {a.label}
+                          </span>
+                        ) : (
+                          <span style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 5, background: "#f1f5f9", color: "#94a3b8" }}>
+                            Sin movimiento registrado
+                          </span>
+                        );
+                      })()}
                     </div>
                     {activeTab === "smart" ? (
                       <StatusBadge status={selected.msdsStatus} />
