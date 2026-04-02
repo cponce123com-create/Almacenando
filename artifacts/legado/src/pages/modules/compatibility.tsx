@@ -14,6 +14,8 @@ import {
 } from "@/components/ui/sheet";
 import { Search, AlertTriangle, CheckCircle2, AlertCircle, Loader2, Beaker } from "lucide-react";
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 interface Product {
   id: string;
@@ -21,7 +23,7 @@ interface Product {
   code: string;
   name: string;
   category?: string | null;
-  active?: boolean;
+  status?: string | null;
 }
 
 type CompatStatus = "compatible" | "caution" | "incompatible";
@@ -326,18 +328,16 @@ export default function CompatibilityPage() {
   const { data: products = [], isLoading } = useQuery<Product[]>({
     queryKey: ["/api/products", warehouse],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/products?warehouse=${warehouse}&limit=500`,
-        { headers: getAuthHeaders() }
-      );
+      const q = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}&limit=500` : "?limit=500";
+      const res = await fetch(`${BASE}/api/products${q}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Error al cargar productos");
-      const data = await res.json();
-      return data.products ?? data;
+      const r = await res.json();
+      return r.data ?? r;
     },
   });
 
   const activeProducts = useMemo(
-    () => products.filter((p: Product) => p.active !== false),
+    () => products.filter((p: Product) => !p.status || p.status === "active"),
     [products]
   );
 
