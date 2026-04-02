@@ -478,23 +478,6 @@ export default function Login() {
                 ) : "Iniciar Sesión"}
               </Button>
             </form>
-
-            {/* Hint */}
-            <div style={{
-              marginTop: 22, paddingTop: 18,
-              borderTop: "1px solid #f1f5f9",
-              textAlign: "center",
-            }}>
-              <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.7 }}>
-                Tu contraseña es tu usuario +{" "}
-                <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#0d9488" }}>123</span>
-                <br />
-                <span style={{ color: "#cbd5e1" }}>
-                  Ej: jcastillo → contraseña:{" "}
-                  <span style={{ fontFamily: "monospace", fontWeight: 600, color: "#64748b" }}>jcastillo123</span>
-                </span>
-              </p>
-            </div>
           </div>
         </div>
       </div>
