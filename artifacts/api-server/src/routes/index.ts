@@ -20,6 +20,7 @@ import suppliesRouter from "./supplies";
 import surplusRouter from "./surplus";
 import permissionsRouter from "./permissions";
 import msdsRouter from "./msds";
+import compatibilityRouter from "./compatibility";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use("/supplies", suppliesRouter);
 router.use("/surplus", surplusRouter);
 router.use("/admin/permissions", permissionsRouter);
 router.use("/msds", msdsRouter);
+router.use("/compatibility", compatibilityRouter);
 
 export default router;
