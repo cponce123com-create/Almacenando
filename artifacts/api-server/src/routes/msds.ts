@@ -553,19 +553,22 @@ router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor
 
 router.post("/confirm-all", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req: AuthenticatedRequest, res) => {
   const warehouse = req.body?.warehouse as string | undefined;
-  const condition = warehouse && warehouse !== "all"
-    ? and(
-        eq(productsTable.warehouse, warehouse),
-        eq(productsTable.msdsStatus, "PROBABLE" as MsdsMatchStatus),
-      )
-    : eq(productsTable.msdsStatus, "PROBABLE" as MsdsMatchStatus);
 
-  // Only products that already have a valid MSDS file linked
+  // Promote all products with msds=true that are not yet EXACT.
+  // This syncs Gestión Manual (msds flag) with Cruce Inteligente (msdsStatus).
+  const warehouseCondition = warehouse && warehouse !== "all"
+    ? eq(productsTable.warehouse, warehouse)
+    : undefined;
+
   const products = await db.select().from(productsTable)
-    .where(and(condition, sql`msds_file_id IS NOT NULL`));
+    .where(
+      warehouseCondition
+        ? and(warehouseCondition, eq(productsTable.msds, true), sql`msds_status != 'EXACT'`)
+        : and(eq(productsTable.msds, true), sql`msds_status != 'EXACT'`)
+    );
 
   if (products.length === 0) {
-    res.json({ confirmed: 0, message: "No hay productos PROBABLE con archivo vinculado" });
+    res.json({ confirmed: 0, message: "Todos los productos con MSDS ya son Exactos" });
     return;
   }
 
@@ -581,15 +584,15 @@ router.post("/confirm-all", requireAuth, requireRole("admin", "supervisor"), asy
         msdsStatus: "EXACT" as MsdsMatchStatus,
         msdsMatchedBy: "manual",
         msdsMatchReason: p.msdsMatchReason
-          ? `${p.msdsMatchReason} (confirmado masivamente)`
-          : "Confirmado masivamente",
+          ? `${p.msdsMatchReason} (confirmado)`
+          : "Con MSDS en Gestión Manual",
         updatedAt: now,
       })
       .where(eq(productsTable.id, p.id));
     confirmed++;
   }
 
-  res.json({ confirmed, message: `${confirmed} producto(s) confirmados como Exacto` });
+  res.json({ confirmed, message: `${confirmed} producto(s) sincronizados como Exacto` });
 }));
 
 // ── POST /api/msds/:productId/extract ────────────────────────────────────────

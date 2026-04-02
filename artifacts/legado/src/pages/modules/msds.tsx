@@ -703,7 +703,7 @@ export default function MsdsPage() {
                   {(matchStats?.PROBABLE ?? 0) > 0 && (
                     <Button
                       onClick={() => {
-                        if (!window.confirm(`¿Confirmar los ${matchStats!.PROBABLE} productos PROBABLE como Exacto?\nEsto aplica solo a los que ya tienen un archivo MSDS vinculado.`)) return;
+                        if (!window.confirm(`¿Sincronizar ${matchStats!.PROBABLE} productos "Con MSDS" de Gestión Manual como Exactos en Cruce Inteligente?`)) return;
                         confirmAllMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined });
                       }}
                       disabled={confirmAllMutation.isPending || rescanMutation.isPending}
@@ -711,8 +711,8 @@ export default function MsdsPage() {
                       style={{ gap: 6, fontSize: 12, borderColor: "#16a34a", color: "#16a34a" }}
                     >
                       {confirmAllMutation.isPending
-                        ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Confirmando...</>
-                        : <><CheckCircle2 style={{ width: 13, height: 13 }} />Confirmar probables ({matchStats!.PROBABLE})</>
+                        ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Sincronizando...</>
+                        : <><CheckCircle2 style={{ width: 13, height: 13 }} />Con MSDS → Exacto ({matchStats!.PROBABLE})</>
                       }
                     </Button>
                   )}
