@@ -256,6 +256,12 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
       skipped++;
       continue;
     }
+    // Skip products already confirmed as EXACT unless force=true
+    // (preserves manually-confirmed and auto-confirmed exact matches across rescans)
+    if (!force && product.msdsStatus === "EXACT") {
+      skipped++;
+      continue;
+    }
 
     const match = matchProductWithFiles(
       { code: product.code, name: product.name, supplier: product.supplier, casNumber: product.casNumber },
