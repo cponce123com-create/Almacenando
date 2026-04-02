@@ -1,0 +1,182 @@
+Necesito que implementes un nuevo módulo llamado "Compatibilidad Química" en el proyecto.
+
+## Qué hace este módulo
+
+Muestra una tabla donde cada fila es un producto de la maestra de productos, y tiene dos columnas de compatibilidad:
+1. **Compatibilidad con productos de la maestra**: con qué otros productos del inventario propio es compatible o incompatible
+2. **Compatibilidad general**: con sustancias químicas comunes (ácidos, bases, oxidantes, solventes, etc.) según reglas estándar de seguridad química
+
+El estado de compatibilidad puede ser: ✅ Compatible | ⚠️ Precaución | ❌ Incompatible
+
+---
+
+## Archivos a crear
+
+### 1. `artifacts/legado/src/pages/modules/compatibility.tsx`
+
+Página principal del módulo. Debe:
+- Usar `AppLayout` como todas las demás páginas del proyecto
+- Usar `useWarehouse` y `useAuth` igual que `msds.tsx`
+- Usar `useQuery` de TanStack Query con `queryKey: ["/api/products", warehouse]` para obtener los productos activos del almacén seleccionado (igual que en msds.tsx)
+- Tener un buscador para filtrar por nombre de producto
+- Mostrar una tabla con estas columnas:
+  - **Código** (code)
+  - **Producto** (name)
+  - **Categoría** (category)
+  - **Compatibilidad con maestro** → badge clickable que abre un panel lateral (Sheet) mostrando la lista de productos de la maestra con su estado de compatibilidad con este producto
+  - **Compatibilidad general** → badge clickable que abre un panel lateral (Sheet) mostrando lista de sustancias comunes con su estado
+- El badge de cada columna debe mostrar cuántas incompatibilidades tiene el producto (ej: "3 incompatibles")
+
+### 2. La lógica de compatibilidad debe estar en la misma página o en un archivo `compatibility-data.ts`
+
+La compatibilidad se determina por la **categoría** del producto (campo `category` de la tabla products). Usa estas reglas:
+```typescript
+// Sustancias generales para la columna de compatibilidad externa
+export const GENERAL_SUBSTANCES = [
+  "Ácidos fuertes (HCl, H₂SO₄, HNO₃)",
+  "Bases fuertes (NaOH, KOH)",
+  "Agentes oxidantes (H₂O₂, KMnO₄)",
+  "Agentes reductores",
+  "Solventes orgánicos (acetona, etanol)",
+  "Hidrocarburos (gasolina, hexano)",
+  "Agua",
+  "Aire / Oxígeno",
+  "Halógenos (cloro, bromo)",
+  "Metales alcalinos (sodio, potasio)",
+  "Amoníaco",
+  "Materiales inflamables",
+];
+
+// Reglas: "compatible" | "caution" | "incompatible"
+// Indexado por categoría del producto
+export const COMPATIBILITY_RULES: Record<string, Record<string, "compatible" | "caution" | "incompatible">> = {
+  "COLORANTE": {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "incompatible",
+    "Agentes reductores": "caution",
+    "Solventes orgánicos (acetona, etanol)": "caution",
+    "Hidrocarburos (gasolina, hexano)": "compatible",
+    "Agua": "compatible",
+    "Aire / Oxígeno": "compatible",
+    "Halógenos (cloro, bromo)": "incompatible",
+    "Metales alcalinos (sodio, potasio)": "caution",
+    "Amoníaco": "caution",
+    "Materiales inflamables": "compatible",
+  },
+  "AUXILIAR": {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "caution",
+    "Agentes reductores": "compatible",
+    "Solventes orgánicos (acetona, etanol)": "compatible",
+    "Hidrocarburos (gasolina, hexano)": "compatible",
+    "Agua": "compatible",
+    "Aire / Oxígeno": "compatible",
+    "Halógenos (cloro, bromo)": "caution",
+    "Metales alcalinos (sodio, potasio)": "incompatible",
+    "Amoníaco": "compatible",
+    "Materiales inflamables": "caution",
+  },
+  "ACIDO": {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
+    "Bases fuertes (NaOH, KOH)": "incompatible",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "caution",
+    "Agentes reductores": "incompatible",
+    "Solventes orgánicos (acetona, etanol)": "caution",
+    "Hidrocarburos (gasolina, hexano)": "caution",
+    "Agua": "caution",
+    "Aire / Oxígeno": "compatible",
+    "Halógenos (cloro, bromo)": "caution",
+    "Metales alcalinos (sodio, potasio)": "incompatible",
+    "Amoníaco": "incompatible",
+    "Materiales inflamables": "caution",
+  },
+  "BASE": {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "incompatible",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "caution",
+    "Agentes reductores": "compatible",
+    "Solventes orgánicos (acetona, etanol)": "caution",
+    "Hidrocarburos (gasolina, hexano)": "caution",
+    "Agua": "compatible",
+    "Aire / Oxígeno": "compatible",
+    "Halógenos (cloro, bromo)": "incompatible",
+    "Metales alcalinos (sodio, potasio)": "caution",
+    "Amoníaco": "compatible",
+    "Materiales inflamables": "caution",
+  },
+  "SOLVENTE": {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "incompatible",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "incompatible",
+    "Agentes reductores": "caution",
+    "Solventes orgánicos (acetona, etanol)": "compatible",
+    "Hidrocarburos (gasolina, hexano)": "compatible",
+    "Agua": "caution",
+    "Aire / Oxígeno": "incompatible",
+    "Halógenos (cloro, bromo)": "incompatible",
+    "Metales alcalinos (sodio, potasio)": "incompatible",
+    "Amoníaco": "caution",
+    "Materiales inflamables": "incompatible",
+  },
+  // Para cualquier categoría no listada, usar reglas conservadoras por defecto:
+  "DEFAULT": {
+    "Ácidos fuertes (HCl, H₂SO₄, HNO₃)": "caution",
+    "Bases fuertes (NaOH, KOH)": "caution",
+    "Agentes oxidantes (H₂O₂, KMnO₄)": "caution",
+    "Agentes reductores": "caution",
+    "Solventes orgánicos (acetona, etanol)": "compatible",
+    "Hidrocarburos (gasolina, hexano)": "compatible",
+    "Agua": "compatible",
+    "Aire / Oxígeno": "compatible",
+    "Halógenos (cloro, bromo)": "caution",
+    "Metales alcalinos (sodio, potasio)": "caution",
+    "Amoníaco": "caution",
+    "Materiales inflamables": "caution",
+  },
+};
+
+// Para compatibilidad entre productos de la maestra:
+// Dos productos son incompatibles si sus categorías tienen reglas conflictivas
+// Ejemplo: ACIDO + BASE = incompatible, SOLVENTE + oxidante = incompatible
+export const CATEGORY_VS_CATEGORY: Record<string, Record<string, "compatible" | "caution" | "incompatible">> = {
+  "ACIDO": { "BASE": "incompatible", "ACIDO": "caution", "SOLVENTE": "caution", "COLORANTE": "caution", "AUXILIAR": "caution" },
+  "BASE": { "ACIDO": "incompatible", "BASE": "caution", "SOLVENTE": "caution", "COLORANTE": "caution", "AUXILIAR": "compatible" },
+  "SOLVENTE": { "ACIDO": "caution", "BASE": "caution", "SOLVENTE": "compatible", "COLORANTE": "caution", "AUXILIAR": "compatible" },
+  "COLORANTE": { "ACIDO": "caution", "BASE": "caution", "SOLVENTE": "caution", "COLORANTE": "compatible", "AUXILIAR": "compatible" },
+  "AUXILIAR": { "ACIDO": "caution", "BASE": "compatible", "SOLVENTE": "compatible", "COLORANTE": "compatible", "AUXILIAR": "compatible" },
+};
+```
+
+---
+
+## Archivos a modificar
+
+### 3. `artifacts/legado/src/App.tsx`
+Agregar la ruta `/compatibility`:
+```tsx
+const CompatibilityPage = lazy(() => import("@/pages/modules/compatibility"));
+// ...dentro del Router:
+<Route path="/compatibility"><ProtectedRoute component={CompatibilityPage} /></Route>
+```
+
+### 4. `artifacts/legado/src/components/layout/AppLayout.tsx`
+Agregar al array `modules` después de la entrada de MSDS:
+```tsx
+{ name: "Compatibilidad", href: "/compatibility", icon: FlaskConical },
+```
+(el ícono `FlaskConical` ya está importado en AppLayout)
+
+---
+
+## UX esperada
+
+- La página carga los productos activos del almacén seleccionado
+- Cada fila tiene dos botones/badges: "Ver compatibilidad maestro" y "Ver compatibilidad general"
+- Al hacer click abre un `Sheet` (panel lateral) de shadcn/ui con una lista scrolleable
+- Cada ítem de la lista muestra: nombre del producto o sustancia + badge de color (verde=compatible, amarillo=precaución, rojo=incompatible)
+- Arriba del sheet hay un resumen: "X compatibles · Y precaución · Z incompatibles"
+- Hay un buscador global arriba de la tabla para filtrar productos por nombre o código
+
+No crear ningún endpoint nuevo en el backend. Todo se calcula en el frontend con los datos que ya vienen de `GET /api/products`.

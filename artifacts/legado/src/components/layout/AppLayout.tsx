@@ -88,6 +88,7 @@ export const modules: Array<{
   { name: "Control de Lotes",     href: "/lot-evaluations", icon: Microscope },
   { name: "Disposición Final",    href: "/disposition",  icon: Recycle },
   { name: "MSDS",                 href: "/msds",         icon: ShieldCheck },
+  { name: "Compatibilidad",      href: "/compatibility", icon: FlaskConical },
   { name: "Documentos",           href: "/documents",    icon: FileText },
   { name: "EPP",                  href: "/epp",          icon: Shield },
   { name: "Personal",             href: "/personnel",    icon: Users },
