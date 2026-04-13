@@ -401,6 +401,23 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
     .where(condition)
     .orderBy(asc(productsTable.warehouse), asc(productsTable.type), asc(productsTable.name));
 
+  // Fetch last consumption date (ultimoConsumo) for each product code from balance_records
+  const balanceRows = await db.execute(
+    warehouse && warehouse !== "all"
+      ? sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
+             FROM balance_records
+             WHERE warehouse = ${warehouse}
+             ORDER BY code, balance_date DESC`
+      : sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
+             FROM balance_records
+             ORDER BY code, balance_date DESC`
+  ) as { rows: Array<{ code: string; ultimoConsumo: string | null }> };
+
+  const ultimoConsumoMap: Record<string, string> = {};
+  for (const row of balanceRows.rows) {
+    if (row.ultimoConsumo) ultimoConsumoMap[row.code] = row.ultimoConsumo;
+  }
+
   const withMsds    = products.filter(p => p.msds);
   const withoutMsds = products.filter(p => !p.msds);
 
@@ -411,11 +428,12 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   const HEADERS = [
     "Almacén", "Tipo", "Código", "Nombre", "Ubicación",
     "Estado MSDS", "Puntuación", "Archivo MSDS", "Razón de coincidencia",
-    "Vinculado por", "Última verificación",
+    "Vinculado por", "Última verificación", "Último consumo",
   ];
-  const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 12, 34, 36, 14, 22];
+  const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 12, 34, 36, 14, 22, 18];
 
   function productRow(p: Product): (string | number | null)[] {
+    const uc = ultimoConsumoMap[p.code];
     return [
       p.warehouse ?? "",
       p.type ?? "",
@@ -428,6 +446,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
       p.msdsMatchReason ?? "",
       p.msdsMatchedBy ?? "",
       p.msdsLastCheckedAt ? new Date(p.msdsLastCheckedAt).toLocaleDateString("es-SV") : "",
+      uc ? new Date(uc).toLocaleDateString("es-SV") : "",
     ];
   }
 
@@ -438,7 +457,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   for (const p of withMsds) {
     applyDataRow(ws1, productRow(p), p.msdsStatus ?? "NONE");
   }
-  ws1.autoFilter = { from: "A1", to: `K1` };
+  ws1.autoFilter = { from: "A1", to: `L1` };
 
   // ── Sheet 2: Sin MSDS ─────────────────────────────────────────────────────
   const ws2 = wb.addWorksheet("Sin MSDS", { views: [{ state: "frozen", ySplit: 1 }] });
@@ -447,7 +466,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   for (const p of withoutMsds) {
     applyDataRow(ws2, productRow(p), "NONE");
   }
-  ws2.autoFilter = { from: "A1", to: `K1` };
+  ws2.autoFilter = { from: "A1", to: `L1` };
 
   // ── Sheet 3: Resumen ──────────────────────────────────────────────────────
   const ws3 = wb.addWorksheet("Resumen");
