@@ -401,23 +401,6 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
     .where(condition)
     .orderBy(asc(productsTable.warehouse), asc(productsTable.type), asc(productsTable.name));
 
-  // Fetch last consumption date (ultimoConsumo) for each product code from balance_records
-  const balanceRows = await db.execute(
-    warehouse && warehouse !== "all"
-      ? sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
-             FROM balance_records
-             WHERE warehouse = ${warehouse}
-             ORDER BY code, balance_date DESC`
-      : sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
-             FROM balance_records
-             ORDER BY code, balance_date DESC`
-  ) as { rows: Array<{ code: string; ultimoConsumo: string | null }> };
-
-  const ultimoConsumoMap: Record<string, string> = {};
-  for (const row of balanceRows.rows) {
-    if (row.ultimoConsumo) ultimoConsumoMap[row.code] = row.ultimoConsumo;
-  }
-
   const withMsds    = products.filter(p => p.msds);
   const withoutMsds = products.filter(p => !p.msds);
 
@@ -428,12 +411,11 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   const HEADERS = [
     "Almacén", "Tipo", "Código", "Nombre", "Ubicación",
     "Estado MSDS", "Puntuación", "Archivo MSDS", "Razón de coincidencia",
-    "Vinculado por", "Última verificación", "Último consumo",
+    "Vinculado por", "Última verificación",
   ];
-  const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 12, 34, 36, 14, 22, 18];
+  const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 12, 34, 36, 14, 22];
 
   function productRow(p: Product): (string | number | null)[] {
-    const uc = ultimoConsumoMap[p.code];
     return [
       p.warehouse ?? "",
       p.type ?? "",
@@ -446,7 +428,6 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
       p.msdsMatchReason ?? "",
       p.msdsMatchedBy ?? "",
       p.msdsLastCheckedAt ? new Date(p.msdsLastCheckedAt).toLocaleDateString("es-SV") : "",
-      uc ? new Date(uc).toLocaleDateString("es-SV") : "",
     ];
   }
 
@@ -457,7 +438,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   for (const p of withMsds) {
     applyDataRow(ws1, productRow(p), p.msdsStatus ?? "NONE");
   }
-  ws1.autoFilter = { from: "A1", to: `L1` };
+  ws1.autoFilter = { from: "A1", to: `K1` };
 
   // ── Sheet 2: Sin MSDS ─────────────────────────────────────────────────────
   const ws2 = wb.addWorksheet("Sin MSDS", { views: [{ state: "frozen", ySplit: 1 }] });
@@ -466,7 +447,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   for (const p of withoutMsds) {
     applyDataRow(ws2, productRow(p), "NONE");
   }
-  ws2.autoFilter = { from: "A1", to: `L1` };
+  ws2.autoFilter = { from: "A1", to: `K1` };
 
   // ── Sheet 3: Resumen ──────────────────────────────────────────────────────
   const ws3 = wb.addWorksheet("Resumen");
@@ -612,6 +593,121 @@ router.post("/confirm-all", requireAuth, requireRole("admin", "supervisor"), asy
   }
 
   res.json({ confirmed, message: `${confirmed} producto(s) sincronizados como Exacto` });
+}));
+
+// ── POST /api/msds/reset-all ──────────────────────────────────────────────────
+// Resets matched products back to NONE using a single bulk SQL UPDATE,
+// then immediately re-scans with the latest algorithm.
+// resetManual=false (default): preserves manually confirmed links.
+// resetManual=true: resets everything including manual links.
+
+const resetAllSchema = z.object({
+  warehouse: z.string().optional(),
+  resetManual: z.boolean().optional().default(false),
+});
+
+router.post("/reset-all", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  if (!guardDriveConfig(res)) return;
+
+  const parsed = resetAllSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
+    return;
+  }
+
+  const { warehouse, resetManual } = parsed.data;
+  const now = new Date();
+
+  // ── Step 1: Bulk reset via single SQL UPDATE (avoids N sequential awaits) ──
+  // Build WHERE clause dynamically
+  const warehouseCond = warehouse && warehouse !== "all"
+    ? sql`AND warehouse = ${warehouse}`
+    : sql``;
+
+  const manualCond = resetManual
+    ? sql``                                       // reset everything
+    : sql`AND (msds_matched_by IS NULL OR msds_matched_by != 'manual')`;
+
+  const resetResult = await db.execute(sql`
+    UPDATE products
+    SET
+      msds              = false,
+      msds_url          = NULL,
+      msds_status       = 'NONE',
+      msds_score        = 0,
+      msds_file_id      = NULL,
+      msds_file_name    = NULL,
+      msds_match_reason = NULL,
+      msds_matched_by   = NULL,
+      msds_last_checked_at = ${now},
+      updated_at        = ${now}
+    WHERE
+      msds_status IS NOT NULL
+      AND msds_status != 'NONE'
+      ${warehouseCond}
+      ${manualCond}
+  `);
+
+  const resetCount = (resetResult as any).rowCount ?? 0;
+
+  // ── Step 2: Re-scan with new matcher ─────────────────────────────────────
+  const warehouseCondition = warehouse && warehouse !== "all"
+    ? eq(productsTable.warehouse, warehouse)
+    : undefined;
+
+  const [products, files] = await Promise.all([
+    db.select().from(productsTable).where(warehouseCondition),
+    getDriveMsdsFiles(),
+  ]);
+
+  // Batch DB writes: collect all updates then execute in parallel batches of 20
+  const updates: Array<{ id: string; data: Record<string, unknown> }> = [];
+
+  for (const product of products) {
+    if (!resetManual && product.msdsMatchedBy === "manual") continue;
+
+    const match = matchProductWithFiles(
+      { code: product.code, name: product.name, supplier: product.supplier, casNumber: product.casNumber },
+      files,
+    );
+    const best = match.best;
+    const status = match.status as MsdsMatchStatus;
+
+    updates.push({
+      id: product.id,
+      data: {
+        msdsStatus:       status,
+        msdsScore:        match.score,
+        msdsFileId:       best?.fileId ?? null,
+        msdsFileName:     best?.fileName ?? null,
+        msdsMatchReason:  match.reason,
+        msdsMatchedBy:    "auto",
+        msdsLastCheckedAt: now,
+        ...(status === "EXACT" || status === "PROBABLE"
+          ? { msds: true, msdsUrl: best!.link, updatedAt: now }
+          : { updatedAt: now }),
+      },
+    });
+  }
+
+  // Execute in batches of 25 concurrent updates
+  const BATCH_SIZE = 25;
+  for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+    const batch = updates.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(({ id, data }) =>
+        db.update(productsTable).set(data as any).where(eq(productsTable.id, id)),
+      ),
+    );
+  }
+
+  res.json({
+    message: "Reinicio y re-escaneo completados",
+    resetCount,
+    rescanned: updates.length,
+    filesScanned: files.length,
+    totalProducts: products.length,
+  });
 }));
 
 // ── POST /api/msds/:productId/extract ────────────────────────────────────────
