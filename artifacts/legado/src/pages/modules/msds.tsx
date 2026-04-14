@@ -843,20 +843,53 @@ export default function MsdsPage() {
           <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
             <div style={{ padding: "14px 14px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: 8 }}>
               {activeTab === "manual" && (
-                <Button
-                  onClick={handlePrintAlbum}
-                  disabled={products.filter(p => p.msds && p.msdsUrl).length === 0}
-                  style={{
-                    background: products.filter(p => p.msds && p.msdsUrl).length === 0 ? "#94a3b8" : "#0c1a2e",
-                    color: "#fff", border: "none", gap: 6, width: "100%", justifyContent: "center",
-                  }}
-                >
-                  <BookOpen style={{ width: 15, height: 15 }} />
-                  Imprimir Álbum MSDS
-                  {products.filter(p => p.msds && p.msdsUrl).length > 0 && (
-                    <span style={{ fontSize: 11, opacity: 0.8 }}>({products.filter(p => p.msds && p.msdsUrl).length} productos)</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <Button
+                    onClick={handlePrintAlbum}
+                    disabled={products.filter(p => p.msds && p.msdsUrl).length === 0}
+                    style={{
+                      background: products.filter(p => p.msds && p.msdsUrl).length === 0 ? "#94a3b8" : "#0c1a2e",
+                      color: "#fff", border: "none", gap: 6, width: "100%", justifyContent: "center",
+                    }}
+                  >
+                    <BookOpen style={{ width: 15, height: 15 }} />
+                    Imprimir Álbum MSDS
+                    {products.filter(p => p.msds && p.msdsUrl).length > 0 && (
+                      <span style={{ fontSize: 11, opacity: 0.8 }}>({products.filter(p => p.msds && p.msdsUrl).length} productos)</span>
+                    )}
+                  </Button>
+
+                  {isAdminOrSupervisor && (
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Button
+                        onClick={() => {
+                          const warehouseLabel = warehouse && warehouse !== "all" ? `"${warehouse}"` : "todos los almacenes";
+                          if (!window.confirm(
+                            `⚠️ REINICIO TOTAL\n\n` +
+                            `Borrará TODOS los cruces de ${warehouseLabel}, incluyendo los confirmados manualmente.\n\n` +
+                            `Se re-escaneará Drive desde cero.\n\n¿Seguro?`
+                          )) return;
+                          resetAllMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined, resetManual: true });
+                        }}
+                        disabled={resetAllMutation.isPending || rescanMutation.isPending}
+                        variant="outline"
+                        style={{ flex: 1, gap: 6, fontSize: 11, borderColor: "#7f1d1d", color: "#7f1d1d", height: "32px" }}
+                      >
+                        {resetAllMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                        Reinicio Total
+                      </Button>
+                      <Button
+                        onClick={() => rescanMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined, force: true })}
+                        disabled={rescanMutation.isPending || resetAllMutation.isPending}
+                        variant="outline"
+                        style={{ flex: 1, gap: 6, fontSize: 11, borderColor: "#0c1a2e", color: "#0c1a2e", height: "32px" }}
+                      >
+                        {rescanMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                        Re-escaneo
+                      </Button>
+                    </div>
                   )}
-                </Button>
+                </div>
               )}
               <div style={{ position: "relative" }}>
                 <Search style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 15, height: 15, color: "#94a3b8" }} />
@@ -914,21 +947,19 @@ export default function MsdsPage() {
                           ⏱ {sm.label}
                         </span>
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginLeft: 10, flexShrink: 0 }}>
-                        {activeTab === "smart" ? (
-                          <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                        {activeTab === "smart" && (
+                          <div title={cfg.description}>
                             <StatusBadge status={status} />
-                            {(p.msdsScore ?? 0) > 0 && <ScoreBar score={p.msdsScore} status={p.msdsStatus} />}
-                          </>
-                        ) : (
-                          <Badge style={{
-                            fontSize: 11, fontWeight: 600,
-                            background: p.msds ? "#dcfce7" : "#fee2e2",
-                            color: p.msds ? "#16a34a" : "#dc2626", border: "none",
-                          }}>
-                            {p.msds ? "Con MSDS" : "Sin MSDS"}
-                          </Badge>
+                          </div>
                         )}
+                        <div style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {p.msds ? (
+                            <ShieldCheck style={{ width: 18, height: 18, color: "#16a34a" }} />
+                          ) : (
+                            <ShieldOff style={{ width: 18, height: 18, color: "#cbd5e1" }} />
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -937,417 +968,377 @@ export default function MsdsPage() {
             )}
           </div>
 
-          {/* Right: detail panel */}
-          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+          {/* Right: details / edit */}
+          <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
             {!selected ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 40, color: "#94a3b8", textAlign: "center" }}>
-                <ShieldCheck style={{ width: 40, height: 40, marginBottom: 12, opacity: 0.3 }} />
-                <p style={{ fontSize: 14, margin: 0 }}>Selecciona un producto para ver su detalle</p>
+              <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#94a3b8", textAlign: "center", padding: 20 }}>
+                <BookOpen style={{ width: 48, height: 48, marginBottom: 16, opacity: 0.2 }} />
+                <p style={{ fontSize: 15, fontWeight: 500, margin: 0 }}>Selecciona un producto para gestionar su MSDS</p>
+                <p style={{ fontSize: 13, marginTop: 4 }}>Puedes vincular archivos de Drive o ingresar URLs externas</p>
               </div>
             ) : (
-              <div style={{ padding: 20, overflowY: "auto", maxHeight: 640 }}>
-
-                {/* Product header */}
-                <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #f1f5f9" }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 11, color: "#94a3b8", margin: "0 0 2px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>{selected.warehouse}</p>
-                      <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0c1a2e", margin: "0 0 2px 0", lineHeight: 1.3 }}>{selected.name}</h2>
-                      <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>Código: <strong>{selected.code}</strong></p>
-                      {selected.supplier && <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0 0" }}>Proveedor: {selected.supplier}</p>}
-                      {(() => {
-                        const a = sinMovimiento(lastMovements[selected.code]);
-                        return (
-                          <span
-                            className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full mt-1 ${a.pill}`}
-                            title={lastMovements[selected.code] ? `Último consumo: ${lastMovements[selected.code]}` : "Sin datos de movimiento"}
-                          >
-                            ⏱ Último mov: {a.label}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                    {activeTab === "smart" ? (
-                      <StatusBadge status={selected.msdsStatus} />
-                    ) : (
-                      <Badge style={{
-                        flexShrink: 0, fontSize: 12, fontWeight: 600, padding: "4px 10px",
-                        background: selected.msds ? "#dcfce7" : "#fee2e2",
-                        color: selected.msds ? "#16a34a" : "#dc2626", border: "none",
-                      }}>
-                        {selected.msds ? "MSDS Disponible" : "Sin MSDS"}
-                      </Badge>
-                    )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <Badge variant="outline" style={{ background: "#f1f5f9", color: "#475569", fontWeight: 700 }}>{selected.code}</Badge>
+                    <span style={{ fontSize: 12, color: "#94a3b8" }}>{selected.warehouse}</span>
                   </div>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0c1a2e", margin: 0, lineHeight: 1.2 }}>{selected.name}</h2>
                 </div>
 
-                {/* SMART TAB content */}
-                {activeTab === "smart" && (
-                  <div>
-                    {/* Current match info & Candidates merged */}
-                    <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#0c1a2e" }}>Resultado del cruce</span>
-                        {selected.msdsStatus && <StatusBadge status={selected.msdsStatus} />}
+                {/* Status card */}
+                <div style={{ background: "#f8fafc", borderRadius: 10, padding: 14, border: "1px solid #e2e8f0" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Estado Actual</span>
+                    {selected.msds ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#16a34a", fontSize: 13, fontWeight: 700 }}>
+                        <ShieldCheck style={{ width: 16, height: 16 }} />
+                        Con MSDS
+                      </span>
+                    ) : (
+                      <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#64748b", fontSize: 13, fontWeight: 700 }}>
+                        <ShieldOff style={{ width: 16, height: 16 }} />
+                        Sin MSDS
+                      </span>
+                    )}
+                  </div>
+
+                  {selected.msdsUrl ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div style={{ background: "#fff", padding: 10, borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                          <p style={{ fontSize: 11, color: "#94a3b8", margin: 0, fontWeight: 600 }}>URL DE LA FICHA</p>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <Button
+                              onClick={() => window.open(selected.msdsUrl!, "_blank")}
+                              style={{ fontSize: 10, padding: "2px 6px", height: "auto", gap: 3, background: "#0d9488", color: "#fff", border: "none" }}
+                            >
+                              <Download style={{ width: 10, height: 10 }} />
+                              Ver
+                            </Button>
+                            <Button
+                              onClick={handlePrintQr}
+                              style={{ fontSize: 10, padding: "2px 6px", height: "auto", gap: 3, background: "#0c1a2e", color: "#fff", border: "none" }}
+                            >
+                              <Printer style={{ width: 10, height: 10 }} />
+                              QR
+                            </Button>
+                          </div>
+                        </div>
+                        <p style={{ fontSize: 12, color: "#0d9488", margin: 0, wordBreak: "break-all", fontWeight: 500 }}>
+                          {selected.msdsUrl}
+                        </p>
                       </div>
 
-                      {/* Linked file info */}
-                      {selected.msdsStatus && selected.msdsStatus !== "NONE" ? (
-                        <div style={{ background: "#fff", border: "1px solid #0d948830", borderRadius: 8, padding: "10px", marginBottom: 14 }}>
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <p style={{ fontSize: 12, color: "#1e293b", margin: "0 0 2px 0", fontWeight: 700 }}>
-                                📄 {selected.msdsFileName}
-                              </p>
-                              {selected.msdsMatchReason && (
-                                <p style={{ fontSize: 11, color: "#64748b", margin: "0 0 6px 0", fontStyle: "italic" }}>
-                                  {selected.msdsMatchReason}
-                                </p>
-                              )}
-                              <ScoreBar score={selected.msdsScore} status={selected.msdsStatus} />
-                            </div>
-                            <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
-                              {selected.msdsUrl && (
-                                <Button
-                                  onClick={() => window.open(selected.msdsUrl!, "_blank")}
-                                  style={{ fontSize: 11, padding: "4px 8px", height: "auto", gap: 4, background: "#0d9488", color: "#fff", border: "none" }}
-                                >
-                                  <Download style={{ width: 11, height: 11 }} />
-                                  Ver
-                                </Button>
-                              )}
-                              {canEdit && (
-                                <Button
-                                  variant="outline"
-                                  onClick={async () => {
-                                    if (!window.confirm("¿Desvincular el MSDS de este producto?")) return;
-                                    const res = await fetch(`${BASE}/api/msds/unlink`, {
-                                      method: "POST",
-                                      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-                                      body: JSON.stringify({ productId: selected.id }),
-                                    });
-                                    if (res.ok) {
-                                      const updated = await res.json();
-                                      setSelected(updated);
-                                      void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
-                                      void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
-                                    }
-                                  }}
-                                  style={{ fontSize: 10, padding: "3px 8px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
-                                >
-                                  <Trash2 style={{ width: 11, height: 11 }} />
-                                  Desvincular
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                          {canEdit && (selected.msdsStatus === "PROBABLE" || selected.msdsStatus === "MANUAL_REVIEW") && (
+                      <div style={{ display: "none" }}>
+                        <QRCodeSVG
+                          id="msds-qr-svg"
+                          value={selected.msdsUrl}
+                          size={200}
+                          level="H"
+                          includeMargin={true}
+                        />
+                      </div>
+
+                      {canEdit && (
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <Button
+                            variant="outline"
+                            onClick={() => { setMsdsInput(selected.msdsUrl!); setEditingUrl(true); }}
+                            style={{ flex: 1, fontSize: 12, height: 32, gap: 6 }}
+                          >
+                            <RefreshCw style={{ width: 13, height: 13 }} />
+                            Editar URL
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={handleDeleteMsds}
+                            disabled={saving}
+                            style={{ flex: 1, fontSize: 12, height: 32, gap: 6, borderColor: "#fca5a5", color: "#dc2626" }}
+                          >
+                            {saving ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <Trash2 style={{ width: 13, height: 13 }} />}
+                            Desvincular
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: "center", padding: "10px 0" }}>
+                      <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 12px 0" }}>No hay una ficha vinculada a este producto.</p>
+                      {canEdit && !editingUrl && (
+                        <Button
+                          onClick={() => setEditingUrl(true)}
+                          style={{ background: "#0d9488", color: "#fff", border: "none", fontSize: 12, gap: 6 }}
+                        >
+                          <Link2 style={{ width: 14, height: 14 }} />
+                          Vincular MSDS Manualmente
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Edit form */}
+                {editingUrl && (
+                  <div style={{ background: "#fff", borderRadius: 10, padding: 16, border: "1.5px solid #0d9488", boxShadow: "0 4px 12px rgba(13,148,136,0.1)" }}>
+                    <h3 style={{ fontSize: 13, fontWeight: 700, color: "#0d9488", marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Save style={{ width: 14, height: 14 }} />
+                      Vincular URL de MSDS
+                    </h3>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <Input
+                        value={msdsInput}
+                        onChange={(e) => setMsdsInput(e.target.value)}
+                        placeholder="https://drive.google.com/..."
+                        style={{ fontSize: 13 }}
+                        autoFocus
+                      />
+                      {saveError && <p style={{ fontSize: 11, color: "#dc2626", margin: 0 }}>⚠ {saveError}</p>}
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <Button
+                          onClick={handleSaveMsds}
+                          disabled={saving || !msdsInput.trim()}
+                          style={{ flex: 1, background: "#0d9488", color: "#fff", border: "none", fontSize: 12 }}
+                        >
+                          {saving ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> : "Guardar Cambios"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => { setEditingUrl(false); setMsdsInput(""); setSaveError(null); }}
+                          disabled={saving}
+                          style={{ fontSize: 12 }}
+                        >
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── SMART MATCH DETAILS (Integration) ── */}
+                <div style={{ borderTop: "1.5px solid #f1f5f9", paddingTop: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Zap style={{ width: 15, height: 15, color: "#0d9488" }} />
+                      Cruce Inteligente
+                    </h3>
+                    <StatusBadge status={selected.msdsStatus} />
+                  </div>
+
+                  {selected.msdsStatus && selected.msdsStatus !== "NONE" ? (
+                    <div style={{ background: "#f8fafc", padding: 12, borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <p style={{ fontSize: 12, fontWeight: 600, color: "#1e293b", margin: "0 0 2px 0" }}>
+                            {selected.msdsFileName || "Archivo vinculado"}
+                          </p>
+                          {selected.msdsMatchReason && (
+                            <p style={{ fontSize: 11, color: "#64748b", margin: "0 0 6px 0", fontStyle: "italic" }}>
+                              {selected.msdsMatchReason}
+                            </p>
+                          )}
+                          <ScoreBar score={selected.msdsScore} status={selected.msdsStatus} />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+                          {selected.msdsUrl && (
                             <Button
+                              onClick={() => window.open(selected.msdsUrl!, "_blank")}
+                              style={{ fontSize: 11, padding: "4px 8px", height: "auto", gap: 4, background: "#0d9488", color: "#fff", border: "none" }}
+                            >
+                              <Download style={{ width: 11, height: 11 }} />
+                              Ver
+                            </Button>
+                          )}
+                          {canEdit && (
+                            <Button
+                              variant="outline"
                               onClick={async () => {
-                                if (!window.confirm("¿Confirmar este MSDS como coincidencia exacta?")) return;
-                                const res = await fetch(`${BASE}/api/msds/${selected.id}/confirm`, {
+                                if (!window.confirm("¿Desvincular el MSDS de este producto?")) return;
+                                const res = await fetch(`${BASE}/api/msds/unlink`, {
                                   method: "POST",
-                                  headers: getAuthHeaders(),
+                                  headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                                  body: JSON.stringify({ productId: selected.id }),
                                 });
                                 if (res.ok) {
                                   const updated = await res.json();
                                   setSelected(updated);
                                   void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
                                   void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
-                                } else {
-                                  const err = await res.json().catch(() => ({}));
-                                  alert(`Error al confirmar: ${err.error ?? res.statusText}`);
                                 }
                               }}
-                              style={{ width: "100%", marginTop: 8, fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#16a34a", color: "#fff", border: "none" }}
-                            >
-                              <CheckCircle2 style={{ width: 12, height: 12 }} />
-                              Confirmar como exacto
-                            </Button>
-                          )}
-                        </div>
-                      ) : (
-                        <div style={{ padding: "10px 12px", background: "#fff7f7", border: "1.5px dashed #fca5a5", borderRadius: 8, marginBottom: 14 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <XCircle style={{ width: 16, height: 16, color: "#dc2626", flexShrink: 0 }} />
-                            <p style={{ fontSize: 13, color: "#dc2626", margin: 0, fontWeight: 600 }}>Sin MSDS asignado</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Candidates List integrated */}
-                      <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
-                            <Search style={{ width: 13, height: 13 }} />
-                            Candidatos recomendados
-                          </span>
-                          {isMatchLoading && <Loader2 style={{ width: 13, height: 13, color: "#0d9488" }} className="animate-spin" />}
-                        </div>
-
-                        {productMatch ? (
-                          <CandidateList
-                            candidates={productMatch.match.candidates.filter(c => c.fileId !== selected.msdsFileId).slice(0, 3)}
-                            productId={selected.id}
-                            onLinked={(updatedProduct) => {
-                              if (updatedProduct) setSelected(updatedProduct);
-                              void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
-                              void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
-                            }}
-                          />
-                        ) : isMatchLoading ? (
-                          <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: 12 }}>
-                            Buscando mejores opciones en Drive...
-                          </div>
-                        ) : (
-                          <Button
-                            onClick={() => void queryClient.invalidateQueries({ queryKey: ["/api/msds/match", selected.id] })}
-                            variant="outline"
-                            style={{ width: "100%", fontSize: 12, gap: 6 }}
-                          >
-                            <RefreshCw style={{ width: 13, height: 13 }} />
-                            Reintentar búsqueda
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* ── AI EXTRACTION SECTION ── */}
-                    {selected.msdsFileId && (
-                      <div style={{ marginTop: 16, borderTop: "1.5px solid #e2e8f0", paddingTop: 14 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <ScanLine style={{ width: 15, height: 15, color: "#7c3aed" }} />
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>Extracción IA de Datos de Seguridad</span>
-                          </div>
-                          {selected.msdsExtractedAt && (
-                            <span style={{ fontSize: 10, color: "#94a3b8" }}>
-                              {new Date(selected.msdsExtractedAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Scan button */}
-                        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                          <Button
-                            onClick={() => void handleExtract()}
-                            disabled={isExtracting}
-                            style={{
-                              background: isExtracting ? "#ede9fe" : "#7c3aed",
-                              color: isExtracting ? "#7c3aed" : "#fff",
-                              border: "none",
-                              gap: 6,
-                              fontSize: 12,
-                              padding: "6px 14px",
-                              height: "auto",
-                            }}
-                          >
-                            {isExtracting
-                              ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Escaneando PDF...</>
-                              : <><ScanLine style={{ width: 13, height: 13 }} />{selected.msdsExtractedData ? "Re-escanear MSDS" : "Escanear MSDS con IA"}</>
-                            }
-                          </Button>
-                          {selected.msdsExtractedData && isAdminOrSupervisor && (
-                            <Button
-                              variant="outline"
-                              onClick={() => void handleClearExtract()}
-                              style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
+                              style={{ fontSize: 10, padding: "3px 8px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
                             >
                               <Trash2 style={{ width: 11, height: 11 }} />
-                              Limpiar
+                              Desvincular
                             </Button>
                           )}
                         </div>
-
-                        {extractError && (
-                          <div style={{ padding: "8px 12px", background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 6, marginBottom: 10 }}>
-                            <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>{extractError}</p>
-                          </div>
-                        )}
-
-                        {isExtracting && (
-                          <div style={{ padding: "12px", background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, textAlign: "center" }}>
-                            <Loader2 style={{ width: 20, height: 20, color: "#7c3aed", margin: "0 auto 8px" }} className="animate-spin" />
-                            <p style={{ fontSize: 12, color: "#7c3aed", margin: 0, fontWeight: 600 }}>Descargando y procesando el PDF…</p>
-                            <p style={{ fontSize: 11, color: "#a78bfa", margin: "4px 0 0" }}>Esto puede tardar 15–30 segundos</p>
-                          </div>
-                        )}
-
-                        {/* Extracted data card */}
-                        {!isExtracting && selected.msdsExtractedData && (() => {
-                          const d = selected.msdsExtractedData;
-                          const fields: Array<{
-                            key: keyof MsdsExtractedData;
-                            label: string;
-                            icon: React.ReactNode;
-                            color: string;
-                            bg: string;
-                          }> = [
-                            { key: "cas", label: "Número CAS", icon: <Info style={{ width: 13, height: 13 }} />, color: "#0369a1", bg: "#e0f2fe" },
-                            { key: "familiaQuimica", label: "Familia Química", icon: <FlaskConical style={{ width: 13, height: 13 }} />, color: "#065f46", bg: "#d1fae5" },
-                            { key: "identificacionPeligro", label: "Identificación del Peligro", icon: <AlertTriangle style={{ width: 13, height: 13 }} />, color: "#92400e", bg: "#fef3c7" },
-                            { key: "primerosAuxiliosContacto", label: "Primeros Auxilios por Contacto", icon: <HeartPulse style={{ width: 13, height: 13 }} />, color: "#9f1239", bg: "#ffe4e6" },
-                            { key: "controlExposicion", label: "Control de la Exposición / EPP", icon: <Shield style={{ width: 13, height: 13 }} />, color: "#1e3a8a", bg: "#dbeafe" },
-                            { key: "incompatibilidad", label: "Incompatibilidades", icon: <Thermometer style={{ width: 13, height: 13 }} />, color: "#581c87", bg: "#f3e8ff" },
-                            { key: "riesgosAgudosSalud", label: "Riesgos Agudos para la Salud", icon: <Skull style={{ width: 13, height: 13 }} />, color: "#7f1d1d", bg: "#fee2e2" },
-                          ];
-                          return (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                                {d.pagesScanned > 0 && (
-                                  <span style={{ fontSize: 10, color: "#64748b", background: "#f1f5f9", padding: "2px 8px", borderRadius: 12 }}>
-                                    📄 {d.pagesScanned} {d.pagesScanned === 1 ? "página" : "páginas"}
-                                  </span>
-                                )}
-                                {d.charCount > 0 && (
-                                  <span style={{ fontSize: 10, color: "#64748b", background: "#f1f5f9", padding: "2px 8px", borderRadius: 12 }}>
-                                    ~{(d.charCount / 1000).toFixed(1)}K caracteres leídos
-                                  </span>
-                                )}
-                              </div>
-                              {fields.map(({ key, label, icon, color, bg }) => {
-                                const val = d[key];
-                                if (key === "pagesScanned" || key === "charCount" || key === "extractedAt") return null;
-                                return (
-                                  <div
-                                    key={key}
-                                    style={{
-                                      border: `1px solid ${color}30`,
-                                      borderLeft: `3px solid ${color}`,
-                                      borderRadius: 6,
-                                      overflow: "hidden",
-                                    }}
-                                  >
-                                    <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", background: bg }}>
-                                      <span style={{ color }}>{icon}</span>
-                                      <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
-                                    </div>
-                                    <div style={{ padding: "7px 10px", background: "#fff" }}>
-                                      {val
-                                        ? <p style={{ fontSize: 12, color: "#1e293b", margin: 0, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{val}</p>
-                                        : <p style={{ fontSize: 12, color: "#94a3b8", margin: 0, fontStyle: "italic" }}>No encontrado en el documento</p>
-                                      }
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {/* MANUAL TAB content */}
-                {activeTab === "manual" && (
-                  <div>
-                    {selected.msds && selected.msdsUrl && !editingUrl ? (
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
-                        <div style={{ padding: 16, border: "2px solid #99f6e4", borderRadius: 12, background: "#f0fdfa" }}>
-                          <QRCodeSVG
-                            id="msds-qr-svg"
-                            value={selected.msdsUrl}
-                            size={160}
-                            level="H"
-                            includeMargin
-                          />
-                        </div>
-                        <p style={{ fontSize: 12, color: "#64748b", margin: 0, textAlign: "center", wordBreak: "break-all", maxWidth: 280 }}>
-                          {selected.msdsUrl}
-                        </p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
-                          <Button
-                            onClick={() => window.open(selected.msdsUrl!, "_blank")}
-                            style={{ background: "#0d9488", color: "#fff", border: "none", gap: 6 }}
-                          >
-                            <Download style={{ width: 15, height: 15 }} />
-                            Descargar MSDS
-                          </Button>
-                          <Button variant="outline" onClick={handlePrintQr} style={{ gap: 6 }}>
-                            <Printer style={{ width: 15, height: 15 }} />
-                            Imprimir QR
-                          </Button>
-                          {canEdit && (
-                            <>
-                              <Button
-                                variant="outline"
-                                onClick={() => { setMsdsInput(selected.msdsUrl ?? ""); setSaveError(null); setEditingUrl(true); }}
-                                style={{ gap: 6 }}
-                              >
-                                Editar URL
-                              </Button>
-                              <Button
-                                variant="outline"
-                                onClick={() => void handleDeleteMsds()}
-                                disabled={saving}
-                                style={{ gap: 6, borderColor: "#fca5a5", color: "#dc2626" }}
-                              >
-                                <Trash2 style={{ width: 14, height: 14 }} />
-                                Quitar URL
-                              </Button>
-                            </>
-                          )}
-                        </div>
+                      {canEdit && (selected.msdsStatus === "PROBABLE" || selected.msdsStatus === "MANUAL_REVIEW") && (
+                        <Button
+                          onClick={async () => {
+                            if (!window.confirm("¿Confirmar este MSDS como coincidencia exacta?")) return;
+                            const res = await fetch(`${BASE}/api/msds/${selected.id}/confirm`, {
+                              method: "POST",
+                              headers: getAuthHeaders(),
+                            });
+                            if (res.ok) {
+                              const updated = await res.json();
+                              setSelected(updated);
+                              void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+                              void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                            } else {
+                              const err = await res.json().catch(() => ({}));
+                              alert(`Error al confirmar: ${err.error ?? res.statusText}`);
+                            }
+                          }}
+                          style={{ width: "100%", marginTop: 8, fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#16a34a", color: "#fff", border: "none" }}
+                        >
+                          <CheckCircle2 style={{ width: 12, height: 12 }} />
+                          Confirmar como exacto
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ padding: "10px 12px", background: "#fff7f7", border: "1.5px dashed #fca5a5", borderRadius: 8, marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <XCircle style={{ width: 16, height: 16, color: "#dc2626", flexShrink: 0 }} />
+                        <p style={{ fontSize: 13, color: "#dc2626", margin: 0, fontWeight: 600 }}>Sin MSDS asignado</p>
                       </div>
-                    ) : canEdit ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        {!editingUrl && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#fff7f7", borderRadius: 8, border: "1.5px dashed #fca5a5" }}>
-                            <ShieldOff style={{ width: 18, height: 18, color: "#dc2626", flexShrink: 0 }} />
-                            <p style={{ fontSize: 13, fontWeight: 600, color: "#dc2626", margin: 0 }}>Ficha de Seguridad no disponible</p>
-                          </div>
-                        )}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          <label style={{ fontSize: 13, fontWeight: 600, color: "#374151" }}>
-                            {editingUrl ? "Editar URL de MSDS" : "Registrar URL de MSDS"}
-                          </label>
-                          <input
-                            type="url"
-                            value={msdsInput}
-                            onChange={(e) => { setMsdsInput(e.target.value); setSaveError(null); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") void handleSaveMsds(); }}
-                            placeholder="Pega aquí el enlace de Google Drive..."
-                            disabled={saving}
-                            style={{
-                              width: "100%", padding: "9px 12px", fontSize: 13,
-                              border: saveError ? "1.5px solid #dc2626" : "1.5px solid #e2e8f0",
-                              borderRadius: 8, outline: "none", boxSizing: "border-box",
-                              background: saving ? "#f8fafc" : "#fff", color: "#1e293b",
-                            }}
-                          />
-                          {saveError && <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>{saveError}</p>}
-                          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                            <Button
-                              onClick={() => void handleSaveMsds()}
-                              disabled={saving || !msdsInput.trim()}
-                              style={{ gap: 6, background: saving || !msdsInput.trim() ? "#94a3b8" : "#0d9488", color: "#fff", border: "none" }}
-                            >
-                              {saving
-                                ? <><Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />Guardando...</>
-                                : <><Save style={{ width: 14, height: 14 }} />Guardar MSDS</>
-                              }
-                            </Button>
-                            {editingUrl && (
-                              <Button
-                                variant="outline"
-                                onClick={() => { setEditingUrl(false); setMsdsInput(""); setSaveError(null); }}
-                                disabled={saving}
-                              >
-                                Cancelar
-                              </Button>
-                            )}
-                          </div>
-                        </div>
+                    </div>
+                  )}
+
+                  {/* Candidates List integrated */}
+                  <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
+                        <Search style={{ width: 13, height: 13 }} />
+                        Candidatos recomendados
+                      </span>
+                      {isMatchLoading && <Loader2 style={{ width: 13, height: 13, color: "#0d9488" }} className="animate-spin" />}
+                    </div>
+
+                    {productMatch ? (
+                      <CandidateList
+                        candidates={productMatch.match.candidates.filter(c => c.fileId !== selected.msdsFileId).slice(0, 3)}
+                        productId={selected.id}
+                        onLinked={(updatedProduct) => {
+                          if (updatedProduct) setSelected(updatedProduct);
+                          void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+                          void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                        }}
+                      />
+                    ) : isMatchLoading ? (
+                      <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: 12 }}>
+                        Buscando mejores opciones en Drive...
                       </div>
                     ) : (
-                      <div style={{ padding: "14px 16px", background: "#fff7f7", borderRadius: 8, border: "1.5px dashed #fca5a5" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <ShieldOff style={{ width: 18, height: 18, color: "#dc2626" }} />
-                          <p style={{ fontSize: 13, fontWeight: 600, color: "#dc2626", margin: 0 }}>Ficha de Seguridad no disponible</p>
-                        </div>
+                      <Button
+                        onClick={() => void queryClient.invalidateQueries({ queryKey: ["/api/msds/match", selected.id] })}
+                        variant="outline"
+                        style={{ width: "100%", fontSize: 12, gap: 6 }}
+                      >
+                        <RefreshCw style={{ width: 13, height: 13 }} />
+                        Reintentar búsqueda
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── AI EXTRACTION SECTION ── */}
+                {selected.msdsFileId && (
+                  <div style={{ marginTop: 16, borderTop: "1.5px solid #e2e8f0", paddingTop: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <ScanLine style={{ width: 15, height: 15, color: "#7c3aed" }} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>Extracción IA de Datos de Seguridad</span>
+                      </div>
+                      {selected.msdsExtractedAt && (
+                        <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                          {new Date(selected.msdsExtractedAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Scan button */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                      <Button
+                        onClick={() => void handleExtract()}
+                        disabled={isExtracting}
+                        style={{
+                          background: isExtracting ? "#ede9fe" : "#7c3aed",
+                          color: isExtracting ? "#7c3aed" : "#fff",
+                          border: "none",
+                          gap: 6,
+                          fontSize: 12,
+                          padding: "6px 14px",
+                          height: "auto",
+                        }}
+                      >
+                        {isExtracting
+                          ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Escaneando PDF...</>
+                          : <><ScanLine style={{ width: 13, height: 13 }} />{selected.msdsExtractedData ? "Re-escanear MSDS" : "Escanear MSDS con IA"}</>
+                        }
+                      </Button>
+                      {selected.msdsExtractedData && isAdminOrSupervisor && (
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleClearExtract()}
+                          style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
+                        >
+                          <Trash2 style={{ width: 11, height: 11 }} />
+                          Limpiar
+                        </Button>
+                      )}
+                    </div>
+
+                    {extractError && (
+                      <div style={{ padding: "8px 12px", background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 6, marginBottom: 10 }}>
+                        <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>{extractError}</p>
                       </div>
                     )}
+
+                    {isExtracting && (
+                      <div style={{ padding: "12px", background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, textAlign: "center" }}>
+                        <Loader2 style={{ width: 20, height: 20, color: "#7c3aed", margin: "0 auto 8px" }} className="animate-spin" />
+                        <p style={{ fontSize: 12, color: "#7c3aed", margin: 0, fontWeight: 600 }}>Descargando y procesando el PDF…</p>
+                        <p style={{ fontSize: 11, color: "#a78bfa", margin: "4px 0 0" }}>Esto puede tardar 15–30 segundos</p>
+                      </div>
+                    )}
+
+                    {/* Extracted data card */}
+                    {!isExtracting && selected.msdsExtractedData && (() => {
+                      const d = selected.msdsExtractedData;
+                      const fields: Array<{
+                        key: keyof MsdsExtractedData;
+                        label: string;
+                        icon: React.ReactNode;
+                        color: string;
+                        bg: string;
+                      }> = [
+                        { key: "cas", label: "Número CAS", icon: <Info style={{ width: 13, height: 13 }} />, color: "#0369a1", bg: "#e0f2fe" },
+                        { key: "familiaQuimica", label: "Familia Química", icon: <FlaskConical style={{ width: 13, height: 13 }} />, color: "#065f46", bg: "#d1fae5" },
+                        { key: "identificacionPeligro", label: "Peligros", icon: <Skull style={{ width: 13, height: 13 }} />, color: "#991b1b", bg: "#fee2e2" },
+                        { key: "primerosAuxiliosContacto", label: "Primeros Auxilios", icon: <HeartPulse style={{ width: 13, height: 13 }} />, color: "#be185d", bg: "#fce7f3" },
+                        { key: "controlExposicion", label: "EPP / Exposición", icon: <Shield style={{ width: 13, height: 13 }} />, color: "#1e40af", bg: "#dbeafe" },
+                        { key: "incompatibilidad", label: "Incompatibilidad", icon: <AlertTriangle style={{ width: 13, height: 13 }} />, color: "#92400e", bg: "#fef3c7" },
+                        { key: "riesgosAgudosSalud", label: "Salud / Agudo", icon: <Thermometer style={{ width: 13, height: 13 }} />, color: "#4338ca", bg: "#e0e7ff" },
+                      ];
+
+                      return (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                          {fields.map(f => d[f.key] && (
+                            <div key={f.key} style={{ background: "#fff", border: "1px solid #f1f5f9", borderRadius: 8, padding: "8px 10px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                <div style={{ background: f.bg, color: f.color, padding: 4, borderRadius: 6 }}>{f.icon}</div>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{f.label}</span>
+                              </div>
+                              <p style={{ fontSize: 12, color: "#334155", margin: 0, lineHeight: 1.4 }}>{d[f.key]}</p>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
