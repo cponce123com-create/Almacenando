@@ -5,16 +5,20 @@
  * Compara productos de la base de datos con archivos PDF en Google Drive
  * usando lógica flexible y robusta, sin depender de nombres estructurados.
  *
- * Mejoras v2:
- *   - Stem matching (primeros 4-5 chars): detecta "ALGINAT" ↔ "ALGINATO"
- *   - Normalización de códigos alfanuméricos: "NV 10" → "NV10", "C-5G" → "C5G"
- *   - Filtrado de colores (ES/EN): ignora "amarillo"/"yellow" como ruido textil
- *   - Filtrado de prefijos de marca cortos: ignora "CHT", "SPN", "BTE" en archivos
- *   - Coincidencia de substrings para variantes tipográficas
- *   - Búsqueda inversa: tokens del archivo que existen en el producto
+ * Mejoras v3 (corrección de falsos positivos):
+ *   - Color conflict penalty (-80): colores distintos = producto diferente.
+ *     "AMARILLO EVERZOL GR" nunca puede ser "AZUL MARINO EVERZOL ED".
+ *     Se soportan sinónimos ES↔EN (amarillo=yellow, azul=blue, etc.).
+ *   - Variant mismatch penalty (-60): mismo brand pero variante distinta.
+ *     "SILTEX HH" vs "SILTEX XS": brand coincide pero HH≠XS → rechazado.
+ *   - Sufijos de idioma/región en archivos (SPN, ESP, ENG…) filtrados solo
+ *     para archivos, NO para nombres de producto — evita eliminar variantes
+ *     reales como HH, XS, GR, ED del análisis.
+ *   - Stem matching 5-4 chars: detecta "ALGINAT"↔"ALGINATO".
+ *   - Normalización de códigos alfanuméricos: "NV 10"→"NV10".
  *
  * Clasificación de resultados:
- *   EXACT         — código o fórmula exacta, o score muy alto (≥ 120)
+ *   EXACT         — código/fórmula exacta, o score ≥ 120
  *   PROBABLE      — buena coincidencia (≥ 60)
  *   MANUAL_REVIEW — similitud leve (≥ 25)
  *   NONE          — sin coincidencia válida
@@ -45,12 +49,10 @@ export interface MatchResult {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/** Score thresholds for classification */
 const THRESHOLD_EXACT = 120;
 const THRESHOLD_PROBABLE = 60;
 const THRESHOLD_MANUAL = 25;
 
-/** Score bonuses */
 const SCORE_CODE_EXACT = 100;
 const SCORE_FORMULA_EXACT = 80;
 const SCORE_NAME_STRONG = 70;
@@ -59,14 +61,16 @@ const SCORE_TOKEN_MATCH = 15;
 const SCORE_SUPPLIER = 20;
 const SCORE_SYNONYM = 30;
 const SCORE_CAS = 50;
+const SCORE_STEM5 = 12;
+const SCORE_STEM4 = 8;
+const SCORE_SUBSTR = 6;
+const SCORE_REVERSE_TOKEN = 10;
 
-// NEW bonuses for fuzzy/stem matching
-const SCORE_STEM5_MATCH = 12;   // 5-char stem match (e.g. "algin" in "alginato"↔"alginat")
-const SCORE_STEM4_MATCH = 8;    // 4-char stem match (shorter fallback)
-const SCORE_SUBSTR_MATCH = 6;   // substring inclusion
-const SCORE_REVERSE_TOKEN = 10; // file token found in product (brand names, etc.)
+/** Different color dye → NEVER the same product */
+const PENALTY_COLOR_CONFLICT = -80;
+/** Same brand but different product variant (HH≠XS, GR≠ED) */
+const PENALTY_VARIANT_MISMATCH = -60;
 
-/** Folder priority bonuses */
 const FOLDER_BONUS: Record<string, number> = {
   aprobados: 15,
   approved: 15,
@@ -74,7 +78,6 @@ const FOLDER_BONUS: Record<string, number> = {
   validados: 10,
   validado: 10,
   por_validar: 5,
-  por_validar_: 5,
   validacion: 5,
   obsoletos: -20,
   obsoleto: -20,
@@ -82,36 +85,55 @@ const FOLDER_BONUS: Record<string, number> = {
   archivos: -5,
 };
 
-/** Words to strip from file names during tokenization */
+/** General noise words removed from BOTH product and file names */
 const NOISE_TOKENS = new Set([
   "msds", "fds", "ficha", "seguridad", "safety", "sheet", "data",
   "material", "sds", "hoja", "pdf", "file", "documento", "doc",
   "revision", "rev", "ver", "version", "v1", "v2", "v3", "final",
   "copia", "draft", "borrador",
-  // Common language/region suffixes in MSDS file names
-  "spn", "esp", "spa", "eng", "enu", "deu", "fra", "por",
 ]);
 
 /**
- * Color words in Spanish and English — very common in textile/dye product names
- * but rarely appear literally in MSDS file names (files use brand names instead).
- * These are treated as soft noise: stripped from the "core" token set for
- * name-similarity scoring, but kept for token counting.
+ * Language / region suffixes that appear in MSDS FILE names only.
+ * Applied exclusively to file tokenization — never to product names —
+ * so that real product variant codes like "HH", "XS", "GR" are preserved.
  */
-const COLOR_TOKENS_ES = new Set([
-  "amarillo", "azul", "rojo", "verde", "naranja", "negro", "blanco",
-  "gris", "violeta", "turqueza", "turquesa", "cafe", "marron", "morado",
-  "celeste", "rosa", "beige", "dorado", "plateado", "oro", "plata",
-  "brillante",
+const FILE_LANG_SUFFIXES = new Set([
+  "spn", "esp", "spa", "eng", "enu", "deu", "fra", "por",
+  "chn", "jpn", "kor", "ita", "nld",
+  "de", "en", "es", "fr", "pt", "it", "nl",
 ]);
 
-const COLOR_TOKENS_EN = new Set([
-  "yellow", "blue", "red", "green", "orange", "black", "white",
-  "grey", "gray", "violet", "purple", "brown", "gold", "silver",
-  "brilliant", "bright",
-]);
+/**
+ * Color token synonyms ES ↔ EN.
+ *
+ * In textile / chemical industries product names contain color words
+ * (AMARILLO EVERZOL) while the MSDS file may use the English form
+ * (EVERZOL YELLOW) or no color at all.
+ *
+ * Critical rule: if BOTH sides specify a color and the colors are
+ * DIFFERENT → hard penalty. "AMARILLO EVERZOL GR" ≠ "AZUL EVERZOL GR".
+ */
+const COLOR_SYNONYMS: Record<string, string> = {
+  amarillo: "yellow", yellow: "amarillo",
+  azul:     "blue",   blue:  "azul",
+  rojo:     "red",    red:   "rojo",
+  verde:    "green",  green: "verde",
+  naranja:  "orange", orange:"naranja",
+  negro:    "black",  black: "negro",
+  blanco:   "white",  white: "blanco",
+  gris:     "gray",   gray:  "gris",   grey: "gris",
+  violeta:  "violet", violet:"violeta",purple:"violeta",
+  marron:   "brown",  brown: "marron",
+  marino:   "navy",   navy:  "marino",
+  turqueza: "turquoise", turquesa: "turquoise", turquoise: "turqueza",
+  dorado:   "gold",   gold:  "dorado", oro: "gold",
+  brillante:"brilliant", brilliant:"brillante", bright:"brillante",
+};
 
-/** Bilingual synonym dictionary (ES ↔ EN and common chemical equivalences) */
+const ALL_COLORS = new Set(Object.keys(COLOR_SYNONYMS));
+
+/** Bilingual synonym dictionary for chemical names */
 const SYNONYMS: Array<[string, string]> = [
   ["acido", "acid"],
   ["sulfurico", "sulfuric"],
@@ -163,7 +185,6 @@ const SYNONYMS: Array<[string, string]> = [
   ["benceno", "benzene"],
   ["hexano", "hexane"],
   ["heptano", "heptane"],
-  ["cloruro de metileno", "dichloromethane"],
   ["diclorometano", "dichloromethane"],
   ["tricloroetileno", "trichloroethylene"],
   ["glicerol", "glycerol"],
@@ -177,7 +198,6 @@ const SYNONYMS: Array<[string, string]> = [
   ["potasa", "potassium hydroxide"],
   ["cal", "calcium oxide"],
   ["cal apagada", "calcium hydroxide"],
-  // textile / auxiliary chemicals
   ["reductor", "reducing"],
   ["agente", "agent"],
   ["fijador", "fixative"],
@@ -188,78 +208,50 @@ const SYNONYMS: Array<[string, string]> = [
   ["emulsificante", "emulsifier"],
 ];
 
-/** Common chemical formulas — normalized form → tokens to add */
 const FORMULA_PATTERNS: Array<[RegExp, string[]]> = [
   [/\bh2so4\b/i, ["acido", "sulfurico", "h2so4"]],
-  [/\bhcl\b/i, ["acido", "clorhidrico", "hcl"]],
-  [/\bhno3\b/i, ["acido", "nitrico", "hno3"]],
+  [/\bhcl\b/i,   ["acido", "clorhidrico", "hcl"]],
+  [/\bhno3\b/i,  ["acido", "nitrico", "hno3"]],
   [/\bh3po4\b/i, ["acido", "fosforico", "h3po4"]],
-  [/\bnaoh\b/i, ["sodio", "hidroxido", "naoh"]],
-  [/\bkoh\b/i, ["potasio", "hidroxido", "koh"]],
-  [/\bca\(oh\)2\b/i, ["calcio", "hidroxido", "caoH2"]],
-  [/\bnacl\b/i, ["sodio", "cloruro", "nacl"]],
-  [/\bnh3\b/i, ["amoniaco", "nh3"]],
+  [/\bnaoh\b/i,  ["sodio", "hidroxido", "naoh"]],
+  [/\bkoh\b/i,   ["potasio", "hidroxido", "koh"]],
+  [/\bca\(oh\)2\b/i, ["calcio", "hidroxido"]],
+  [/\bnacl\b/i,  ["sodio", "cloruro", "nacl"]],
+  [/\bnh3\b/i,   ["amoniaco", "nh3"]],
   [/\bnh4oh\b/i, ["amonio", "hidroxido", "nh4oh"]],
-  [/\bh2o2\b/i, ["peroxido", "hidrogeno", "h2o2"]],
+  [/\bh2o2\b/i,  ["peroxido", "hidrogeno", "h2o2"]],
   [/\bch3oh\b/i, ["metanol", "ch3oh"]],
-  [/\bc2h5oh\b/i, ["etanol", "c2h5oh"]],
+  [/\bc2h5oh\b/i,["etanol", "c2h5oh"]],
   [/\bch3coch3\b/i, ["acetona", "ch3coch3"]],
   [/\bkmno4\b/i, ["permanganato", "potasio", "kmno4"]],
   [/\bfecl3\b/i, ["cloruro", "ferrico", "fecl3"]],
   [/\bcuso4\b/i, ["sulfato", "cobre", "cuso4"]],
   [/\bznso4\b/i, ["sulfato", "zinc", "znso4"]],
-  [/\bnah2po4\b/i, ["fosfato", "sodio", "nah2po4"]],
-  [/\bna2co3\b/i, ["carbonato", "sodio", "na2co3"]],
-  [/\bnahco3\b/i, ["bicarbonato", "sodio", "nahco3"]],
+  [/\bna2co3\b/i,["carbonato", "sodio", "na2co3"]],
+  [/\bnahco3\b/i,["bicarbonato", "sodio", "nahco3"]],
   [/\bcacl2\b/i, ["cloruro", "calcio", "cacl2"]],
-  [/\bcocl2\b/i, ["cloruro", "cobalto", "cocl2"]],
   [/\bnaclo\b/i, ["hipoclorito", "sodio", "naclo"]],
-  [/\bca\(clo\)2\b/i, ["hipoclorito", "calcio"]],
 ];
 
 // ── Text Normalization ────────────────────────────────────────────────────────
 
-/**
- * Removes accents/diacritics from a string.
- */
 function removeAccents(str: string): string {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
-/**
- * Normalizes text for comparison:
- * - Removes accents
- * - Converts to lowercase
- * - Removes file extension
- * - Replaces underscores, hyphens, dots, and slashes with spaces
- * - Removes symbols like %, (, ), [, ], etc.
- * - Collapses multiple spaces
- */
 export function normalizeText(text: string): string {
   let s = removeAccents(text);
-  // Remove file extension
   s = s.replace(/\.[a-zA-Z0-9]{2,5}$/, "");
-  // Lowercase
   s = s.toLowerCase();
-  // Replace structural separators with space
   s = s.replace(/[_\-./\\]/g, " ");
-  // Remove non-alphanumeric except spaces
   s = s.replace(/[^a-z0-9 ]/g, " ");
-  // Collapse whitespace
   s = s.replace(/\s+/g, " ").trim();
   return s;
 }
 
 /**
- * NEW: Merges split alphanumeric codes.
- *
- * Many MSDS file names separate the numeric part of a product code with a space:
- *   "NV 10"  → "NV10"
- *   "C 5G"   → "C5G"
- *   "P 2RN"  → "P2RN"
- *
- * Rule: if a purely-numeric token immediately follows a token that ends with
- * a letter (and the preceding token is short ≤ 4 chars), merge them.
+ * Merges split alphanumeric product codes.
+ * "NV 10" → "NV10",  "C 5G" → "C5G",  "P 2RN" → "P2RN"
  */
 function mergeAlphaNumCodes(tokens: string[]): string[] {
   const result: string[] = [];
@@ -280,10 +272,7 @@ function mergeAlphaNumCodes(tokens: string[]): string[] {
   return result;
 }
 
-/**
- * Splits normalized text into meaningful tokens, stripping noise words.
- * Also applies alphanumeric code merging.
- */
+/** Tokenize a product name. */
 export function tokenize(normalizedText: string): string[] {
   const raw = normalizedText
     .split(" ")
@@ -293,36 +282,23 @@ export function tokenize(normalizedText: string): string[] {
 }
 
 /**
- * NEW: Returns "core" tokens — meaningful tokens with color words removed.
- *
- * In the textile dye industry, product names include color descriptors
- * (AMARILLO, AZUL, YELLOW, BLUE…) that rarely appear in MSDS file names.
- * Stripping them from the comparison set avoids false negatives and false
- * positives caused by matching the wrong color.
+ * Tokenize a FILE name.
+ * Removes language/region suffixes (SPN, ENG…) on top of normal noise,
+ * but does NOT remove product variant codes (HH, XS, GR, ED…).
  */
-function coreTokens(tokens: string[]): string[] {
-  return tokens.filter(
-    (t) => !COLOR_TOKENS_ES.has(t) && !COLOR_TOKENS_EN.has(t),
-  );
+function tokenizeFile(normalizedText: string): string[] {
+  const raw = normalizedText
+    .split(" ")
+    .map((t) => t.trim())
+    .filter(
+      (t) =>
+        t.length >= 2 &&
+        !NOISE_TOKENS.has(t) &&
+        !FILE_LANG_SUFFIXES.has(t),
+    );
+  return mergeAlphaNumCodes(raw);
 }
 
-/**
- * NEW: Returns true if a token looks like a short brand/origin prefix that
- * appears in MSDS file names but not in product names.
- *
- * Examples: "CHT", "SPN", "BTE", "ENG", "ESP"
- * Rule: 2–4 letters, all alpha, not a meaningful word.
- */
-function isBrandSuffix(token: string): boolean {
-  return token.length <= 3 && /^[a-z]+$/.test(token);
-}
-
-// ── Synonym expansion ─────────────────────────────────────────────────────────
-
-/**
- * Expands a token set with synonym equivalents.
- * E.g. "sulfurico" also adds "sulfuric".
- */
 function expandWithSynonyms(tokens: string[]): Set<string> {
   const expanded = new Set<string>(tokens);
   for (const token of tokens) {
@@ -334,41 +310,44 @@ function expandWithSynonyms(tokens: string[]): Set<string> {
   return expanded;
 }
 
-// ── Chemical formula detection ────────────────────────────────────────────────
-
-/**
- * Detects chemical formulas in text and returns extra tokens to add.
- */
 function formulaTokens(normalizedText: string): string[] {
   const extra: string[] = [];
   for (const [pattern, tokens] of FORMULA_PATTERNS) {
-    if (pattern.test(normalizedText)) {
-      extra.push(...tokens);
-    }
+    if (pattern.test(normalizedText)) extra.push(...tokens);
   }
   return extra;
 }
 
-// ── Fuzzy helpers ─────────────────────────────────────────────────────────────
-
-/**
- * NEW: Returns true if two tokens share the same first `n` characters.
- * Used to match truncated or abbreviated product names in file names.
- *
- * Example: stemMatch("alginato", "alginat", 5) → true  (both start with "algin")
- */
 function stemMatch(a: string, b: string, n: number): boolean {
   return a.length >= n && b.length >= n && a.slice(0, n) === b.slice(0, n);
 }
 
-/**
- * NEW: Returns true if one token is a substring of the other (min length 4).
- * Catches cases like "levafix" ⊂ "levafix_yellow" or "reduc" ⊂ "reductor".
- */
 function substrMatch(a: string, b: string): boolean {
-  const minLen = 4;
-  if (a.length < minLen || b.length < minLen) return false;
+  if (a.length < 4 || b.length < 4) return false;
   return a.includes(b) || b.includes(a);
+}
+
+// ── Color compatibility ───────────────────────────────────────────────────────
+
+/**
+ * Returns:
+ *   null  → one side has no color tokens (can't judge, no penalty)
+ *   true  → both sides have colors and they are compatible (same color ES/EN)
+ *   false → both sides have colors and they are DIFFERENT → PENALTY
+ */
+function colorsCompatible(
+  pColors: string[],
+  fColors: string[],
+): boolean | null {
+  if (pColors.length === 0 || fColors.length === 0) return null;
+  for (const a of pColors) {
+    for (const b of fColors) {
+      if (a === b || COLOR_SYNONYMS[a] === b || COLOR_SYNONYMS[b] === a) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // ── Score calculation ─────────────────────────────────────────────────────────
@@ -387,11 +366,12 @@ interface ScoreDetail {
   reasons: string[];
 }
 
-/**
- * Calculates a numeric similarity score between a product and a Drive file.
- */
 export function calculateScore(input: ScoreInput): ScoreDetail {
-  const { productCode, productName, productSupplier, productCas, fileName, folderName } = input;
+  const {
+    productCode, productName, productSupplier, productCas,
+    fileName, folderName,
+  } = input;
+
   let score = 0;
   const reasons: string[] = [];
 
@@ -399,16 +379,17 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
   const normName = normalizeText(productName);
   const normCode = normalizeText(productCode);
   const normSupplier = productSupplier ? normalizeText(productSupplier) : null;
-  const normCas = productCas ? productCas.replace(/\s+/g, "").toLowerCase() : null;
+  const normCas = productCas
+    ? productCas.replace(/\s+/g, "").toLowerCase()
+    : null;
 
-  // ── 1. Code match (highest weight) ────────────────────────────────────────
-  // Code must be at least 3 chars to avoid false positives with short codes
+  // ── 1. Exact product code match ───────────────────────────────────────────
   if (normCode.length >= 3 && normFile.includes(normCode)) {
     score += SCORE_CODE_EXACT;
     reasons.push(`código "${productCode}" encontrado en nombre de archivo`);
   }
 
-  // ── 2. CAS number match ────────────────────────────────────────────────────
+  // ── 2. CAS number match ───────────────────────────────────────────────────
   if (normCas && normCas.length >= 5) {
     const normFileCas = normFile.replace(/\s+/g, "").replace(/-/g, "");
     if (normFileCas.includes(normCas.replace(/-/g, ""))) {
@@ -417,156 +398,188 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
     }
   }
 
-  // ── 3. Chemical formula match ──────────────────────────────────────────────
-  const fileFormulaTokens = formulaTokens(normFile);
-  const prodFormulaTokens = formulaTokens(normName);
-  if (fileFormulaTokens.length > 0 && prodFormulaTokens.length > 0) {
-    const sharedFormulas = prodFormulaTokens.filter((t) => fileFormulaTokens.includes(t));
-    if (sharedFormulas.length > 0) {
+  // ── 3. Chemical formula match ─────────────────────────────────────────────
+  const fileFormToks = formulaTokens(normFile);
+  const prodFormToks = formulaTokens(normName);
+  if (fileFormToks.length > 0 && prodFormToks.length > 0) {
+    const shared = prodFormToks.filter((t) => fileFormToks.includes(t));
+    if (shared.length > 0) {
       score += SCORE_FORMULA_EXACT;
-      reasons.push(`fórmula química coincide: ${[...new Set(sharedFormulas)].join(", ")}`);
+      reasons.push(`fórmula química coincide: ${[...new Set(shared)].join(", ")}`);
     }
   }
 
-  // ── 4. Token-based name similarity ────────────────────────────────────────
+  // ── 4. Color check (HARD GATE) ────────────────────────────────────────────
   const prodTokens = tokenize(normName);
-  const fileTokens = tokenize(normFile);
+  const fileTokens = tokenizeFile(normFile);
 
-  // Core = tokens without color words
-  const prodCore = coreTokens(prodTokens);
-  // For the file, also strip short brand suffixes
-  const fileCoreRaw = coreTokens(fileTokens);
-  const fileCore = fileCoreRaw.filter((t) => !isBrandSuffix(t));
+  const pColors = prodTokens.filter((t) => ALL_COLORS.has(t));
+  const fColors = fileTokens.filter((t) => ALL_COLORS.has(t));
+
+  const colorResult = colorsCompatible(pColors, fColors);
+  if (colorResult === false) {
+    score += PENALTY_COLOR_CONFLICT;
+    reasons.push(
+      `color diferente: [${pColors.join("+")}] ≠ [${fColors.join("+")}]`,
+    );
+    // Early exit — different color dyes are never the same MSDS
+    return { score: Math.min(score, 200), reasons };
+  }
+  if (colorResult === true) {
+    reasons.push(`color coincide (${pColors.join("+")}=${fColors.join("+")})`);
+  }
+
+  // ── 5. Token name similarity ──────────────────────────────────────────────
+  const prodCore = prodTokens.filter((t) => !ALL_COLORS.has(t));
+  const fileCore = fileTokens.filter((t) => !ALL_COLORS.has(t));
+
+  if (prodCore.length === 0) return { score: Math.min(score, 200), reasons };
 
   const prodExpanded = expandWithSynonyms(prodCore);
   const fileExpanded = expandWithSynonyms(fileCore);
-
-  // Track already-matched tokens to avoid double-counting
   const alreadyMatched = new Set<string>();
 
-  // 4a. Exact token match (forward: product tokens in file)
-  const exactMatches = prodCore.filter((t) => fileExpanded.has(t));
-  if (exactMatches.length > 0) {
-    const count = exactMatches.length;
-    score += count * SCORE_TOKEN_MATCH;
-    exactMatches.forEach((t) => alreadyMatched.add(t));
-    reasons.push(`tokens exactos: ${exactMatches.join(", ")}`);
+  // 5a. Exact forward (product tokens found in file)
+  const exactFwd = prodCore.filter((t) => fileExpanded.has(t));
+  if (exactFwd.length > 0) {
+    score += exactFwd.length * SCORE_TOKEN_MATCH;
+    exactFwd.forEach((t) => alreadyMatched.add(t));
+    reasons.push(`tokens exactos: ${exactFwd.join(", ")}`);
   }
 
-  // 4b. Exact token match (reverse: file tokens in product) — catches brand names
-  const reverseMatches = fileCore.filter(
-    (t) => prodExpanded.has(t) && !alreadyMatched.has(t) && t.length >= 4,
+  // 5b. Exact reverse (file tokens found in product) — catches brand names
+  const exactRev = fileCore.filter(
+    (t) => prodExpanded.has(t) && !alreadyMatched.has(t) && t.length >= 5,
   );
-  if (reverseMatches.length > 0) {
-    score += reverseMatches.length * SCORE_REVERSE_TOKEN;
-    reverseMatches.forEach((t) => alreadyMatched.add(t));
-    reasons.push(`tokens inversos: ${reverseMatches.join(", ")}`);
+  if (exactRev.length > 0) {
+    score += exactRev.length * SCORE_REVERSE_TOKEN;
+    exactRev.forEach((t) => alreadyMatched.add(t));
+    reasons.push(`tokens inversos: ${exactRev.join(", ")}`);
   }
 
-  // 4c. NEW — 5-char stem match: "alginato" ↔ "alginat", "novacron" ↔ "novacro"
-  const stem5Matches = prodCore.filter(
+  // 5c. Stem-5 match (e.g. "alginato" ↔ "alginat")
+  const stem5 = prodCore.filter(
     (pt) =>
       !alreadyMatched.has(pt) &&
       pt.length >= 5 &&
       fileCore.some((ft) => ft.length >= 5 && stemMatch(pt, ft, 5)),
   );
-  if (stem5Matches.length > 0) {
-    score += stem5Matches.length * SCORE_STEM5_MATCH;
-    stem5Matches.forEach((t) => alreadyMatched.add(t));
-    reasons.push(`stem5: ${stem5Matches.join(", ")}`);
+  if (stem5.length > 0) {
+    score += stem5.length * SCORE_STEM5;
+    stem5.forEach((t) => alreadyMatched.add(t));
+    reasons.push(`stem5: ${stem5.join(", ")}`);
   }
 
-  // 4d. NEW — 4-char stem match fallback: shorter tokens/abbreviations
-  const stem4Matches = prodCore.filter(
+  // 5d. Stem-4 match
+  const stem4 = prodCore.filter(
     (pt) =>
       !alreadyMatched.has(pt) &&
       pt.length >= 4 &&
       fileCore.some((ft) => ft.length >= 4 && stemMatch(pt, ft, 4)),
   );
-  if (stem4Matches.length > 0) {
-    score += stem4Matches.length * SCORE_STEM4_MATCH;
-    stem4Matches.forEach((t) => alreadyMatched.add(t));
-    reasons.push(`stem4: ${stem4Matches.join(", ")}`);
+  if (stem4.length > 0) {
+    score += stem4.length * SCORE_STEM4;
+    stem4.forEach((t) => alreadyMatched.add(t));
+    reasons.push(`stem4: ${stem4.join(", ")}`);
   }
 
-  // 4e. NEW — Substring match: one token contains the other
-  const substrMatches = prodCore.filter(
+  // 5e. Substring match
+  const subStr = prodCore.filter(
     (pt) =>
       !alreadyMatched.has(pt) &&
       fileCore.some((ft) => substrMatch(pt, ft)),
   );
-  if (substrMatches.length > 0) {
-    score += substrMatches.length * SCORE_SUBSTR_MATCH;
-    substrMatches.forEach((t) => alreadyMatched.add(t));
-    reasons.push(`substring: ${substrMatches.join(", ")}`);
+  if (subStr.length > 0) {
+    score += subStr.length * SCORE_SUBSTR;
+    subStr.forEach((t) => alreadyMatched.add(t));
+    reasons.push(`substring: ${subStr.join(", ")}`);
   }
 
-  // 4f. Overall name ratio bonus (replaces the old ratio block for core tokens)
-  const totalProdCore = prodCore.length;
-  const totalMatched = alreadyMatched.size;
-  if (totalProdCore > 0 && totalMatched > 0) {
-    const ratio = totalMatched / totalProdCore;
-    if (ratio >= 0.8 && totalMatched >= 2) {
-      score += SCORE_NAME_STRONG;
-      reasons.push(`nombre muy similar (${Math.round(ratio * 100)}%)`);
-    } else if (ratio >= 0.5 && totalMatched >= 2) {
-      score += SCORE_NAME_PARTIAL;
-      reasons.push(`coincidencia parcial de nombre (${Math.round(ratio * 100)}%)`);
-    } else if (ratio >= 0.5 && totalMatched === 1) {
-      // Single strong brand-name token covering ≥50% of core (e.g. "AMSABINDER",
-      // "ANTHRASOL", "DIANIX") — enough to surface as MANUAL_REVIEW candidate
-      const singleToken = [...alreadyMatched][0];
-      if (singleToken && singleToken.length >= 6) {
-        score += SCORE_TOKEN_MATCH;
-        reasons.push(`token dominante: "${singleToken}"`);
+  // 5f. Ratio bonus
+  const ratio = alreadyMatched.size / prodCore.length;
+  if (ratio >= 0.8 && alreadyMatched.size >= 2) {
+    score += SCORE_NAME_STRONG;
+    reasons.push(`nombre muy similar (${Math.round(ratio * 100)}%)`);
+  } else if (ratio >= 0.5 && alreadyMatched.size >= 2) {
+    score += SCORE_NAME_PARTIAL;
+    reasons.push(`coincidencia parcial de nombre (${Math.round(ratio * 100)}%)`);
+  } else if (ratio >= 0.5 && alreadyMatched.size === 1) {
+    const singleToken = [...alreadyMatched][0];
+    if (singleToken && singleToken.length >= 6) {
+      score += SCORE_TOKEN_MATCH;
+      reasons.push(`token dominante: "${singleToken}"`);
+    }
+  }
+
+  // ── 6. Variant mismatch penalty ───────────────────────────────────────────
+  // If a brand name (long token) matches on both sides, but both sides also
+  // have short unmatched variant tokens that are DIFFERENT → penalty.
+  //
+  //   "SILTEX HH" vs "SILTEX XS"  → sharedBrand=siltex, HH≠XS → -60
+  //   "SILTEX HH" vs "SILTEX HH SPN" → sharedBrand=siltex, HH=HH → no penalty
+  const sharedBrands = prodCore.filter(
+    (t) => t.length >= 5 && fileCore.includes(t),
+  );
+  if (sharedBrands.length > 0) {
+    const pVariants = prodCore.filter(
+      (t) => t.length >= 2 && t.length <= 4 && !alreadyMatched.has(t),
+    );
+    const fVariants = fileCore.filter(
+      (t) => t.length >= 2 && t.length <= 4 && !alreadyMatched.has(t),
+    );
+    if (pVariants.length > 0 && fVariants.length > 0) {
+      const sharedVariants = pVariants.filter((v) => fVariants.includes(v));
+      if (sharedVariants.length === 0) {
+        score += PENALTY_VARIANT_MISMATCH;
+        reasons.push(
+          `variante diferente: prod[${pVariants.join("+")}] ≠ archivo[${fVariants.join("+")}]`,
+        );
       }
     }
   }
 
-  // ── 5. Synonym match bonus ─────────────────────────────────────────────────
+  // ── 7. Synonym bonus ──────────────────────────────────────────────────────
   const synonymMatches = prodCore.filter((t) => {
     for (const [a, b] of SYNONYMS) {
-      if ((t === a && fileExpanded.has(b)) || (t === b && fileExpanded.has(a))) return true;
+      if ((t === a && fileExpanded.has(b)) || (t === b && fileExpanded.has(a)))
+        return true;
     }
     return false;
   });
-  const newSynonyms = synonymMatches.filter((t) => !alreadyMatched.has(t));
-  if (newSynonyms.length > 0) {
+  const newSyns = synonymMatches.filter((t) => !alreadyMatched.has(t));
+  if (newSyns.length > 0) {
     score += SCORE_SYNONYM;
-    reasons.push(`sinónimos: ${newSynonyms.join(", ")}`);
+    reasons.push(`sinónimos: ${newSyns.join(", ")}`);
   }
 
-  // ── 6. Supplier match ──────────────────────────────────────────────────────
+  // ── 8. Supplier match ─────────────────────────────────────────────────────
   if (normSupplier && normSupplier.length >= 3) {
-    const supplierTokens = tokenize(normSupplier);
-    const supplierMatches = supplierTokens.filter((t) => t.length >= 4 && normFile.includes(t));
-    if (supplierMatches.length > 0) {
+    const supTokens = tokenize(normSupplier);
+    const supMatches = supTokens.filter(
+      (t) => t.length >= 4 && normFile.includes(t),
+    );
+    if (supMatches.length > 0) {
       score += SCORE_SUPPLIER;
-      reasons.push(`proveedor coincide: ${supplierMatches.join(", ")}`);
+      reasons.push(`proveedor coincide: ${supMatches.join(", ")}`);
     }
   }
 
-  // ── 7. Folder priority bonus ───────────────────────────────────────────────
+  // ── 9. Folder priority bonus ──────────────────────────────────────────────
   const normFolder = normalizeText(folderName).replace(/\s+/g, "_");
   for (const [keyword, bonus] of Object.entries(FOLDER_BONUS)) {
     if (normFolder.includes(keyword)) {
       score += bonus;
-      if (bonus > 0) reasons.push(`carpeta prioritaria: ${folderName} (+${bonus})`);
+      if (bonus > 0)
+        reasons.push(`carpeta prioritaria: ${folderName} (+${bonus})`);
       break;
     }
   }
 
-  // ── 8. Score cap ───────────────────────────────────────────────────────────
-  score = Math.min(score, 200);
-
-  return { score, reasons };
+  return { score: Math.min(score, 200), reasons };
 }
 
 // ── Classification ────────────────────────────────────────────────────────────
 
-/**
- * Classifies a score into a match status.
- */
 export function classifyMatch(score: number): MsdsMatchStatus {
   if (score >= THRESHOLD_EXACT) return "EXACT";
   if (score >= THRESHOLD_PROBABLE) return "PROBABLE";
@@ -583,16 +596,18 @@ export interface ProductInput {
   casNumber?: string | null;
 }
 
-/**
- * Matches a single product against all available Drive MSDS files.
- * Returns the best match and all candidates with scores.
- */
 export function matchProductWithFiles(
   product: ProductInput,
   files: MsdsDriveFile[],
 ): MatchResult {
   if (files.length === 0) {
-    return { status: "NONE", score: 0, best: null, candidates: [], reason: "No hay archivos MSDS disponibles" };
+    return {
+      status: "NONE",
+      score: 0,
+      best: null,
+      candidates: [],
+      reason: "No hay archivos MSDS disponibles",
+    };
   }
 
   const candidates: MatchCandidate[] = [];
@@ -619,7 +634,6 @@ export function matchProductWithFiles(
     }
   }
 
-  // Sort candidates by score descending
   candidates.sort((a, b) => b.score - a.score);
 
   const best = candidates[0] ?? null;
@@ -630,7 +644,7 @@ export function matchProductWithFiles(
     status,
     score: best?.score ?? 0,
     best,
-    candidates: candidates.slice(0, 5), // return top 5
+    candidates: candidates.slice(0, 5),
     reason,
   };
 }
