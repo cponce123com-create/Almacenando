@@ -322,14 +322,20 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
   const totalFileTokens = fileTokens.length;
 
   if (totalProductTokens > 0 && matchingTokens.length > 0) {
-    const forwardRatio = matchingTokens.length / totalProductTokens;
-    const backwardRatio = reverseMatchingTokens.length / totalFileTokens;
+    // FIX 3: Multiplicador de peso para tokens numéricos (ej. "199")
+    const weightedMatchingCount = matchingTokens.reduce((acc, t) => acc + (/[0-9]/.test(t) ? 2 : 1), 0);
+    const weightedTotalCount = prodTokens.reduce((acc, t) => acc + (/[0-9]/.test(t) ? 2 : 1), 0);
+    
+    const forwardRatio = weightedMatchingCount / weightedTotalCount;
+    
+    // FIX 2: backwardRatio solo contribuye si el archivo tiene al menos 3 tokens significativos
+    const backwardRatio = totalFileTokens >= 3 ? reverseMatchingTokens.length / totalFileTokens : 0;
     
     // Penalización por longitud dispar
     const lengthDiff = Math.abs(totalProductTokens - totalFileTokens);
     const lengthPenalty = Math.min(lengthDiff * 5, 20);
 
-    if (forwardRatio >= 0.9 && backwardRatio >= 0.9) {
+    if (forwardRatio >= 0.9 && (totalFileTokens < 3 || backwardRatio >= 0.9)) {
       score += SCORE_NAME_STRONG + 20; // Bonus por coincidencia casi exacta de tokens
       reasons.push(`nombre casi idéntico: "${productName}"`);
     } else if (forwardRatio >= 0.7 || backwardRatio >= 0.7) {
@@ -348,15 +354,18 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
   }
 
   // ── 5. Synonym match bonus ─────────────────────────────────────────────────
-  const synonymMatches = prodTokens.filter((t) => {
-    for (const [a, b] of SYNONYMS) {
-      if ((t === a && fileExpanded.has(b)) || (t === b && fileExpanded.has(a))) return true;
+  // FIX 1: Solo aplicar si no hubo coincidencias directas de nombre
+  if (matchingTokens.length === 0 && reverseMatchingTokens.length === 0) {
+    const synonymMatches = prodTokens.filter((t) => {
+      for (const [a, b] of SYNONYMS) {
+        if ((t === a && fileExpanded.has(b)) || (t === b && fileExpanded.has(a))) return true;
+      }
+      return false;
+    });
+    if (synonymMatches.length > 0) {
+      score += SCORE_SYNONYM;
+      reasons.push(`sinónimos: ${synonymMatches.join(", ")}`);
     }
-    return false;
-  });
-  if (synonymMatches.length > 0) {
-    score += SCORE_SYNONYM;
-    reasons.push(`sinónimos: ${synonymMatches.join(", ")}`);
   }
 
   // ── 6. Supplier match ──────────────────────────────────────────────────────
