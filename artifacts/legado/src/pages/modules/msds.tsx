@@ -309,7 +309,7 @@ export default function MsdsPage() {
   const [editingUrl, setEditingUrl] = useState(false);
   const [activeTab, setActiveTab] = useState<"manual" | "smart">("smart");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [showCandidates, setShowCandidates] = useState(false);
+  const [showCandidates, setShowCandidates] = useState(true);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
@@ -344,7 +344,7 @@ export default function MsdsPage() {
   const { data: productMatch, isLoading: isMatchLoading } = useQuery<ProductMatchResponse>({
     queryKey: ["/api/msds/match", selected?.id],
     queryFn: () => apiJson(`/api/msds/match/${selected!.id}`),
-    enabled: !!selected && activeTab === "smart" && showCandidates,
+    enabled: !!selected,
   });
 
   const rescanMutation = useMutation({
@@ -984,34 +984,63 @@ export default function MsdsPage() {
                 {/* SMART TAB content */}
                 {activeTab === "smart" && (
                   <div>
-                    {/* Current match info */}
-                    {selected.msdsStatus && selected.msdsStatus !== "NONE" && (
-                      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Resultado del cruce</span>
-                          <StatusBadge status={selected.msdsStatus} />
-                        </div>
-                        {selected.msdsFileName && (
-                          <p style={{ fontSize: 12, color: "#1e293b", margin: "0 0 4px 0", fontWeight: 600 }}>
-                            📄 {selected.msdsFileName}
-                          </p>
-                        )}
-                        {selected.msdsMatchReason && (
-                          <p style={{ fontSize: 11, color: "#64748b", margin: "0 0 6px 0", fontStyle: "italic" }}>
-                            {selected.msdsMatchReason}
-                          </p>
-                        )}
-                        <ScoreBar score={selected.msdsScore} status={selected.msdsStatus} />
-                        <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                          {selected.msdsUrl && (
-                            <Button
-                              onClick={() => window.open(selected.msdsUrl!, "_blank")}
-                              style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#0d9488", color: "#fff", border: "none" }}
-                            >
-                              <Download style={{ width: 12, height: 12 }} />
-                              Ver MSDS
-                            </Button>
-                          )}
+                    {/* Current match info & Candidates merged */}
+                    <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#0c1a2e" }}>Resultado del cruce</span>
+                        {selected.msdsStatus && <StatusBadge status={selected.msdsStatus} />}
+                      </div>
+
+                      {/* Linked file info */}
+                      {selected.msdsStatus && selected.msdsStatus !== "NONE" ? (
+                        <div style={{ background: "#fff", border: "1px solid #0d948830", borderRadius: 8, padding: "10px", marginBottom: 14 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: 12, color: "#1e293b", margin: "0 0 2px 0", fontWeight: 700 }}>
+                                📄 {selected.msdsFileName}
+                              </p>
+                              {selected.msdsMatchReason && (
+                                <p style={{ fontSize: 11, color: "#64748b", margin: "0 0 6px 0", fontStyle: "italic" }}>
+                                  {selected.msdsMatchReason}
+                                </p>
+                              )}
+                              <ScoreBar score={selected.msdsScore} status={selected.msdsStatus} />
+                            </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+                              {selected.msdsUrl && (
+                                <Button
+                                  onClick={() => window.open(selected.msdsUrl!, "_blank")}
+                                  style={{ fontSize: 11, padding: "4px 8px", height: "auto", gap: 4, background: "#0d9488", color: "#fff", border: "none" }}
+                                >
+                                  <Download style={{ width: 11, height: 11 }} />
+                                  Ver
+                                </Button>
+                              )}
+                              {canEdit && (
+                                <Button
+                                  variant="outline"
+                                  onClick={async () => {
+                                    if (!window.confirm("¿Desvincular el MSDS de este producto?")) return;
+                                    const res = await fetch(`${BASE}/api/msds/unlink`, {
+                                      method: "POST",
+                                      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                                      body: JSON.stringify({ productId: selected.id }),
+                                    });
+                                    if (res.ok) {
+                                      const updated = await res.json();
+                                      setSelected(updated);
+                                      void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+                                      void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                                    }
+                                  }}
+                                  style={{ fontSize: 10, padding: "3px 8px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
+                                >
+                                  <Trash2 style={{ width: 11, height: 11 }} />
+                                  Desvincular
+                                </Button>
+                              )}
+                            </div>
+                          </div>
                           {canEdit && (selected.msdsStatus === "PROBABLE" || selected.msdsStatus === "MANUAL_REVIEW") && (
                             <Button
                               onClick={async () => {
@@ -1030,84 +1059,58 @@ export default function MsdsPage() {
                                   alert(`Error al confirmar: ${err.error ?? res.statusText}`);
                                 }
                               }}
-                              style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#16a34a", color: "#fff", border: "none" }}
+                              style={{ width: "100%", marginTop: 8, fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, background: "#16a34a", color: "#fff", border: "none" }}
                             >
                               <CheckCircle2 style={{ width: 12, height: 12 }} />
-                              Confirmar exacto
-                            </Button>
-                          )}
-                          {canEdit && (
-                            <Button
-                              variant="outline"
-                              onClick={async () => {
-                                if (!window.confirm("¿Desvinular el MSDS de este producto?")) return;
-                                const res = await fetch(`${BASE}/api/msds/unlink`, {
-                                  method: "POST",
-                                  headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-                                  body: JSON.stringify({ productId: selected.id }),
-                                });
-                                if (res.ok) {
-                                  const updated = await res.json();
-                                  setSelected(updated);
-                                  void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
-                                  void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
-                                }
-                              }}
-                              style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
-                            >
-                              <Trash2 style={{ width: 12, height: 12 }} />
-                              Desvinular
+                              Confirmar como exacto
                             </Button>
                           )}
                         </div>
-                      </div>
-                    )}
-
-                    {selected.msdsStatus === "NONE" || !selected.msdsStatus ? (
-                      <div style={{ padding: "10px 12px", background: "#fff7f7", border: "1.5px dashed #fca5a5", borderRadius: 8, marginBottom: 14 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <XCircle style={{ width: 16, height: 16, color: "#dc2626", flexShrink: 0 }} />
-                          <p style={{ fontSize: 13, color: "#dc2626", margin: 0, fontWeight: 600 }}>Sin MSDS asignado</p>
+                      ) : (
+                        <div style={{ padding: "10px 12px", background: "#fff7f7", border: "1.5px dashed #fca5a5", borderRadius: 8, marginBottom: 14 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <XCircle style={{ width: 16, height: 16, color: "#dc2626", flexShrink: 0 }} />
+                            <p style={{ fontSize: 13, color: "#dc2626", margin: 0, fontWeight: 600 }}>Sin MSDS asignado</p>
+                          </div>
                         </div>
-                        <p style={{ fontSize: 12, color: "#64748b", margin: "4px 0 0 0" }}>
-                          Usa el botón "Buscar en Drive" para encontrar candidatos o ejecuta un escaneo masivo.
-                        </p>
-                      </div>
-                    ) : null}
+                      )}
 
-                    {/* Candidate search button */}
-                    <Button
-                      onClick={() => setShowCandidates(true)}
-                      disabled={isMatchLoading}
-                      variant="outline"
-                      style={{ width: "100%", gap: 6, fontSize: 13, marginBottom: 12 }}
-                    >
-                      {isMatchLoading
-                        ? <><Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />Buscando en Drive...</>
-                        : <><Search style={{ width: 14, height: 14 }} />Buscar candidatos en Drive</>
-                      }
-                    </Button>
-
-                    {/* Candidates */}
-                    {showCandidates && productMatch && (
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>
-                            Candidatos ({productMatch.match.candidates.length}) — {productMatch.filesScanned} archivos escaneados
+                      {/* Candidates List integrated */}
+                      <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
+                            <Search style={{ width: 13, height: 13 }} />
+                            Candidatos recomendados
                           </span>
+                          {isMatchLoading && <Loader2 style={{ width: 13, height: 13, color: "#0d9488" }} className="animate-spin" />}
                         </div>
-                        <CandidateList
-                          candidates={productMatch.match.candidates}
-                          productId={selected.id}
-                          onLinked={(updatedProduct) => {
-                            if (updatedProduct) setSelected(updatedProduct);
-                            void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
-                            void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
-                            setShowCandidates(false);
-                          }}
-                        />
+
+                        {productMatch ? (
+                          <CandidateList
+                            candidates={productMatch.match.candidates.filter(c => c.fileId !== selected.msdsFileId).slice(0, 3)}
+                            productId={selected.id}
+                            onLinked={(updatedProduct) => {
+                              if (updatedProduct) setSelected(updatedProduct);
+                              void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+                              void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                            }}
+                          />
+                        ) : isMatchLoading ? (
+                          <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: 12 }}>
+                            Buscando mejores opciones en Drive...
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={() => void queryClient.invalidateQueries({ queryKey: ["/api/msds/match", selected.id] })}
+                            variant="outline"
+                            style={{ width: "100%", fontSize: 12, gap: 6 }}
+                          >
+                            <RefreshCw style={{ width: 13, height: 13 }} />
+                            Reintentar búsqueda
+                          </Button>
+                        )}
                       </div>
-                    )}
+                    </div>
 
                     {/* ── AI EXTRACTION SECTION ── */}
                     {selected.msdsFileId && (
