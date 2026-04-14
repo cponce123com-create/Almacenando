@@ -251,14 +251,8 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
   const now = new Date();
 
   for (const product of products) {
-    // Skip manually linked products unless force=true
+    // Solo skip si fue vinculado MANUALMENTE por un humano
     if (!force && product.msdsMatchedBy === "manual") {
-      skipped++;
-      continue;
-    }
-    // Skip products already confirmed as EXACT unless force=true
-    // (preserves manually-confirmed and auto-confirmed exact matches across rescans)
-    if (!force && product.msdsStatus === "EXACT") {
       skipped++;
       continue;
     }
@@ -595,21 +589,18 @@ router.post("/confirm-all", requireAuth, requireRole("admin", "supervisor"), asy
   res.json({ confirmed, message: `${confirmed} producto(s) sincronizados como Exacto` });
 }));
 
-// ── POST /api/msds/reset-all ──────────────────────────────────────────────────
-// Resets matched products back to NONE using a single bulk SQL UPDATE,
-// then immediately re-scans with the latest algorithm.
+// ── POST /api/msds/reset-only ──────────────────────────────────────────────────
+// Resets matched products back to NONE using a single bulk SQL UPDATE.
 // resetManual=false (default): preserves manually confirmed links.
 // resetManual=true: resets everything including manual links.
 
-const resetAllSchema = z.object({
+const resetSchema = z.object({
   warehouse: z.string().optional(),
   resetManual: z.boolean().optional().default(false),
 });
 
-router.post("/reset-all", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req: AuthenticatedRequest, res) => {
-  if (!guardDriveConfig(res)) return;
-
-  const parsed = resetAllSchema.safeParse(req.body);
+router.post("/reset-only", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const parsed = resetSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
     return;
@@ -618,7 +609,6 @@ router.post("/reset-all", requireAuth, requireRole("admin", "supervisor"), async
   const { warehouse, resetManual } = parsed.data;
   const now = new Date();
 
-  // ── Step 1: Bulk reset via single SQL UPDATE (avoids N sequential awaits) ──
   // Build WHERE clause dynamically
   const warehouseCond = warehouse && warehouse !== "all"
     ? sql`AND warehouse = ${warehouse}`
@@ -650,63 +640,59 @@ router.post("/reset-all", requireAuth, requireRole("admin", "supervisor"), async
 
   const resetCount = (resetResult as any).rowCount ?? 0;
 
-  // ── Step 2: Re-scan with new matcher ─────────────────────────────────────
-  const warehouseCondition = warehouse && warehouse !== "all"
-    ? eq(productsTable.warehouse, warehouse)
-    : undefined;
+  res.json({
+    message: `Reset completado — ${resetCount} productos limpiados. Ahora presiona 'Escanear Drive' para re-clasificar.`,
+    resetCount,
+  });
+}));
 
-  const [products, files] = await Promise.all([
-    db.select().from(productsTable).where(warehouseCondition),
-    getDriveMsdsFiles(),
-  ]);
+// ── POST /api/msds/reset-all ──────────────────────────────────────────────────
+// Deprecated: Use reset-only instead. Kept for backward compatibility but 
+// Step 2 (re-scan) is removed to avoid the "instant-EXACT" bug.
 
-  // Batch DB writes: collect all updates then execute in parallel batches of 20
-  const updates: Array<{ id: string; data: Record<string, unknown> }> = [];
-
-  for (const product of products) {
-    if (!resetManual && product.msdsMatchedBy === "manual") continue;
-
-    const match = matchProductWithFiles(
-      { code: product.code, name: product.name, supplier: product.supplier, casNumber: product.casNumber },
-      files,
-    );
-    const best = match.best;
-    const status = match.status as MsdsMatchStatus;
-
-    updates.push({
-      id: product.id,
-      data: {
-        msdsStatus:       status,
-        msdsScore:        match.score,
-        msdsFileId:       best?.fileId ?? null,
-        msdsFileName:     best?.fileName ?? null,
-        msdsMatchReason:  match.reason,
-        msdsMatchedBy:    "auto",
-        msdsLastCheckedAt: now,
-        ...(status === "EXACT" || status === "PROBABLE"
-          ? { msds: true, msdsUrl: best!.link, updatedAt: now }
-          : { updatedAt: now }),
-      },
-    });
+router.post("/reset-all", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const parsed = resetSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
+    return;
   }
 
-  // Execute in batches of 25 concurrent updates
-  const BATCH_SIZE = 25;
-  for (let i = 0; i < updates.length; i += BATCH_SIZE) {
-    const batch = updates.slice(i, i + BATCH_SIZE);
-    await Promise.all(
-      batch.map(({ id, data }) =>
-        db.update(productsTable).set(data as any).where(eq(productsTable.id, id)),
-      ),
-    );
-  }
+  const { warehouse, resetManual } = parsed.data;
+  const now = new Date();
+
+  const warehouseCond = warehouse && warehouse !== "all"
+    ? sql`AND warehouse = ${warehouse}`
+    : sql``;
+
+  const manualCond = resetManual
+    ? sql``
+    : sql`AND (msds_matched_by IS NULL OR msds_matched_by != 'manual')`;
+
+  const resetResult = await db.execute(sql`
+    UPDATE products
+    SET
+      msds              = false,
+      msds_url          = NULL,
+      msds_status       = 'NONE',
+      msds_score        = 0,
+      msds_file_id      = NULL,
+      msds_file_name    = NULL,
+      msds_match_reason = NULL,
+      msds_matched_by   = NULL,
+      msds_last_checked_at = ${now},
+      updated_at        = ${now}
+    WHERE
+      msds_status IS NOT NULL
+      AND msds_status != 'NONE'
+      ${warehouseCond}
+      ${manualCond}
+  `);
+
+  const resetCount = (resetResult as any).rowCount ?? 0;
 
   res.json({
-    message: "Reinicio y re-escaneo completados",
+    message: "Reinicio completado",
     resetCount,
-    rescanned: updates.length,
-    filesScanned: files.length,
-    totalProducts: products.length,
   });
 }));
 
