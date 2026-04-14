@@ -73,7 +73,7 @@ const NOISE_TOKENS = new Set([
   "msds", "fds", "ficha", "seguridad", "safety", "sheet", "data",
   "material", "sds", "hoja", "pdf", "file", "documento", "doc",
   "revision", "rev", "ver", "version", "v1", "v2", "v3", "final",
-  "copia", "draft", "borrador",
+  "copia", "draft", "borrador", "pa",
 ]);
 
 /** Bilingual synonym dictionary (ES ↔ EN and common chemical equivalences) */
@@ -99,6 +99,7 @@ const SYNONYMS: Array<[string, string]> = [
   ["zinc", "zinc"],
   ["cloro", "chlorine"],
   ["cloruro", "chloride"],
+  ["turqueza", "turquesa"],
   ["sulfato", "sulfate"],
   ["sulfato", "sulphate"],
   ["nitrato", "nitrate"],
@@ -322,20 +323,26 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
 
   if (totalProductTokens > 0 && matchingTokens.length > 0) {
     const forwardRatio = matchingTokens.length / totalProductTokens;
-    const backwardRatio = totalFileTokens > 0 ? reverseMatchingTokens.length / totalFileTokens : 0;
-    const ratio = Math.max(forwardRatio, backwardRatio);
+    const backwardRatio = reverseMatchingTokens.length / totalFileTokens;
+    
+    // Penalización por longitud dispar
+    const lengthDiff = Math.abs(totalProductTokens - totalFileTokens);
+    const lengthPenalty = Math.min(lengthDiff * 5, 20);
 
-    if (ratio >= 0.8) {
-      score += SCORE_NAME_STRONG;
-      reasons.push(`nombre muy similar (${Math.round(ratio * 100)}%): "${productName}"`);
-    } else if (ratio >= 0.4) {
-      score += SCORE_NAME_PARTIAL;
-      reasons.push(`coincidencia parcial de nombre (${Math.round(ratio * 100)}%)`);
+    if (forwardRatio >= 0.9 && backwardRatio >= 0.9) {
+      score += SCORE_NAME_STRONG + 20; // Bonus por coincidencia casi exacta de tokens
+      reasons.push(`nombre casi idéntico: "${productName}"`);
+    } else if (forwardRatio >= 0.7 || backwardRatio >= 0.7) {
+      score += SCORE_NAME_STRONG - lengthPenalty;
+      reasons.push(`nombre muy similar (${Math.round(Math.max(forwardRatio, backwardRatio) * 100)}%)`);
+    } else if (forwardRatio >= 0.4 || backwardRatio >= 0.4) {
+      score += SCORE_NAME_PARTIAL - lengthPenalty;
+      reasons.push(`coincidencia parcial de nombre (${Math.round(Math.max(forwardRatio, backwardRatio) * 100)}%)`);
     } else if (matchingTokens.length >= 2) {
-      score += SCORE_TOKEN_MATCH * matchingTokens.length;
+      score += (SCORE_TOKEN_MATCH * matchingTokens.length) - lengthPenalty;
       reasons.push(`palabras clave coinciden: ${matchingTokens.join(", ")}`);
     } else if (matchingTokens.length === 1 && matchingTokens[0]!.length >= 5) {
-      score += SCORE_TOKEN_MATCH;
+      score += SCORE_TOKEN_MATCH - lengthPenalty;
       reasons.push(`palabra clave encontrada: ${matchingTokens[0]}`);
     }
   }
