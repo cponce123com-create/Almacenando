@@ -57,6 +57,13 @@
       "when": 1775050000000,
       "tag": "0007_password_reset_permissions_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775200000000,
+      "tag": "0008_numeric_to_double_precision",
+      "breakpoints": true
     }
   ]
 }

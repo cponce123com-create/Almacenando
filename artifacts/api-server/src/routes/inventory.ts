@@ -131,7 +131,7 @@ router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
   for (const product of allProducts) {
     const latest = latestMap.get(product.id);
     if (!latest) { withoutRecords++; continue; }
-    if (latest.physicalCount === null) { exact++; continue; }
+    if (latest.physicalCount === null) { withoutRecords++; continue; }
     const sys = parseFloat(latest.previousBalance) || 0;
     const phys = parseFloat(latest.physicalCount) || 0;
     const diff = phys - sys;
@@ -304,7 +304,7 @@ router.post(
           boxNumber: i + 1,
           weight: box.weight || null,
           lot: box.lot || null,
-          photoUrl: photoUrls[i],
+          photoUrl: photoUrls[i] ?? null,
         });
       }
 

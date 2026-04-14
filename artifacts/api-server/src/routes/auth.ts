@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { eq, and, ne, count } from "drizzle-orm";
@@ -98,6 +98,12 @@ router.put("/me", requireAuth, asyncHandler(async (req, res) => {
   const parsed = updateMeSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
+    return;
+  }
+
+  const { currentPassword, newPassword } = parsed.data;
+  if ((currentPassword && !newPassword) || (!currentPassword && newPassword)) {
+    res.status(400).json({ error: "Debes proporcionar tanto la contraseña actual como la nueva" });
     return;
   }
 
@@ -220,7 +226,6 @@ router.post("/setup", asyncHandler(async (req, res) => {
     return;
   }
 
-  const { randomBytes } = await import("crypto");
   const id = randomBytes(16).toString("hex");
   const passwordHash = await hashPassword(password);
 
