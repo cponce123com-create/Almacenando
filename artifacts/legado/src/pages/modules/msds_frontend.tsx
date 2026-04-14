@@ -1,6 +1,6 @@
 import { buildMsdsAlbumHtml } from "./msds-print";
 import { sinMovimiento } from "./products-partials";
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import QRCode from "qrcode";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -13,8 +13,7 @@ import {
   Search, ShieldCheck, ShieldOff, Download, Printer, AlertCircle,
   Loader2, Save, BookOpen, Trash2, Zap, RefreshCw, Link2, CheckCircle2, FileSpreadsheet,
   Clock, HelpCircle, XCircle, ChevronDown, ChevronUp, ScanLine, FlaskConical,
-  Skull, HeartPulse, Shield, AlertTriangle, Thermometer, Info, ChevronLeft, ChevronRight,
-  RotateCcw,
+  Skull, HeartPulse, Shield, AlertTriangle, Thermometer, Info, RotateCcw,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
@@ -103,14 +102,12 @@ interface ProductMatchResponse {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const PAGE_SIZE = 50;
 
 const STATUS_CONFIG = {
   EXACT: {
     label: "Exacto",
     color: "#16a34a",
     bg: "#dcfce7",
-    border: "#bbf7d0",
     Icon: CheckCircle2,
     description: "Coincidencia segura — código o fórmula exacta",
   },
@@ -118,7 +115,6 @@ const STATUS_CONFIG = {
     label: "Probable",
     color: "#ca8a04",
     bg: "#fef9c3",
-    border: "#fde68a",
     Icon: Clock,
     description: "Buena coincidencia, verificar antes de usar",
   },
@@ -126,7 +122,6 @@ const STATUS_CONFIG = {
     label: "Revisar",
     color: "#ea580c",
     bg: "#ffedd5",
-    border: "#fed7aa",
     Icon: HelpCircle,
     description: "Similitud leve — requiere revisión manual",
   },
@@ -134,7 +129,6 @@ const STATUS_CONFIG = {
     label: "Sin MSDS",
     color: "#dc2626",
     bg: "#fee2e2",
-    border: "#fca5a5",
     Icon: XCircle,
     description: "Sin coincidencia encontrada",
   },
@@ -157,7 +151,7 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
       padding: "2px 8px", borderRadius: 9999, fontSize: 11, fontWeight: 600,
-      background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
+      background: cfg.bg, color: cfg.color,
     }}>
       <Icon style={{ width: 11, height: 11 }} />
       {cfg.label}
@@ -165,9 +159,11 @@ function StatusBadge({ status }: { status: string | null | undefined }) {
   );
 }
 
+
 function ScoreBar({ score, status }: { score: number | null | undefined; status?: string | null }) {
   const s = score ?? 0;
   const pct = Math.min(100, Math.round((s / 200) * 100));
+  // Prefer status-based color so the bar matches the badge (EXACT=green, etc.)
   const derivedStatus = status ?? (s >= 120 ? "EXACT" : s >= 60 ? "PROBABLE" : s >= 25 ? "MANUAL_REVIEW" : "NONE");
   const color = STATUS_CONFIG[derivedStatus as keyof typeof STATUS_CONFIG]?.color ?? "#dc2626";
   return (
@@ -176,42 +172,6 @@ function ScoreBar({ score, status }: { score: number | null | undefined; status?
         <div style={{ height: 4, width: `${pct}%`, background: color, borderRadius: 2, transition: "width 0.3s" }} />
       </div>
       <span style={{ fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>{s}pt</span>
-    </div>
-  );
-}
-
-// ── Stats Card (clickable) ────────────────────────────────────────────────────
-
-function StatCard({
-  label, value, color, bg, border, onClick, active, subtitle,
-}: {
-  label: string; value: number | string; color: string; bg: string; border: string;
-  onClick?: () => void; active?: boolean; subtitle?: string;
-}) {
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        background: active ? bg : "#fff",
-        borderRadius: 10,
-        padding: "14px 16px",
-        border: `1.5px solid ${active ? color : border}`,
-        boxShadow: active ? `0 0 0 3px ${color}22` : "0 1px 3px rgba(0,0,0,0.05)",
-        cursor: onClick ? "pointer" : "default",
-        transition: "all 0.15s",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      {active && (
-        <div style={{
-          position: "absolute", top: 0, left: 0, right: 0, height: 3,
-          background: color, borderRadius: "10px 10px 0 0",
-        }} />
-      )}
-      <p style={{ fontSize: 11, fontWeight: 600, color, textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>{label}</p>
-      <p style={{ fontSize: 28, fontWeight: 800, color, margin: 0, lineHeight: 1 }}>{value}</p>
-      {subtitle && <p style={{ fontSize: 10, color: "#94a3b8", margin: "4px 0 0 0" }}>{subtitle}</p>}
     </div>
   );
 }
@@ -334,66 +294,6 @@ function CandidateList({
   );
 }
 
-// ── Product List Item ─────────────────────────────────────────────────────────
-
-function ProductListItem({
-  p, isSelected, activeTab, lastMovements, onClick,
-}: {
-  p: Product;
-  isSelected: boolean;
-  activeTab: "manual" | "smart";
-  lastMovements: Record<string, string>;
-  onClick: () => void;
-}) {
-  const status = p.msdsStatus ?? "NONE";
-  const cfg = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.NONE;
-  const sm = sinMovimiento(lastMovements[p.code]);
-
-  return (
-    <div
-      onClick={onClick}
-      style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "9px 14px", cursor: "pointer", borderBottom: "1px solid #f8fafc",
-        background: isSelected ? "rgba(13,148,136,0.08)" : "transparent",
-        borderLeft: isSelected ? "3px solid #0d9488" : "3px solid transparent",
-        transition: "background 0.1s",
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {p.code}
-        </p>
-        <p style={{ fontSize: 12, color: "#64748b", margin: "1px 0 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {p.name}
-        </p>
-        <span
-          className={`inline-block text-xs font-semibold px-1.5 py-0.5 rounded mt-0.5 ${sm.pill}`}
-          title={lastMovements[p.code] ? `Último consumo: ${lastMovements[p.code]}` : "Sin datos de movimiento"}
-        >
-          ⏱ {sm.label}
-        </span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginLeft: 10, flexShrink: 0 }}>
-        {activeTab === "smart" ? (
-          <>
-            <StatusBadge status={status} />
-            {(p.msdsScore ?? 0) > 0 && <ScoreBar score={p.msdsScore} status={p.msdsStatus} />}
-          </>
-        ) : (
-          <Badge style={{
-            fontSize: 11, fontWeight: 600,
-            background: p.msds ? "#dcfce7" : "#fee2e2",
-            color: p.msds ? "#16a34a" : "#dc2626", border: "none",
-          }}>
-            {p.msds ? "Con MSDS" : "Sin MSDS"}
-          </Badge>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function MsdsPage() {
@@ -412,9 +312,6 @@ export default function MsdsPage() {
   const [showCandidates, setShowCandidates] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
-  const [page, setPage] = useState(1);
-
-  const listRef = useRef<HTMLDivElement>(null);
 
   const isAdminOrSupervisor = user?.role === "admin" || user?.role === "supervisor";
   const canEdit = user?.role === "admin" || user?.role === "supervisor" || user?.role === "operator";
@@ -424,7 +321,7 @@ export default function MsdsPage() {
 
   const { data: products = [], isLoading, isError } = useQuery<Product[]>({
     queryKey: ["/api/products", warehouse],
-    queryFn: () => apiJson(`/api/products${warehouseQ ? warehouseQ + "&limit=2000" : "?limit=2000"}`).then((r: any) => r.data ?? r),
+    queryFn: () => apiJson(`/api/products${warehouseQ ? warehouseQ + "&limit=500" : "?limit=500"}`).then((r: any) => r.data ?? r),
   });
 
   const { data: stats } = useQuery<MsdsStats>({
@@ -492,44 +389,21 @@ export default function MsdsPage() {
     },
   });
 
-  // Reset page on filter change
-  useEffect(() => { setPage(1); }, [search, statusFilter, activeTab, warehouse]);
-
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     return products.filter((p) => {
       const matchesSearch = !term ||
         p.name.toLowerCase().includes(term) ||
         p.code.toLowerCase().includes(term);
-      if (!matchesSearch) return false;
-      if (activeTab === "manual") {
-        if (statusFilter === "NONE") return !p.msds;
-        if (statusFilter === "EXACT") return !!p.msds;
-        return true;
-      }
-      // smart tab
-      if (statusFilter === "all") return true;
-      if (statusFilter === "NONE") return !p.msdsStatus || p.msdsStatus === "NONE";
-      return p.msdsStatus === statusFilter;
+      const matchesStatus = statusFilter === "all" || p.msdsStatus === statusFilter ||
+        (statusFilter === "NONE" && !p.msdsStatus);
+      return matchesSearch && (activeTab === "manual" ? matchesSearch : matchesSearch && matchesStatus);
     });
   }, [products, search, statusFilter, activeTab]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const pct = stats && stats.total > 0
     ? Math.round((stats.conMsds / stats.total) * 100)
     : 0;
-
-  function handleStatClick(filter: string) {
-    setStatusFilter(filter);
-    setPage(1);
-    setSelected(null);
-    // switch to smart tab for status filters, manual for msds flag filters
-    if (filter === "EXACT" || filter === "PROBABLE" || filter === "MANUAL_REVIEW" || filter === "NONE") {
-      setActiveTab("smart");
-    }
-  }
 
   async function handleSaveMsds() {
     if (!selected || !msdsInput.trim()) return;
@@ -711,7 +585,9 @@ export default function MsdsPage() {
             variant="outline"
             onClick={async () => {
               const warehouseParam = warehouse && warehouse !== "all" ? `?warehouse=${encodeURIComponent(warehouse)}` : "";
-              const res = await fetch(`${BASE}/api/msds/export${warehouseParam}`, { headers: getAuthHeaders() });
+              const res = await fetch(`${BASE}/api/msds/export${warehouseParam}`, {
+                headers: getAuthHeaders(),
+              });
               if (!res.ok) { alert("Error al generar el informe"); return; }
               const blob = await res.blob();
               const url = URL.createObjectURL(blob);
@@ -737,7 +613,7 @@ export default function MsdsPage() {
             return (
               <button
                 key={w}
-                onClick={() => { setWarehouse(w as WarehouseType); setSelected(null); setStatusFilter("all"); }}
+                onClick={() => setWarehouse(w as WarehouseType)}
                 style={{
                   padding: "6px 16px", borderRadius: 8,
                   border: active ? "none" : "1.5px solid #cbd5e1",
@@ -752,75 +628,39 @@ export default function MsdsPage() {
           })}
         </div>
 
-        {/* ── Stats row — CLICKABLE ─────────────────────────────────────────── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 20 }}>
-          {/* Sin MSDS */}
-          <StatCard
-            label="Sin MSDS"
-            value={stats?.sinMsds ?? "—"}
-            color="#dc2626"
-            bg="#fff1f2"
-            border="#fecaca"
-            active={activeTab === "smart" && statusFilter === "NONE"}
-            onClick={() => handleStatClick("NONE")}
-            subtitle="Clic para filtrar"
-          />
-          {/* Con MSDS */}
-          <StatCard
-            label="Con MSDS"
-            value={stats?.conMsds ?? "—"}
-            color="#16a34a"
-            bg="#f0fdf4"
-            border="#bbf7d0"
-            active={activeTab === "smart" && statusFilter === "EXACT"}
-            onClick={() => handleStatClick("EXACT")}
-            subtitle="Clic para filtrar"
-          />
-          {/* Completado */}
-          <div style={{
-            background: "#fff", borderRadius: 10, padding: "14px 16px",
-            border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-          }}>
+        {/* Stats row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>Sin MSDS</p>
+            <p style={{ fontSize: 28, fontWeight: 800, color: "#dc2626", margin: 0 }}>{stats?.sinMsds ?? "—"}</p>
+          </div>
+          <div style={{ background: "#fff", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: "#16a34a", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>Con MSDS</p>
+            <p style={{ fontSize: 28, fontWeight: 800, color: "#16a34a", margin: 0 }}>{stats?.conMsds ?? "—"}</p>
+          </div>
+          <div style={{ background: "#fff", borderRadius: 10, padding: "14px 16px", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
             <p style={{ fontSize: 11, fontWeight: 600, color: "#0d9488", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>Completado</p>
-            <p style={{ fontSize: 28, fontWeight: 800, color: "#0d9488", margin: 0, lineHeight: 1 }}>{stats ? `${pct}%` : "—"}</p>
-            <div style={{ marginTop: 8, height: 5, background: "#e2e8f0", borderRadius: 3 }}>
+            <p style={{ fontSize: 28, fontWeight: 800, color: "#0d9488", margin: 0 }}>{stats ? `${pct}%` : "—"}</p>
+            <div style={{ marginTop: 6, height: 5, background: "#e2e8f0", borderRadius: 3 }}>
               <div style={{ height: 5, width: `${pct}%`, background: pct === 100 ? "#16a34a" : "#0d9488", borderRadius: 3, transition: "width 0.4s" }} />
             </div>
-            {stats && <p style={{ fontSize: 10, color: "#94a3b8", margin: "4px 0 0 0" }}>{stats.conMsds} / {stats.total} productos</p>}
           </div>
+
           {/* Smart match stats */}
           {matchStats && (
             <>
-              <StatCard
-                label="✓ Exactos"
-                value={matchStats.EXACT}
-                color="#16a34a"
-                bg="#dcfce7"
-                border="#bbf7d0"
-                active={statusFilter === "EXACT"}
-                onClick={() => handleStatClick("EXACT")}
-                subtitle="Clic para filtrar"
-              />
-              <StatCard
-                label="~ Probables"
-                value={matchStats.PROBABLE}
-                color="#ca8a04"
-                bg="#fef9c3"
-                border="#fde68a"
-                active={statusFilter === "PROBABLE"}
-                onClick={() => handleStatClick("PROBABLE")}
-                subtitle="Clic para filtrar"
-              />
-              <StatCard
-                label="? Revisar"
-                value={matchStats.MANUAL_REVIEW}
-                color="#ea580c"
-                bg="#ffedd5"
-                border="#fed7aa"
-                active={statusFilter === "MANUAL_REVIEW"}
-                onClick={() => handleStatClick("MANUAL_REVIEW")}
-                subtitle="Clic para filtrar"
-              />
+              <div style={{ background: "#dcfce7", borderRadius: 10, padding: "14px 16px", border: "1px solid #bbf7d0" }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "#16a34a", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>✓ Exactos</p>
+                <p style={{ fontSize: 28, fontWeight: 800, color: "#16a34a", margin: 0 }}>{matchStats.EXACT}</p>
+              </div>
+              <div style={{ background: "#fef9c3", borderRadius: 10, padding: "14px 16px", border: "1px solid #fde68a" }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "#ca8a04", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>~ Probables</p>
+                <p style={{ fontSize: 28, fontWeight: 800, color: "#ca8a04", margin: 0 }}>{matchStats.PROBABLE}</p>
+              </div>
+              <div style={{ background: "#ffedd5", borderRadius: 10, padding: "14px 16px", border: "1px solid #fed7aa" }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "#ea580c", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px 0" }}>? Revisar</p>
+                <p style={{ fontSize: 28, fontWeight: 800, color: "#ea580c", margin: 0 }}>{matchStats.MANUAL_REVIEW}</p>
+              </div>
             </>
           )}
         </div>
@@ -833,7 +673,7 @@ export default function MsdsPage() {
           ].map(({ key, label, icon }) => (
             <button
               key={key}
-              onClick={() => { setActiveTab(key as any); setStatusFilter("all"); setPage(1); }}
+              onClick={() => setActiveTab(key as any)}
               style={{
                 display: "flex", alignItems: "center", gap: 6,
                 padding: "10px 20px", border: "none", background: "none", cursor: "pointer",
@@ -851,42 +691,23 @@ export default function MsdsPage() {
         {/* Smart tab toolbar */}
         {activeTab === "smart" && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "center" }}>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {[
-                { key: "all", label: "Todos" },
-                { key: "EXACT", label: STATUS_CONFIG.EXACT.label },
-                { key: "PROBABLE", label: STATUS_CONFIG.PROBABLE.label },
-                { key: "MANUAL_REVIEW", label: STATUS_CONFIG.MANUAL_REVIEW.label },
-                { key: "NONE", label: STATUS_CONFIG.NONE.label },
-              ].map(({ key, label }) => {
-                const cfg = key !== "all" ? STATUS_CONFIG[key as keyof typeof STATUS_CONFIG] : null;
-                const active = statusFilter === key;
-                // count per filter
-                const count = key === "all" ? products.length
-                  : key === "NONE" ? products.filter(p => !p.msdsStatus || p.msdsStatus === "NONE").length
-                  : products.filter(p => p.msdsStatus === key).length;
+            <div style={{ display: "flex", gap: 6 }}>
+              {["all", "EXACT", "PROBABLE", "MANUAL_REVIEW", "NONE"].map((s) => {
+                const cfg = s === "all" ? null : STATUS_CONFIG[s as keyof typeof STATUS_CONFIG];
+                const active = statusFilter === s;
                 return (
                   <button
-                    key={key}
-                    onClick={() => { setStatusFilter(key); setPage(1); }}
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
                     style={{
                       padding: "5px 12px", borderRadius: 9999, fontSize: 12, cursor: "pointer",
                       border: active ? "none" : "1.5px solid #e2e8f0",
                       background: active ? (cfg?.color ?? "#0d9488") : "#fff",
                       color: active ? "#fff" : "#475569",
                       fontWeight: active ? 600 : 400,
-                      display: "flex", alignItems: "center", gap: 5,
                     }}
                   >
-                    {label}
-                    <span style={{
-                      fontSize: 10, fontWeight: 700,
-                      background: active ? "rgba(255,255,255,0.25)" : "#f1f5f9",
-                      color: active ? "#fff" : "#64748b",
-                      borderRadius: 99, padding: "1px 6px",
-                    }}>
-                      {count}
-                    </span>
+                    {s === "all" ? "Todos" : (cfg?.label ?? s)}
                   </button>
                 );
               })}
@@ -900,7 +721,7 @@ export default function MsdsPage() {
                         if (!window.confirm(`¿Sincronizar ${matchStats!.PROBABLE} productos "Con MSDS" de Gestión Manual como Exactos en Cruce Inteligente?`)) return;
                         confirmAllMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined });
                       }}
-                      disabled={confirmAllMutation.isPending || rescanMutation.isPending || resetAllMutation.isPending}
+                      disabled={confirmAllMutation.isPending || rescanMutation.isPending}
                       variant="outline"
                       style={{ gap: 6, fontSize: 12, borderColor: "#16a34a", color: "#16a34a" }}
                     >
@@ -912,7 +733,7 @@ export default function MsdsPage() {
                   )}
                   <Button
                     onClick={() => rescanMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined })}
-                    disabled={rescanMutation.isPending || resetAllMutation.isPending}
+                    disabled={rescanMutation.isPending}
                     style={{ gap: 6, background: "#0c1a2e", color: "#fff", border: "none", fontSize: 12 }}
                   >
                     {rescanMutation.isPending
@@ -928,7 +749,6 @@ export default function MsdsPage() {
                   >
                     Forzar re-escaneo
                   </Button>
-                  {/* ── Reiniciar todo ── */}
                   <Button
                     onClick={() => {
                       const warehouseLabel = warehouse && warehouse !== "all" ? `el almacén "${warehouse}"` : "TODOS los almacenes";
@@ -961,7 +781,6 @@ export default function MsdsPage() {
           </div>
         )}
 
-        {/* Feedback banners */}
         {resetAllMutation.isSuccess && (
           <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#c2410c" }}>
             ✓ Reinicio completado — {(resetAllMutation.data as any).resetCount} productos limpiados,{" "}
@@ -974,21 +793,25 @@ export default function MsdsPage() {
             Error al reiniciar: {(resetAllMutation.error as Error).message}
           </div>
         )}
+
         {rescanMutation.isSuccess && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#16a34a" }}>
             ✓ Escaneo completado — {(rescanMutation.data as any).productsProcessed} productos procesados, {(rescanMutation.data as any).filesScanned} archivos leídos de Drive
           </div>
         )}
+
         {rescanMutation.isError && (
           <div style={{ background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#dc2626" }}>
             Error: {(rescanMutation.error as Error).message}
           </div>
         )}
+
         {confirmAllMutation.isSuccess && (
           <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#16a34a" }}>
             ✓ {(confirmAllMutation.data as any).message}
           </div>
         )}
+
         {confirmAllMutation.isError && (
           <div style={{ background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#dc2626" }}>
             Error: {(confirmAllMutation.error as Error).message}
@@ -998,10 +821,8 @@ export default function MsdsPage() {
         {/* Main two-column layout */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
 
-          {/* ── Left: product list ─────────────────────────────────────────── */}
+          {/* Left: product list */}
           <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-
-            {/* List header */}
             <div style={{ padding: "14px 14px 12px", borderBottom: "1px solid #f1f5f9", display: "flex", flexDirection: "column", gap: 8 }}>
               {activeTab === "manual" && (
                 <Button
@@ -1028,35 +849,8 @@ export default function MsdsPage() {
                   style={{ paddingLeft: 34, fontSize: 13 }}
                 />
               </div>
-              {/* Result count + active filter label */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, color: "#64748b" }}>
-                  {isLoading ? "Cargando…" : (
-                    <>
-                      <strong style={{ color: "#0c1a2e" }}>{filtered.length}</strong> producto{filtered.length !== 1 ? "s" : ""}
-                      {statusFilter !== "all" && (
-                        <span style={{
-                          marginLeft: 6, fontSize: 11, fontWeight: 600,
-                          background: "#f0fdf4", color: "#0d9488",
-                          padding: "1px 8px", borderRadius: 99, border: "1px solid #99f6e4",
-                        }}>
-                          Filtro: {statusFilter === "NONE" ? "Sin MSDS" : STATUS_CONFIG[statusFilter as keyof typeof STATUS_CONFIG]?.label ?? statusFilter}
-                          <button
-                            onClick={() => { setStatusFilter("all"); setPage(1); }}
-                            style={{ marginLeft: 4, background: "none", border: "none", cursor: "pointer", color: "#0d9488", padding: 0, fontWeight: 700, fontSize: 12 }}
-                          >×</button>
-                        </span>
-                      )}
-                    </>
-                  )}
-                </span>
-                <span style={{ fontSize: 11, color: "#94a3b8" }}>
-                  Pág. {page}/{totalPages}
-                </span>
-              </div>
             </div>
 
-            {/* Loading / error states */}
             {isLoading && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 40, color: "#64748b", fontSize: 13 }}>
                 <Loader2 style={{ width: 18, height: 18 }} className="animate-spin" />
@@ -1070,122 +864,70 @@ export default function MsdsPage() {
               </div>
             )}
             {!isLoading && !isError && filtered.length === 0 && (
-              <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-                {search ? `Sin resultados para "${search}"` : "No se encontraron productos"}
-              </div>
+              <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No se encontraron productos</div>
             )}
 
-            {/* Product list (paginated) */}
-            {!isLoading && !isError && paginated.length > 0 && (
-              <div ref={listRef} style={{ maxHeight: 480, overflowY: "auto" }}>
-                {paginated.map((p) => (
-                  <ProductListItem
-                    key={p.id}
-                    p={p}
-                    isSelected={selected?.id === p.id}
-                    activeTab={activeTab}
-                    lastMovements={lastMovements}
-                    onClick={() => {
-                      setSelected(p);
-                      setEditingUrl(false);
-                      setMsdsInput("");
-                      setSaveError(null);
-                      setShowCandidates(false);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Pagination controls */}
-            {totalPages > 1 && (
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                gap: 8, padding: "12px 14px", borderTop: "1px solid #f1f5f9",
-                background: "#fafafa",
-              }}>
-                <button
-                  onClick={() => { setPage(p => Math.max(1, p - 1)); listRef.current?.scrollTo(0, 0); }}
-                  disabled={page === 1}
-                  style={{
-                    padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0",
-                    background: page === 1 ? "#f8fafc" : "#fff", cursor: page === 1 ? "not-allowed" : "pointer",
-                    display: "flex", alignItems: "center", gap: 2, fontSize: 12, color: page === 1 ? "#cbd5e1" : "#475569",
-                  }}
-                >
-                  <ChevronLeft style={{ width: 14, height: 14 }} /> Anterior
-                </button>
-
-                {/* Page numbers */}
-                <div style={{ display: "flex", gap: 4 }}>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum: number;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (page <= 3) {
-                      pageNum = i + 1;
-                    } else if (page >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = page - 2 + i;
-                    }
-                    return (
-                      <button
-                        key={pageNum}
-                        onClick={() => { setPage(pageNum); listRef.current?.scrollTo(0, 0); }}
-                        style={{
-                          width: 30, height: 30, borderRadius: 6, border: "1px solid",
-                          borderColor: page === pageNum ? "#0d9488" : "#e2e8f0",
-                          background: page === pageNum ? "#0d9488" : "#fff",
-                          color: page === pageNum ? "#fff" : "#475569",
-                          fontWeight: page === pageNum ? 700 : 400,
-                          fontSize: 12, cursor: "pointer",
-                        }}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <button
-                  onClick={() => { setPage(p => Math.min(totalPages, p + 1)); listRef.current?.scrollTo(0, 0); }}
-                  disabled={page === totalPages}
-                  style={{
-                    padding: "5px 10px", borderRadius: 6, border: "1px solid #e2e8f0",
-                    background: page === totalPages ? "#f8fafc" : "#fff", cursor: page === totalPages ? "not-allowed" : "pointer",
-                    display: "flex", alignItems: "center", gap: 2, fontSize: 12, color: page === totalPages ? "#cbd5e1" : "#475569",
-                  }}
-                >
-                  Siguiente <ChevronRight style={{ width: 14, height: 14 }} />
-                </button>
-              </div>
-            )}
-
-            {/* Page size info */}
-            {filtered.length > 0 && (
-              <div style={{ padding: "6px 14px", background: "#f8fafc", borderTop: "1px solid #f1f5f9", textAlign: "center" }}>
-                <span style={{ fontSize: 11, color: "#94a3b8" }}>
-                  Mostrando {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length}
-                </span>
+            {!isLoading && !isError && filtered.length > 0 && (
+              <div style={{ maxHeight: 520, overflowY: "auto" }}>
+                {filtered.map((p) => {
+                  const isSelected = selected?.id === p.id;
+                  const status = p.msdsStatus ?? "NONE";
+                  const cfg = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.NONE;
+                  const Icon = cfg.Icon;
+                  const sm = sinMovimiento(lastMovements[p.code]);
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => { setSelected(p); setEditingUrl(false); setMsdsInput(""); setSaveError(null); setShowCandidates(false); }}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        padding: "9px 14px", cursor: "pointer", borderBottom: "1px solid #f8fafc",
+                        background: isSelected ? "rgba(13,148,136,0.08)" : "transparent",
+                        transition: "background 0.1s",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.code}</p>
+                        <p style={{ fontSize: 12, color: "#64748b", margin: "1px 0 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</p>
+                        <span
+                          className={`inline-block text-xs font-semibold px-1.5 py-0.5 rounded mt-0.5 ${sm.pill}`}
+                          title={lastMovements[p.code] ? `Último consumo: ${lastMovements[p.code]}` : "Sin datos de movimiento"}
+                        >
+                          ⏱ {sm.label}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, marginLeft: 10, flexShrink: 0 }}>
+                        {activeTab === "smart" ? (
+                          <>
+                            <StatusBadge status={status} />
+                            {(p.msdsScore ?? 0) > 0 && <ScoreBar score={p.msdsScore} status={p.msdsStatus} />}
+                          </>
+                        ) : (
+                          <Badge style={{
+                            fontSize: 11, fontWeight: 600,
+                            background: p.msds ? "#dcfce7" : "#fee2e2",
+                            color: p.msds ? "#16a34a" : "#dc2626", border: "none",
+                          }}>
+                            {p.msds ? "Con MSDS" : "Sin MSDS"}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
 
-          {/* ── Right: detail panel ────────────────────────────────────────── */}
+          {/* Right: detail panel */}
           <div style={{ background: "#fff", borderRadius: 12, border: "1px solid #e2e8f0", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", overflow: "hidden" }}>
             {!selected ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 40, color: "#94a3b8", textAlign: "center" }}>
                 <ShieldCheck style={{ width: 40, height: 40, marginBottom: 12, opacity: 0.3 }} />
                 <p style={{ fontSize: 14, margin: 0 }}>Selecciona un producto para ver su detalle</p>
-                {filtered.length > 0 && (
-                  <p style={{ fontSize: 12, margin: "8px 0 0 0", color: "#cbd5e1" }}>
-                    {filtered.length} producto{filtered.length !== 1 ? "s" : ""} en la lista
-                  </p>
-                )}
               </div>
             ) : (
-              <div style={{ padding: 20, overflowY: "auto", maxHeight: 700 }}>
+              <div style={{ padding: 20, overflowY: "auto", maxHeight: 640 }}>
 
                 {/* Product header */}
                 <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #f1f5f9" }}>
@@ -1224,6 +966,7 @@ export default function MsdsPage() {
                 {/* SMART TAB content */}
                 {activeTab === "smart" && (
                   <div>
+                    {/* Current match info */}
                     {selected.msdsStatus && selected.msdsStatus !== "NONE" && (
                       <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", marginBottom: 14 }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -1279,7 +1022,7 @@ export default function MsdsPage() {
                             <Button
                               variant="outline"
                               onClick={async () => {
-                                if (!window.confirm("¿Desvincular el MSDS de este producto?")) return;
+                                if (!window.confirm("¿Desvinular el MSDS de este producto?")) return;
                                 const res = await fetch(`${BASE}/api/msds/unlink`, {
                                   method: "POST",
                                   headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
@@ -1295,14 +1038,14 @@ export default function MsdsPage() {
                               style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
                             >
                               <Trash2 style={{ width: 12, height: 12 }} />
-                              Desvincular
+                              Desvinular
                             </Button>
                           )}
                         </div>
                       </div>
                     )}
 
-                    {(!selected.msdsStatus || selected.msdsStatus === "NONE") && (
+                    {selected.msdsStatus === "NONE" || !selected.msdsStatus ? (
                       <div style={{ padding: "10px 12px", background: "#fff7f7", border: "1.5px dashed #fca5a5", borderRadius: 8, marginBottom: 14 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <XCircle style={{ width: 16, height: 16, color: "#dc2626", flexShrink: 0 }} />
@@ -1312,8 +1055,9 @@ export default function MsdsPage() {
                           Usa el botón "Buscar en Drive" para encontrar candidatos o ejecuta un escaneo masivo.
                         </p>
                       </div>
-                    )}
+                    ) : null}
 
+                    {/* Candidate search button */}
                     <Button
                       onClick={() => setShowCandidates(true)}
                       disabled={isMatchLoading}
@@ -1326,6 +1070,7 @@ export default function MsdsPage() {
                       }
                     </Button>
 
+                    {/* Candidates */}
                     {showCandidates && productMatch && (
                       <div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -1346,7 +1091,7 @@ export default function MsdsPage() {
                       </div>
                     )}
 
-                    {/* AI Extraction Section */}
+                    {/* ── AI EXTRACTION SECTION ── */}
                     {selected.msdsFileId && (
                       <div style={{ marginTop: 16, borderTop: "1.5px solid #e2e8f0", paddingTop: 14 }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -1360,6 +1105,8 @@ export default function MsdsPage() {
                             </span>
                           )}
                         </div>
+
+                        {/* Scan button */}
                         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                           <Button
                             onClick={() => void handleExtract()}
@@ -1367,7 +1114,11 @@ export default function MsdsPage() {
                             style={{
                               background: isExtracting ? "#ede9fe" : "#7c3aed",
                               color: isExtracting ? "#7c3aed" : "#fff",
-                              border: "none", gap: 6, fontSize: 12, padding: "6px 14px", height: "auto",
+                              border: "none",
+                              gap: 6,
+                              fontSize: 12,
+                              padding: "6px 14px",
+                              height: "auto",
                             }}
                           >
                             {isExtracting
@@ -1386,11 +1137,13 @@ export default function MsdsPage() {
                             </Button>
                           )}
                         </div>
+
                         {extractError && (
                           <div style={{ padding: "8px 12px", background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 6, marginBottom: 10 }}>
                             <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>{extractError}</p>
                           </div>
                         )}
+
                         {isExtracting && (
                           <div style={{ padding: "12px", background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, textAlign: "center" }}>
                             <Loader2 style={{ width: 20, height: 20, color: "#7c3aed", margin: "0 auto 8px" }} className="animate-spin" />
@@ -1398,6 +1151,8 @@ export default function MsdsPage() {
                             <p style={{ fontSize: 11, color: "#a78bfa", margin: "4px 0 0" }}>Esto puede tardar 15–30 segundos</p>
                           </div>
                         )}
+
+                        {/* Extracted data card */}
                         {!isExtracting && selected.msdsExtractedData && (() => {
                           const d = selected.msdsExtractedData;
                           const fields: Array<{
@@ -1433,7 +1188,15 @@ export default function MsdsPage() {
                                 const val = d[key];
                                 if (key === "pagesScanned" || key === "charCount" || key === "extractedAt") return null;
                                 return (
-                                  <div key={key} style={{ border: `1px solid ${color}30`, borderLeft: `3px solid ${color}`, borderRadius: 6, overflow: "hidden" }}>
+                                  <div
+                                    key={key}
+                                    style={{
+                                      border: `1px solid ${color}30`,
+                                      borderLeft: `3px solid ${color}`,
+                                      borderRadius: 6,
+                                      overflow: "hidden",
+                                    }}
+                                  >
                                     <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", background: bg }}>
                                       <span style={{ color }}>{icon}</span>
                                       <span style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.04em" }}>{label}</span>
@@ -1473,7 +1236,10 @@ export default function MsdsPage() {
                           {selected.msdsUrl}
                         </p>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
-                          <Button onClick={() => window.open(selected.msdsUrl!, "_blank")} style={{ background: "#0d9488", color: "#fff", border: "none", gap: 6 }}>
+                          <Button
+                            onClick={() => window.open(selected.msdsUrl!, "_blank")}
+                            style={{ background: "#0d9488", color: "#fff", border: "none", gap: 6 }}
+                          >
                             <Download style={{ width: 15, height: 15 }} />
                             Descargar MSDS
                           </Button>
