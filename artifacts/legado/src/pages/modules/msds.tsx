@@ -749,17 +749,17 @@ export default function MsdsPage() {
                   >
                     Forzar re-escaneo
                   </Button>
+                  {/* Reiniciar solo automáticos */}
                   <Button
                     onClick={() => {
-                      const warehouseLabel = warehouse && warehouse !== "all" ? `el almacén "${warehouse}"` : "TODOS los almacenes";
+                      const warehouseLabel = warehouse && warehouse !== "all" ? `"${warehouse}"` : "todos los almacenes";
                       const exactCount = matchStats?.EXACT ?? 0;
                       if (!window.confirm(
-                        `⚠️ REINICIO COMPLETO\n\n` +
-                        `Esto borrará los ${exactCount} cruces automáticos de ${warehouseLabel} y volverá a escanear Drive con el nuevo algoritmo.\n\n` +
-                        `Los vínculos confirmados manualmente se conservarán.\n\n` +
-                        `¿Continuar?`
+                        `⚠️ REINICIO (solo automáticos)\n\n` +
+                        `Borrará ${exactCount} cruces automáticos de ${warehouseLabel} y re-escaneará con el nuevo algoritmo.\n\n` +
+                        `Los vínculos confirmados manualmente se conservarán.\n\n¿Continuar?`
                       )) return;
-                      resetAllMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined });
+                      resetAllMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined, resetManual: false });
                     }}
                     disabled={resetAllMutation.isPending || rescanMutation.isPending}
                     variant="outline"
@@ -775,6 +775,24 @@ export default function MsdsPage() {
                       : <><RotateCcw style={{ width: 13, height: 13 }} />Reiniciar y re-escanear</>
                     }
                   </Button>
+                  {/* Reiniciar TODO incluyendo manuales */}
+                  <Button
+                    onClick={() => {
+                      const warehouseLabel = warehouse && warehouse !== "all" ? `"${warehouse}"` : "todos los almacenes";
+                      if (!window.confirm(
+                        `⚠️ REINICIO TOTAL\n\n` +
+                        `Borrará TODOS los cruces de ${warehouseLabel}, incluyendo los confirmados manualmente.\n\n` +
+                        `Se re-escaneará Drive desde cero.\n\n¿Seguro?`
+                      )) return;
+                      resetAllMutation.mutate({ warehouse: warehouse !== "all" ? warehouse : undefined, resetManual: true });
+                    }}
+                    disabled={resetAllMutation.isPending || rescanMutation.isPending}
+                    variant="outline"
+                    style={{ gap: 6, fontSize: 11, borderColor: "#7f1d1d", color: "#7f1d1d" }}
+                  >
+                    <RotateCcw style={{ width: 12, height: 12 }} />
+                    Reinicio total
+                  </Button>
                 </>
               )}
             </div>
@@ -783,9 +801,9 @@ export default function MsdsPage() {
 
         {resetAllMutation.isSuccess && (
           <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 13, color: "#c2410c" }}>
-            ✓ Reinicio completado — {(resetAllMutation.data as any).resetCount} productos limpiados,{" "}
+            ✓ Reinicio completado — {(resetAllMutation.data as any).resetCount} limpiados,{" "}
             {(resetAllMutation.data as any).rescanned} re-escaneados,{" "}
-            {(resetAllMutation.data as any).filesScanned} archivos leídos de Drive
+            {(resetAllMutation.data as any).filesScanned} archivos de Drive
           </div>
         )}
         {resetAllMutation.isError && (
