@@ -192,20 +192,23 @@ router.post("/link", requireAuth, requireRole("admin", "supervisor", "operator")
   }
 
   const now = new Date();
+  const msdsData = {
+    msds: true,
+    msdsUrl: link,
+    msdsStatus: "EXACT" as MsdsMatchStatus,
+    msdsScore: score,
+    msdsFileId: fileId,
+    msdsFileName: fileName,
+    msdsMatchReason: reason,
+    msdsMatchedBy: "manual",
+    msdsLastCheckedAt: now,
+    updatedAt: now,
+  };
+
+  // Update all products with the same code across all warehouses
   await db.update(productsTable)
-    .set({
-      msds: true,
-      msdsUrl: link,
-      msdsStatus: "EXACT" as MsdsMatchStatus,
-      msdsScore: score,
-      msdsFileId: fileId,
-      msdsFileName: fileName,
-      msdsMatchReason: reason,
-      msdsMatchedBy: "manual",
-      msdsLastCheckedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(productsTable.id, productId));
+    .set(msdsData)
+    .where(eq(productsTable.code, product.code));
 
   const [updated] = await db
     .select()
@@ -317,20 +320,99 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
   }
 
   const now = new Date();
+  const msdsResetData = {
+    msds: false,
+    msdsUrl: null,
+    msdsStatus: "NONE" as MsdsMatchStatus,
+    msdsScore: 0,
+    msdsFileId: null,
+    msdsFileName: null,
+    msdsMatchReason: null,
+    msdsMatchedBy: null,
+    msdsLastCheckedAt: now,
+    updatedAt: now,
+  };
+
+  // Update all products with the same code across all warehouses
   await db.update(productsTable)
-    .set({
-      msds: false,
-      msdsUrl: null,
-      msdsStatus: "NONE",
-      msdsScore: 0,
-      msdsFileId: null,
-      msdsFileName: null,
-      msdsMatchReason: null,
-      msdsMatchedBy: null,
-      msdsLastCheckedAt: now,
-      updatedAt: now,
-    })
-    .where(eq(productsTable.id, productId));
+    .set(msdsResetData)
+    .where(eq(productsTable.code, product.code));
+
+  const [updated] = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+
+  // Also return all products with the same code to show the global update
+  const allUpdated = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.code, product.code));
+
+  res.json({
+    message: "MSDS desvinculado de todos los almacenes con el mismo codigo",
+    updated: allUpdated,
+  });
+}));
+
+// ── POST /api/msds/:productId/confirm ────────────────────────────────────────────────────────
+// Confirms a single product's MSDS link and propagates to all warehouses with same code.
+
+router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor", "operator"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const { productId } = req.params;
+
+  const [product] = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+
+  if (!product) {
+    res.status(404).json({ error: "Producto no encontrado" });
+    return;
+  }
+
+  // A confirmable product needs at least a fileId or existing msds link.
+  // MANUAL_REVIEW products have msdsFileId set but msds=false intentionally by rescan.
+  const hasLinkedFile = product.msdsFileId || product.msdsUrl;
+  if (!hasLinkedFile || product.msdsStatus === "NONE") {
+    res.status(400).json({ error: "El producto no tiene un archivo MSDS vinculado" });
+    return;
+  }
+
+  if (product.msdsStatus === "EXACT") {
+    res.status(400).json({ error: "El producto ya esta confirmado como Exacto" });
+    return;
+  }
+
+  const msdsUrl = product.msdsUrl
+    ?? (product.msdsFileId
+      ? `https://drive.google.com/file/d/${product.msdsFileId}/view`
+      : null);
+
+  if (!msdsUrl) {
+    res.status(400).json({ error: "No se puede determinar la URL del MSDS" });
+    return;
+  }
+
+  const now = new Date();
+  const confirmData = {
+    msds: true,
+    msdsUrl: msdsUrl ?? product.msdsUrl,
+    msdsStatus: "EXACT" as MsdsMatchStatus,
+    msdsMatchedBy: "manual",
+    msdsMatchReason: product.msdsMatchReason
+      ? `${product.msdsMatchReason} (confirmado manualmente)`
+      : "Confirmado manualmente",
+    msdsLastCheckedAt: now,
+    updatedAt: now,
+  };
+
+  // Update all products with the same code across all warehouses
+  await db.update(productsTable)
+    .set(confirmData)
+    .where(eq(productsTable.code, product.code));
 
   const [updated] = await db
     .select()
