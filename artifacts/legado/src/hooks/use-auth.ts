@@ -6,11 +6,51 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 //
 // El token JWT ya NO se guarda en localStorage (era vulnerable a XSS).
 // Ahora el backend emite una cookie httpOnly + Secure + SameSite=Strict en
-// /api/auth/login, y el navegador la envía automáticamente en cada request
-// con `credentials: "include"`. JS del frontend nunca puede leerla.
+// /api/auth/login, y el navegador la envía automáticamente en cada request.
+// JS del frontend nunca puede leerla.
 //
-// Todas las llamadas fetch() a /api deben usar `credentials: "include"`.
 // ---------------------------------------------------------------------------
+// PARCHE GLOBAL DE FETCH
+// ---------------------------------------------------------------------------
+// Como muchas páginas de la app hacen fetch() directamente sin pasar
+// credentials:"include", parcheamos el fetch global UNA sola vez para que
+// TODAS las llamadas al propio origen (incluidas /api/**) envíen la cookie
+// de sesión automáticamente. Esto evita tener que tocar 20+ páginas.
+// ---------------------------------------------------------------------------
+
+declare global {
+  interface Window {
+    __authFetchPatched?: boolean;
+  }
+}
+
+if (typeof window !== "undefined" && !window.__authFetchPatched) {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
+    // Solo forzamos credentials para requests al mismo origen.
+    // (Si alguna vez haces fetch a otro dominio, no tocamos la config.)
+    let sameOrigin = true;
+    try {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+      if (url.startsWith("http://") || url.startsWith("https://")) {
+        sameOrigin = new URL(url).origin === window.location.origin;
+      }
+    } catch {
+      // Si no se puede parsear, asumimos mismo origen (comportamiento seguro).
+    }
+
+    if (sameOrigin && init.credentials === undefined) {
+      init = { ...init, credentials: "include" };
+    }
+    return originalFetch(input, init);
+  };
+  window.__authFetchPatched = true;
+}
 
 export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
 
@@ -24,54 +64,31 @@ export interface AuthUser {
 }
 
 /**
- * Stub para compatibilidad con código legado que llamaba getAuthToken().
+ * Compatibilidad con código legado que llamaba getAuthToken().
  * Ya no hay token accesible desde JS — la cookie es httpOnly.
- * Si algún archivo todavía lo usa, devolverá null pero la request seguirá
- * funcionando porque la cookie viaja sola.
  */
 export function getAuthToken(): string | null {
   return null;
 }
 
 /**
- * Stub para compatibilidad: ya no hay header Authorization que construir.
- * Las peticiones deben usar `credentials: "include"` en lugar de este header.
+ * Compatibilidad con código legado que hace:
+ *   fetch(url, { headers: getAuthHeaders() })
+ * Devuelve un objeto vacío — la cookie viaja sola gracias al patch global.
  */
 export function getAuthHeaders(): Record<string, string> {
   return {};
 }
 
-/**
- * Wrapper de fetch que siempre incluye la cookie de sesión.
- * Úsalo en todas las llamadas a /api/**.
- */
-export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  return fetch(input, {
-    ...init,
-    credentials: "include",
-  });
-}
-
 export function useAuth() {
   const queryClient = useQueryClient();
-  // Usamos un "pseudo-flag" porque ya no tenemos acceso al token.
-  // La fuente de verdad es /api/auth/me.
   const [sessionChecked, setSessionChecked] = useState(false);
 
-  const { data: user, isLoading, error } = useQuery<AuthUser | null>({
+  const { data: user, isLoading } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const res = await fetch("/api/auth/me", {
-        credentials: "include",
-      });
-
-      if (!res.ok) {
-        if (res.status === 401) {
-          // Sesión expirada o inexistente
-          return null;
-        }
-        return null;
-      }
+      const res = await fetch("/api/auth/me");
+      if (!res.ok) return null;
       return res.json();
     },
     retry: false,
@@ -86,7 +103,6 @@ export function useAuth() {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ email, password }),
     });
 
@@ -96,17 +112,13 @@ export function useAuth() {
     }
 
     const result = await res.json();
-    // El backend ya setea la cookie httpOnly automáticamente.
     queryClient.setQueryData(["/api/auth/me"], result.user);
     return result.user;
   };
 
   const logout = async () => {
     try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "include",
-      });
+      await fetch("/api/auth/logout", { method: "POST" });
     } catch {
       // Si la red falla, igual limpiamos el cliente.
     }
