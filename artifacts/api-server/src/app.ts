@@ -13,39 +13,63 @@ const app: Express = express();
 
 // ---------------------------------------------------------------------------
 // Trust proxy — configurable por variable de entorno.
-// En Render hay 1 proxy delante (valor por defecto). Si cambias de hosting,
-// ajusta TRUST_PROXY en las variables de entorno sin tocar código.
-// Esto evita que un atacante falsee su IP con el header X-Forwarded-For.
+// En Render hay 1 proxy delante (valor por defecto).
 // ---------------------------------------------------------------------------
 const trustProxyRaw = process.env.TRUST_PROXY ?? "1";
 const trustProxyValue = /^\d+$/.test(trustProxyRaw) ? Number(trustProxyRaw) : trustProxyRaw;
 app.set("trust proxy", trustProxyValue);
 
 // ---------------------------------------------------------------------------
-// Helmet con CSP estricta — agrega headers HTTP de seguridad:
-//   X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security,
-//   Content-Security-Policy, Referrer-Policy, etc.
-// Se coloca ANTES de cualquier ruta.
+// Helmet con CSP en modo "report-friendly" — agrega headers de seguridad
+// pero permite los recursos externos que tu app necesita:
+//   - Cloudinary, Google Drive (imágenes)
+//   - Google Fonts
+//   - Scripts inline de Vite en desarrollo
+//
+// Si quieres endurecer la CSP más adelante, revisa la consola del navegador
+// en "Network" → busca warnings de "Refused to load" y agrega el dominio.
 // ---------------------------------------------------------------------------
+const isProduction = process.env.NODE_ENV === "production";
+
 app.use(
   helmet({
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
         "default-src": ["'self'"],
-        // 'unsafe-inline' en style-src es necesario para React + Tailwind.
+        // 'unsafe-inline' necesario para React + Tailwind.
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
-        "img-src": ["'self'", "data:", "blob:", "https://res.cloudinary.com", "https://drive.google.com", "https://lh3.googleusercontent.com"],
-        "script-src": ["'self'"],
-        "connect-src": ["'self'", "https://api.cloudinary.com"],
-        "frame-ancestors": ["'none'"],
+        // Permitir imágenes de los servicios que usa la app.
+        "img-src": [
+          "'self'",
+          "data:",
+          "blob:",
+          "https://res.cloudinary.com",
+          "https://drive.google.com",
+          "https://lh3.googleusercontent.com",
+          "https://*.googleusercontent.com",
+        ],
+        // Permitir scripts del propio dominio. En dev también 'unsafe-eval' para Vite HMR.
+        "script-src": isProduction
+          ? ["'self'"]
+          : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        // Permitir conexiones (fetch, websockets) a servicios externos.
+        "connect-src": [
+          "'self'",
+          "https://api.cloudinary.com",
+          "https://www.googleapis.com",
+          "https://drive.google.com",
+          ...(isProduction ? [] : ["ws://localhost:*", "http://localhost:*"]),
+        ],
+        "frame-src": ["'self'", "https://drive.google.com"],
         "object-src": ["'none'"],
         "base-uri": ["'self'"],
-        "form-action": ["'self'"],
       },
     },
-    crossOriginEmbedderPolicy: false, // Permitir imágenes de Cloudinary
+    // Necesario para que las imágenes de Cloudinary/Drive se muestren sin errores CORP.
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   }),
 );
@@ -78,16 +102,10 @@ app.use(
     logger,
     serializers: {
       req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
+        return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
       },
       res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
+        return { statusCode: res.statusCode };
       },
     },
   }),
@@ -95,13 +113,8 @@ app.use(
 
 app.use(cors({
   origin: (origin, callback) => {
-    // En producción, rechazar requests sin Origin (excepto healthchecks locales).
-    if (!origin) {
-      if (process.env.NODE_ENV === "production") {
-        return callback(null, false);
-      }
-      return callback(null, true);
-    }
+    // Permitir requests sin Origin (healthchecks, same-origin).
+    if (!origin) return callback(null, true);
     const allowed = getAllowedOrigins();
     if (allowed.includes(origin)) return callback(null, true);
     logger.warn({ origin }, "CORS blocked request from unauthorized origin");
@@ -128,8 +141,7 @@ if (process.env.NODE_ENV === "production") {
 }
 
 // ---------------------------------------------------------------------------
-// Global error handler — respeta err.status / err.statusCode si existen
-// (multer, validate-mime, errores custom). También maneja ZodError con 400.
+// Global error handler
 // ---------------------------------------------------------------------------
 interface HttpError extends Error {
   status?: number;
@@ -137,7 +149,6 @@ interface HttpError extends Error {
 }
 
 app.use((err: HttpError, _req: Request, res: Response, _next: NextFunction) => {
-  // Errores de validación Zod → 400 con detalle útil.
   if (err instanceof ZodError) {
     res.status(400).json({
       error: "Datos inválidos",
@@ -147,26 +158,21 @@ app.use((err: HttpError, _req: Request, res: Response, _next: NextFunction) => {
   }
 
   const status = err.status ?? err.statusCode;
-
-  // Error con status conocido (4xx) → devolver mensaje original.
   if (typeof status === "number" && status >= 400 && status < 500) {
     res.status(status).json({ error: err.message || "Solicitud inválida" });
     return;
   }
 
-  // Errores de multer (tamaño, tipo, etc.)
   if (err.name === "MulterError") {
     res.status(400).json({ error: err.message });
     return;
   }
 
-  // Error de CORS
   if (err.message === "Not allowed by CORS") {
     res.status(403).json({ error: "Origen no permitido" });
     return;
   }
 
-  // Resto: 500 genérico sin filtrar internals.
   logger.error({ err }, "Unhandled error");
   res.status(500).json({ error: "Error interno del servidor" });
 });
