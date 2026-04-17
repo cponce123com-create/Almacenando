@@ -1,8 +1,10 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import path from "path";
+import { ZodError } from "zod/v4";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { generalApiLimiter } from "./lib/rate-limit.js";
@@ -10,30 +12,46 @@ import { generalApiLimiter } from "./lib/rate-limit.js";
 const app: Express = express();
 
 // ---------------------------------------------------------------------------
-// Trust proxy — "loopback" solo confía en el proxy local de Render,
-// evitando que un atacante falsee su IP con el header X-Forwarded-For.
+// Trust proxy — configurable por variable de entorno.
+// En Render hay 1 proxy delante (valor por defecto). Si cambias de hosting,
+// ajusta TRUST_PROXY en las variables de entorno sin tocar código.
+// Esto evita que un atacante falsee su IP con el header X-Forwarded-For.
 // ---------------------------------------------------------------------------
-app.set("trust proxy", 1);
+const trustProxyRaw = process.env.TRUST_PROXY ?? "1";
+const trustProxyValue = /^\d+$/.test(trustProxyRaw) ? Number(trustProxyRaw) : trustProxyRaw;
+app.set("trust proxy", trustProxyValue);
 
 // ---------------------------------------------------------------------------
-// Helmet — agrega headers HTTP de seguridad automáticamente:
-//   X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, etc.
+// Helmet con CSP estricta — agrega headers HTTP de seguridad:
+//   X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security,
+//   Content-Security-Policy, Referrer-Policy, etc.
 // Se coloca ANTES de cualquier ruta.
 // ---------------------------------------------------------------------------
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'self'"],
+        // 'unsafe-inline' en style-src es necesario para React + Tailwind.
+        "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
+        "img-src": ["'self'", "data:", "blob:", "https://res.cloudinary.com", "https://drive.google.com", "https://lh3.googleusercontent.com"],
+        "script-src": ["'self'"],
+        "connect-src": ["'self'", "https://api.cloudinary.com"],
+        "frame-ancestors": ["'none'"],
+        "object-src": ["'none'"],
+        "base-uri": ["'self'"],
+        "form-action": ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Permitir imágenes de Cloudinary
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+  }),
+);
 
 // ---------------------------------------------------------------------------
 // Static frontend serving (production only)
-//
-// In Replit, the frontend (legado) is served separately as a static artifact
-// on "/" and the API runs on "/api". On Render there is only ONE service, so
-// the Express server must serve both:
-//   - /api/*  → API routes (registered below)
-//   - /*      → React SPA (legado/dist/public)
-//
-// We use process.cwd() (the monorepo root) to locate the frontend build.
-// This avoids relying on import.meta.url which becomes undefined when esbuild
-// compiles ESM → CJS format, causing a TypeError at startup.
 // ---------------------------------------------------------------------------
 const FRONTEND_DIST = process.env.FRONTEND_DIST_PATH
   ?? path.resolve(process.cwd(), "artifacts/legado/dist/public");
@@ -74,9 +92,16 @@ app.use(
     },
   }),
 );
+
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
+    // En producción, rechazar requests sin Origin (excepto healthchecks locales).
+    if (!origin) {
+      if (process.env.NODE_ENV === "production") {
+        return callback(null, false);
+      }
+      return callback(null, true);
+    }
     const allowed = getAllowedOrigins();
     if (allowed.includes(origin)) return callback(null, true);
     logger.warn({ origin }, "CORS blocked request from unauthorized origin");
@@ -84,32 +109,64 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true, limit: "2mb" }));
+
+app.use(cookieParser());
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 
 app.use("/api", generalApiLimiter, router);
 
 // ---------------------------------------------------------------------------
 // Serve the React SPA in production.
-// Static assets (JS, CSS, images) are served from FRONTEND_DIST.
-// Any non-/api route that doesn't match a static file falls back to
-// index.html so that client-side routing (wouter) works correctly.
 // ---------------------------------------------------------------------------
 if (process.env.NODE_ENV === "production") {
-  // Serve static files (assets/, favicon.svg, etc.)
   app.use(express.static(FRONTEND_DIST));
-
-  // SPA fallback: every non-API GET that doesn't match a file → index.html
   app.get(/^\/(?!api).*$/, (_req: Request, res: Response) => {
     res.sendFile(path.join(FRONTEND_DIST, "index.html"));
   });
-
   logger.info({ frontendDist: FRONTEND_DIST }, "Serving frontend static files");
 }
 
-// Global error handler — catches any unhandled errors thrown in route handlers.
-// Logs the full error internally and returns a generic 500 to avoid leaking internals.
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+// ---------------------------------------------------------------------------
+// Global error handler — respeta err.status / err.statusCode si existen
+// (multer, validate-mime, errores custom). También maneja ZodError con 400.
+// ---------------------------------------------------------------------------
+interface HttpError extends Error {
+  status?: number;
+  statusCode?: number;
+}
+
+app.use((err: HttpError, _req: Request, res: Response, _next: NextFunction) => {
+  // Errores de validación Zod → 400 con detalle útil.
+  if (err instanceof ZodError) {
+    res.status(400).json({
+      error: "Datos inválidos",
+      issues: err.issues.map(i => ({ path: i.path.join("."), message: i.message })),
+    });
+    return;
+  }
+
+  const status = err.status ?? err.statusCode;
+
+  // Error con status conocido (4xx) → devolver mensaje original.
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    res.status(status).json({ error: err.message || "Solicitud inválida" });
+    return;
+  }
+
+  // Errores de multer (tamaño, tipo, etc.)
+  if (err.name === "MulterError") {
+    res.status(400).json({ error: err.message });
+    return;
+  }
+
+  // Error de CORS
+  if (err.message === "Not allowed by CORS") {
+    res.status(403).json({ error: "Origen no permitido" });
+    return;
+  }
+
+  // Resto: 500 genérico sin filtrar internals.
   logger.error({ err }, "Unhandled error");
   res.status(500).json({ error: "Error interno del servidor" });
 });
