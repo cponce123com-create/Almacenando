@@ -5,13 +5,15 @@ import { logger } from "./logger.js";
 // Lazy loader for pdf-parse (v1.x — Node.js compatible, no browser DOM APIs needed).
 // Dynamic import works in both tsx ESM (dev) and esbuild CJS bundles (prod).
 type PdfParseFn = (buf: Buffer) => Promise<{ text: string; numpages: number }>;
+type PdfParseModule = { default?: PdfParseFn } | PdfParseFn;
+
 let _pdfParse: PdfParseFn | null = null;
 async function getPdfParse(): Promise<PdfParseFn> {
   if (_pdfParse) return _pdfParse;
   // Import lib/pdf-parse.js directly — avoids the index.js test runner that
   // tries to read './test/data/05-versions-space.pdf' relative to CWD.
-  const mod = await import("pdf-parse/lib/pdf-parse.js");
-  const fn = (mod as any).default ?? mod;
+  const mod = (await import("pdf-parse/lib/pdf-parse.js")) as PdfParseModule;
+  const fn: unknown = typeof mod === "function" ? mod : mod.default;
   if (typeof fn !== "function") {
     throw new Error(`pdf-parse no exportó una función válida (tipo: ${typeof fn})`);
   }
