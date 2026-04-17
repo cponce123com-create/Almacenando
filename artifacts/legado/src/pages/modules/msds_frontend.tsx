@@ -1,6 +1,6 @@
 import { buildMsdsAlbumHtml } from "./msds-print";
 import { sinMovimiento } from "./products-partials";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import QRCode from "qrcode";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -307,7 +307,7 @@ export default function MsdsPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editingUrl, setEditingUrl] = useState(false);
-  const [activeTab, setActiveTab] = useState<"manual" | "smart">("smart");
+  const [activeTab, setActiveTab] = useState<"smart" | "manual">("smart");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [showCandidates, setShowCandidates] = useState(true);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -401,6 +401,21 @@ export default function MsdsPage() {
     });
   }, [products, search, statusFilter, activeTab]);
 
+  // Helper para seleccionar el siguiente producto automáticamente
+  const selectNextProduct = useCallback((currentId: string) => {
+    const currentIndex = filtered.findIndex(p => p.id === currentId);
+    if (currentIndex !== -1 && currentIndex < filtered.length - 1) {
+      const nextProduct = filtered[currentIndex + 1];
+      setSelected(nextProduct);
+      setEditingUrl(false);
+      setMsdsInput("");
+      setSaveError(null);
+      setShowCandidates(true);
+    } else {
+      setSelected(null);
+    }
+  }, [filtered]);
+
   const pct = stats && stats.total > 0
     ? Math.round((stats.conMsds / stats.total) * 100)
     : 0;
@@ -420,11 +435,16 @@ export default function MsdsPage() {
         throw new Error(e.error ?? "Error al guardar");
       }
       const updated: Product = await res.json();
+      const currentId = selected.id;
       setSelected(updated);
       setMsdsInput("");
       setEditingUrl(false);
       void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
       void queryClient.invalidateQueries({ queryKey: ["/api/products/msds-stats", warehouse] });
+      
+      // Auto-seleccionar siguiente después de guardar manualmente si el usuario lo desea
+      // (En gestión manual suele ser más deliberado, pero lo activamos para consistencia)
+      setTimeout(() => selectNextProduct(currentId), 300);
     } catch (err: any) {
       setSaveError(err.message ?? "Error desconocido");
     } finally {
@@ -434,7 +454,7 @@ export default function MsdsPage() {
 
   async function handleDeleteMsds() {
     if (!selected) return;
-    if (!window.confirm("¿Quitar el MSDS de este producto?")) return;
+    // Eliminada la confirmación manual según solicitud del usuario
     setSaving(true);
     setSaveError(null);
     try {
@@ -448,11 +468,15 @@ export default function MsdsPage() {
         throw new Error(e.error ?? "Error al eliminar");
       }
       const updated: Product = await res.json();
+      const currentId = selected.id;
       setSelected(updated);
       setMsdsInput("");
       setEditingUrl(false);
       void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
       void queryClient.invalidateQueries({ queryKey: ["/api/products/msds-stats", warehouse] });
+      
+      // Auto-seleccionar siguiente tras desvincular
+      setTimeout(() => selectNextProduct(currentId), 300);
     } catch (err: any) {
       setSaveError(err.message ?? "Error desconocido");
     } finally {
@@ -914,9 +938,6 @@ export default function MsdsPage() {
                 Error al cargar productos
               </div>
             )}
-            {!isLoading && !isError && filtered.length === 0 && (
-              <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>No se encontraron productos</div>
-            )}
 
             {!isLoading && !isError && filtered.length > 0 && (
               <div style={{ maxHeight: 520, overflowY: "auto" }}>
@@ -1153,7 +1174,8 @@ export default function MsdsPage() {
                             <Button
                               variant="outline"
                               onClick={async () => {
-                                if (!window.confirm("¿Desvincular el MSDS de este producto?")) return;
+                                // Eliminada la confirmación manual según solicitud del usuario
+                                const currentId = selected.id;
                                 const res = await fetch(`${BASE}/api/msds/unlink`, {
                                   method: "POST",
                                   headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
@@ -1164,6 +1186,9 @@ export default function MsdsPage() {
                                   setSelected(updated);
                                   void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
                                   void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                                  
+                                  // Auto-seleccionar siguiente tras desvincular
+                                  setTimeout(() => selectNextProduct(currentId), 300);
                                 }
                               }}
                               style={{ fontSize: 10, padding: "3px 8px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
@@ -1177,7 +1202,8 @@ export default function MsdsPage() {
                       {canEdit && (selected.msdsStatus === "PROBABLE" || selected.msdsStatus === "MANUAL_REVIEW") && (
                         <Button
                           onClick={async () => {
-                            if (!window.confirm("¿Confirmar este MSDS como coincidencia exacta?")) return;
+                            // Eliminada la confirmación manual según solicitud del usuario
+                            const currentId = selected.id;
                             const res = await fetch(`${BASE}/api/msds/${selected.id}/confirm`, {
                               method: "POST",
                               headers: getAuthHeaders(),
@@ -1187,6 +1213,9 @@ export default function MsdsPage() {
                               setSelected(updated);
                               void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
                               void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                              
+                              // Auto-seleccionar siguiente tras confirmar
+                              setTimeout(() => selectNextProduct(currentId), 300);
                             } else {
                               const err = await res.json().catch(() => ({}));
                               alert(`Error al confirmar: ${err.error ?? res.statusText}`);
@@ -1203,142 +1232,97 @@ export default function MsdsPage() {
                     <div style={{ padding: "10px 12px", background: "#fff7f7", border: "1.5px dashed #fca5a5", borderRadius: 8, marginBottom: 14 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <XCircle style={{ width: 16, height: 16, color: "#dc2626", flexShrink: 0 }} />
-                        <p style={{ fontSize: 13, color: "#dc2626", margin: 0, fontWeight: 600 }}>Sin MSDS asignado</p>
+                        <p style={{ fontSize: 13, color: "#dc2626", margin: 0, fontWeight: 600 }}>Sin coincidencia encontrada</p>
                       </div>
                     </div>
                   )}
 
-                  {/* Candidates List integrated */}
-                  <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#475569", display: "flex", alignItems: "center", gap: 6 }}>
-                        <Search style={{ width: 13, height: 13 }} />
-                        Candidatos recomendados
-                      </span>
-                      {isMatchLoading && <Loader2 style={{ width: 13, height: 13, color: "#0d9488" }} className="animate-spin" />}
-                    </div>
-
-                    {productMatch ? (
-                      <CandidateList
-                        candidates={productMatch.match.candidates.filter(c => c.fileId !== selected.msdsFileId).slice(0, 3)}
-                        productId={selected.id}
-                        onLinked={(updatedProduct) => {
-                          if (updatedProduct) setSelected(updatedProduct);
-                          void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
-                          void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
-                        }}
-                      />
-                    ) : isMatchLoading ? (
-                      <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: 12 }}>
-                        Buscando mejores opciones en Drive...
+                  {/* Candidates List Integration */}
+                  {selected && !selected.msds && showCandidates && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                        <h4 style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", margin: 0 }}>Candidatos recomendados</h4>
+                        {isMatchLoading && <Loader2 style={{ width: 14, height: 14, color: "#0d9488" }} className="animate-spin" />}
                       </div>
-                    ) : (
-                      <Button
-                        onClick={() => void queryClient.invalidateQueries({ queryKey: ["/api/msds/match", selected.id] })}
-                        variant="outline"
-                        style={{ width: "100%", fontSize: 12, gap: 6 }}
-                      >
-                        <RefreshCw style={{ width: 13, height: 13 }} />
-                        Reintentar búsqueda
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {/* ── AI EXTRACTION SECTION ── */}
-                {selected.msdsFileId && (
-                  <div style={{ marginTop: 16, borderTop: "1.5px solid #e2e8f0", paddingTop: 14 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <ScanLine style={{ width: 15, height: 15, color: "#7c3aed" }} />
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>Extracción IA de Datos de Seguridad</span>
-                      </div>
-                      {selected.msdsExtractedAt && (
-                        <span style={{ fontSize: 10, color: "#94a3b8" }}>
-                          {new Date(selected.msdsExtractedAt).toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })}
-                        </span>
+                      {productMatch && (
+                        <CandidateList
+                          productId={selected.id}
+                          candidates={productMatch.match.candidates}
+                          onLinked={(updated) => {
+                            const currentId = selected.id;
+                            if (updated) setSelected(updated);
+                            void queryClient.invalidateQueries({ queryKey: ["/api/products", warehouse] });
+                            void queryClient.invalidateQueries({ queryKey: ["/api/msds/stats", warehouse] });
+                            
+                            // Auto-seleccionar siguiente tras vincular desde candidatos
+                            setTimeout(() => selectNextProduct(currentId), 300);
+                          }}
+                        />
                       )}
                     </div>
+                  )}
+                </div>
 
-                    {/* Scan button */}
-                    <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                      <Button
-                        onClick={() => void handleExtract()}
-                        disabled={isExtracting}
-                        style={{
-                          background: isExtracting ? "#ede9fe" : "#7c3aed",
-                          color: isExtracting ? "#7c3aed" : "#fff",
-                          border: "none",
-                          gap: 6,
-                          fontSize: 12,
-                          padding: "6px 14px",
-                          height: "auto",
-                        }}
-                      >
-                        {isExtracting
-                          ? <><Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />Escaneando PDF...</>
-                          : <><ScanLine style={{ width: 13, height: 13 }} />{selected.msdsExtractedData ? "Re-escanear MSDS" : "Escanear MSDS con IA"}</>
-                        }
-                      </Button>
-                      {selected.msdsExtractedData && isAdminOrSupervisor && (
+                {/* IA Extraction Data */}
+                {selected.msdsExtractedData && (
+                  <div style={{ borderTop: "1.5px solid #f1f5f9", paddingTop: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                      <h3 style={{ fontSize: 14, fontWeight: 700, color: "#1e293b", margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
+                        <ScanLine style={{ width: 15, height: 15, color: "#8b5cf6" }} />
+                        Extracción IA de Datos de Seguridad
+                      </h3>
+                      {canEdit && (
                         <Button
-                          variant="outline"
-                          onClick={() => void handleClearExtract()}
-                          style={{ fontSize: 11, padding: "4px 10px", height: "auto", gap: 4, borderColor: "#fca5a5", color: "#dc2626" }}
+                          variant="ghost"
+                          onClick={handleClearExtract}
+                          style={{ height: 24, padding: "0 6px", fontSize: 10, color: "#94a3b8" }}
                         >
-                          <Trash2 style={{ width: 11, height: 11 }} />
                           Limpiar
                         </Button>
                       )}
                     </div>
 
-                    {extractError && (
-                      <div style={{ padding: "8px 12px", background: "#fff7f7", border: "1px solid #fca5a5", borderRadius: 6, marginBottom: 10 }}>
-                        <p style={{ fontSize: 12, color: "#dc2626", margin: 0 }}>{extractError}</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                      <div style={{ background: "#f5f3ff", padding: "8px 10px", borderRadius: 6 }}>
+                        <p style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", margin: "0 0 2px 0", textTransform: "uppercase" }}>CAS</p>
+                        <p style={{ fontSize: 12, color: "#1e293b", margin: 0, fontWeight: 500 }}>{selected.msdsExtractedData.cas || "—"}</p>
                       </div>
-                    )}
-
-                    {isExtracting && (
-                      <div style={{ padding: "12px", background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 8, textAlign: "center" }}>
-                        <Loader2 style={{ width: 20, height: 20, color: "#7c3aed", margin: "0 auto 8px" }} className="animate-spin" />
-                        <p style={{ fontSize: 12, color: "#7c3aed", margin: 0, fontWeight: 600 }}>Descargando y procesando el PDF…</p>
-                        <p style={{ fontSize: 11, color: "#a78bfa", margin: "4px 0 0" }}>Esto puede tardar 15–30 segundos</p>
+                      <div style={{ background: "#f5f3ff", padding: "8px 10px", borderRadius: 6 }}>
+                        <p style={{ fontSize: 10, fontWeight: 700, color: "#7c3aed", margin: "0 0 2px 0", textTransform: "uppercase" }}>Familia</p>
+                        <p style={{ fontSize: 12, color: "#1e293b", margin: 0, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selected.msdsExtractedData.familiaQuimica || "—"}</p>
                       </div>
-                    )}
+                    </div>
 
-                    {/* Extracted data card */}
-                    {!isExtracting && selected.msdsExtractedData && (() => {
-                      const d = selected.msdsExtractedData;
-                      const fields: Array<{
-                        key: keyof MsdsExtractedData;
-                        label: string;
-                        icon: React.ReactNode;
-                        color: string;
-                        bg: string;
-                      }> = [
-                        { key: "cas", label: "Número CAS", icon: <Info style={{ width: 13, height: 13 }} />, color: "#0369a1", bg: "#e0f2fe" },
-                        { key: "familiaQuimica", label: "Familia Química", icon: <FlaskConical style={{ width: 13, height: 13 }} />, color: "#065f46", bg: "#d1fae5" },
-                        { key: "identificacionPeligro", label: "Peligros", icon: <Skull style={{ width: 13, height: 13 }} />, color: "#991b1b", bg: "#fee2e2" },
-                        { key: "primerosAuxiliosContacto", label: "Primeros Auxilios", icon: <HeartPulse style={{ width: 13, height: 13 }} />, color: "#be185d", bg: "#fce7f3" },
-                        { key: "controlExposicion", label: "EPP / Exposición", icon: <Shield style={{ width: 13, height: 13 }} />, color: "#1e40af", bg: "#dbeafe" },
-                        { key: "incompatibilidad", label: "Incompatibilidad", icon: <AlertTriangle style={{ width: 13, height: 13 }} />, color: "#92400e", bg: "#fef3c7" },
-                        { key: "riesgosAgudosSalud", label: "Salud / Agudo", icon: <Thermometer style={{ width: 13, height: 13 }} />, color: "#4338ca", bg: "#e0e7ff" },
-                      ];
-
-                      return (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-                          {fields.map(f => d[f.key] && (
-                            <div key={f.key} style={{ background: "#fff", border: "1px solid #f1f5f9", borderRadius: 8, padding: "8px 10px" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                <div style={{ background: f.bg, color: f.color, padding: 4, borderRadius: 6 }}>{f.icon}</div>
-                                <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>{f.label}</span>
-                              </div>
-                              <p style={{ fontSize: 12, color: "#334155", margin: 0, lineHeight: 1.4 }}>{d[f.key]}</p>
-                            </div>
-                          ))}
+                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                        <Skull style={{ width: 14, height: 14, color: "#ef4444", marginTop: 2 }} />
+                        <div>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", margin: 0 }}>Peligros</p>
+                          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>{selected.msdsExtractedData.identificacionPeligro || "No detectado"}</p>
                         </div>
-                      );
-                    })()}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                        <HeartPulse style={{ width: 14, height: 14, color: "#10b981", marginTop: 2 }} />
+                        <div>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: "#1e293b", margin: 0 }}>Primeros Auxilios</p>
+                          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>{selected.msdsExtractedData.primerosAuxiliosContacto || "No detectado"}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {canEdit && selected.msdsFileId && !selected.msdsExtractedData && (
+                  <div style={{ borderTop: "1.5px solid #f1f5f9", paddingTop: 16 }}>
+                    <Button
+                      onClick={handleExtract}
+                      disabled={isExtracting}
+                      style={{ width: "100%", background: "#8b5cf6", color: "#fff", border: "none", gap: 6, fontSize: 12 }}
+                    >
+                      {isExtracting ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> : <ScanLine style={{ width: 14, height: 14 }} />}
+                      {isExtracting ? "Analizando..." : "Escanear MSDS con IA"}
+                    </Button>
+                    {extractError && <p style={{ fontSize: 11, color: "#dc2626", marginTop: 6, textAlign: "center" }}>⚠ {extractError}</p>}
                   </div>
                 )}
               </div>
