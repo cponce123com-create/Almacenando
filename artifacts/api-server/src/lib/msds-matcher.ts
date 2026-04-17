@@ -10,6 +10,14 @@
  *   PROBABLE      — buena coincidencia (≥ 60)
  *   MANUAL_REVIEW — similitud leve (≥ 25)
  *   NONE          — sin coincidencia válida
+ *
+ * Bugs corregidos (v2):
+ *   - Tokens alfanuméricos pegados: "CRO100" en el archivo se descompone en
+ *     ["cro", "100", "cro100"] para poder cruzar con "CRO 100" del producto.
+ *   - Búsqueda de substrings entre el texto normalizado completo del producto
+ *     y el del archivo (evita fallos cuando los espacios difieren).
+ *   - Puntuación numérica ponderada corregida para los tokens generados por split.
+ *   - Score substring directo: si normName ⊆ normFile o viceversa → EXACT boost.
  */
 
 import type { MsdsDriveFile } from "./google-drive.js";
@@ -208,13 +216,54 @@ export function normalizeText(text: string): string {
 }
 
 /**
+ * Splits a single alphanumeric token into its letter and digit sub-parts.
+ *
+ * Examples:
+ *   "cro100"   → ["cro", "100"]
+ *   "gr200"    → ["gr",  "200"]
+ *   "red3b200" → ["red", "3", "b", "200"]
+ *   "tonaxol"  → ["tonaxol"]   (no split needed)
+ *   "100"      → ["100"]       (no split needed)
+ *
+ * The original merged token is also returned so substring matching still works
+ * (e.g. "cro100" can still match a file that contains "cro100" verbatim).
+ */
+function splitAlphaNumeric(token: string): string[] {
+  // Split at every letter→digit or digit→letter boundary
+  const parts = token.split(/(?<=[a-z])(?=[0-9])|(?<=[0-9])(?=[a-z])/);
+  const result: string[] = [];
+  for (const p of parts) {
+    if (p.length >= 1) result.push(p);
+  }
+  // Also keep the original merged form unless it's the only part (no split occurred)
+  if (parts.length > 1 && !result.includes(token)) result.push(token);
+  return result;
+}
+
+/**
  * Splits normalized text into meaningful tokens, stripping noise words.
+ *
+ * Enhancement: tokens that mix letters and digits (e.g. "cro100") are
+ * expanded into their sub-parts (["cro", "100"]) plus the original merged
+ * form, so they match against both separated and merged representations.
  */
 export function tokenize(normalizedText: string): string[] {
-  return normalizedText
+  const raw = normalizedText
     .split(" ")
     .map((t) => t.trim())
     .filter((t) => t.length >= 2 && !NOISE_TOKENS.has(t));
+
+  const expanded: string[] = [];
+  for (const t of raw) {
+    const parts = splitAlphaNumeric(t);
+    for (const p of parts) {
+      // Accept sub-parts of length ≥ 1 (single digits matter: "3b" → "3", "b")
+      if (!NOISE_TOKENS.has(p)) expanded.push(p);
+    }
+  }
+
+  // Deduplicate while preserving insertion order
+  return [...new Set(expanded)];
 }
 
 // ── Synonym expansion ─────────────────────────────────────────────────────────
@@ -279,6 +328,24 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
   const normSupplier = productSupplier ? normalizeText(productSupplier) : null;
   const normCas = productCas ? productCas.replace(/\s+/g, "").toLowerCase() : null;
 
+  // ── 0. Direct substring match (name ↔ file, ignoring spaces) ──────────────
+  // Strip all spaces for a "compact" comparison so that
+  // "tonaxol cro 100" and "tonaxol cro100" both compact to "tonaxolcro100".
+  const compactName = normName.replace(/\s+/g, "");
+  const compactFile = normFile.replace(/\s+/g, "");
+
+  if (compactName.length >= 4 && compactFile === compactName) {
+    // Exact compact match — almost certainly the same product
+    score += SCORE_NAME_STRONG + 30;
+    reasons.push(`nombre compacto idéntico: "${productName}"`);
+  } else if (compactName.length >= 5 && compactFile.includes(compactName)) {
+    score += SCORE_NAME_STRONG + 10;
+    reasons.push(`nombre del producto contenido en archivo (compacto)`);
+  } else if (compactFile.length >= 5 && compactName.includes(compactFile)) {
+    score += SCORE_NAME_STRONG;
+    reasons.push(`nombre de archivo contenido en producto (compacto)`);
+  }
+
   // ── 1. Code match (highest weight) ────────────────────────────────────────
   // Code must be at least 3 chars to avoid false positives with short codes
   if (normCode.length >= 3 && normFile.includes(normCode)) {
@@ -322,22 +389,31 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
   const totalFileTokens = fileTokens.length;
 
   if (totalProductTokens > 0 && matchingTokens.length > 0) {
-    // FIX 3: Multiplicador de peso para tokens numéricos (ej. "199")
-    const weightedMatchingCount = matchingTokens.reduce((acc, t) => acc + (/[0-9]/.test(t) ? 2 : 1), 0);
-    const weightedTotalCount = prodTokens.reduce((acc, t) => acc + (/[0-9]/.test(t) ? 2 : 1), 0);
-    
+    // Tokens numéricos tienen el doble de peso (son más discriminantes)
+    const weightFn = (t: string) => /^[0-9]+$/.test(t) ? 2 : 1;
+    const weightedMatchingCount = matchingTokens.reduce((acc, t) => acc + weightFn(t), 0);
+    const weightedTotalCount   = prodTokens.reduce((acc, t) => acc + weightFn(t), 0);
+
     const forwardRatio = weightedMatchingCount / weightedTotalCount;
-    
-    // FIX 2: backwardRatio solo contribuye si el archivo tiene al menos 3 tokens significativos
-    const backwardRatio = totalFileTokens >= 3 ? reverseMatchingTokens.length / totalFileTokens : 0;
-    
-    // Penalización por longitud dispar
-    const lengthDiff = Math.abs(totalProductTokens - totalFileTokens);
+
+    // backwardRatio: cuántos tokens del archivo aparecen en el producto.
+    // Sólo tiene sentido cuando el archivo tiene suficientes tokens propios.
+    // Con la nueva tokenización expandida el recuento puede inflarse, por eso
+    // usamos los tokens «originales» (sin los sub-splits) para este ratio.
+    const rawFileTokens = normFile.split(" ").map(t => t.trim())
+      .filter(t => t.length >= 2 && !NOISE_TOKENS.has(t));
+    const rawReverseMatch = rawFileTokens.filter(t => prodExpanded.has(t));
+    const backwardRatio = rawFileTokens.length >= 2
+      ? rawReverseMatch.length / rawFileTokens.length
+      : 0;
+
+    // Penalización por longitud dispar (usando tokens raw para no inflar)
+    const lengthDiff    = Math.abs(totalProductTokens - rawFileTokens.length);
     const lengthPenalty = Math.min(lengthDiff * 5, 20);
 
-    if (forwardRatio >= 0.9 && (totalFileTokens < 3 || backwardRatio >= 0.9)) {
-      score += SCORE_NAME_STRONG + 20; // Bonus por coincidencia casi exacta de tokens
-      reasons.push(`nombre casi idéntico: "${productName}"`);
+    if (forwardRatio >= 0.9 && (rawFileTokens.length < 3 || backwardRatio >= 0.7)) {
+      score += SCORE_NAME_STRONG + 20; // Coincidencia casi exacta de tokens
+      reasons.push(`nombre casi idéntico (tokens): "${productName}"`);
     } else if (forwardRatio >= 0.7 || backwardRatio >= 0.7) {
       score += SCORE_NAME_STRONG - lengthPenalty;
       reasons.push(`nombre muy similar (${Math.round(Math.max(forwardRatio, backwardRatio) * 100)}%)`);
@@ -354,7 +430,7 @@ export function calculateScore(input: ScoreInput): ScoreDetail {
   }
 
   // ── 5. Synonym match bonus ─────────────────────────────────────────────────
-  // FIX 1: Solo aplicar si no hubo coincidencias directas de nombre
+  // Solo aplicar si no hubo coincidencias directas de nombre
   if (matchingTokens.length === 0 && reverseMatchingTokens.length === 0) {
     const synonymMatches = prodTokens.filter((t) => {
       for (const [a, b] of SYNONYMS) {
