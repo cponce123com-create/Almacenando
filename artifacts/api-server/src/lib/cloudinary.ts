@@ -1,4 +1,4 @@
-import { v2 as cloudinary } from "cloudinary";
+import { v2 as cloudinary, type UploadApiResponse, type UploadApiErrorResponse } from "cloudinary";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -18,22 +18,29 @@ export function getCloudinaryResourceType(mimeType: string): "image" | "video" |
 export function uploadToCloudinary(
   buffer: Buffer,
   options: { resource_type: "image" | "video" | "raw"; folder?: string; public_id?: string }
-): Promise<any> {
+): Promise<UploadApiResponse> {
   return new Promise((resolve, reject) => {
-    cloudinary.uploader
-      .upload_stream(
-        {
-          resource_type: options.resource_type,
-          folder: options.folder ?? "legado",
-          use_filename: true,
-          unique_filename: true,
-        },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: options.resource_type,
+        folder: options.folder ?? "legado",
+        use_filename: true,
+        unique_filename: true,
+        public_id: options.public_id,
+      },
+      (error: UploadApiErrorResponse | undefined, result: UploadApiResponse | undefined) => {
+        if (error) {
+          reject(error);
+          return;
         }
-      )
-      .end(buffer);
+        if (!result) {
+          reject(new Error("Cloudinary upload returned no result"));
+          return;
+        }
+        resolve(result);
+      }
+    );
+    stream.end(buffer);
   });
 }
 
