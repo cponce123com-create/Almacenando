@@ -1,35 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // ---------------------------------------------------------------------------
-// Token persistence: stored in localStorage so it survives page refreshes
-// and React re-renders. memoryToken acts as an in-memory cache to avoid
-// repeated localStorage reads on every render.
+// Autenticación basada en cookie httpOnly.
+//
+// El token JWT ya NO se guarda en localStorage (era vulnerable a XSS).
+// Ahora el backend emite una cookie httpOnly + Secure + SameSite=Strict en
+// /api/auth/login, y el navegador la envía automáticamente en cada request
+// con `credentials: "include"`. JS del frontend nunca puede leerla.
+//
+// Todas las llamadas fetch() a /api deben usar `credentials: "include"`.
 // ---------------------------------------------------------------------------
-const TOKEN_KEY = "auth_token";
-
-function readTokenFromStorage(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeTokenToStorage(token: string | null): void {
-  try {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
-    }
-  } catch {
-    // localStorage may be blocked — fail silently.
-  }
-}
-
-// Seed the in-memory cache from localStorage on module load.
-let memoryToken: string | null = readTokenFromStorage();
 
 export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
 
@@ -42,74 +23,100 @@ export interface AuthUser {
   createdAt: string;
 }
 
-export function getAuthToken() {
-  return memoryToken;
+/**
+ * Stub para compatibilidad con código legado que llamaba getAuthToken().
+ * Ya no hay token accesible desde JS — la cookie es httpOnly.
+ * Si algún archivo todavía lo usa, devolverá null pero la request seguirá
+ * funcionando porque la cookie viaja sola.
+ */
+export function getAuthToken(): string | null {
+  return null;
 }
 
+/**
+ * Stub para compatibilidad: ya no hay header Authorization que construir.
+ * Las peticiones deben usar `credentials: "include"` en lugar de este header.
+ */
 export function getAuthHeaders(): Record<string, string> {
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return {};
+}
+
+/**
+ * Wrapper de fetch que siempre incluye la cookie de sesión.
+ * Úsalo en todas las llamadas a /api/**.
+ */
+export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    credentials: "include",
+  });
 }
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const [token, setToken] = useState<string | null>(memoryToken);
+  // Usamos un "pseudo-flag" porque ya no tenemos acceso al token.
+  // La fuente de verdad es /api/auth/me.
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   const { data: user, isLoading, error } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const currentToken = getAuthToken();
-      if (!currentToken) return null;
-
       const res = await fetch("/api/auth/me", {
-        headers: { Authorization: `Bearer ${currentToken}` }
+        credentials: "include",
       });
 
       if (!res.ok) {
         if (res.status === 401) {
-          memoryToken = null;
-          writeTokenToStorage(null);
-          setToken(null);
+          // Sesión expirada o inexistente
+          return null;
         }
         return null;
       }
       return res.json();
     },
-    enabled: !!token,
     retry: false,
+    staleTime: 60_000,
   });
+
+  useEffect(() => {
+    if (!isLoading) setSessionChecked(true);
+  }, [isLoading]);
 
   const login = async (email: string, password: string): Promise<AuthUser> => {
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ email, password }),
     });
 
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({ error: "Error al iniciar sesión" }));
       throw new Error(err.error || "Error al iniciar sesión");
     }
 
     const result = await res.json();
-    memoryToken = result.token;
-    writeTokenToStorage(result.token);
-    setToken(result.token);
+    // El backend ya setea la cookie httpOnly automáticamente.
     queryClient.setQueryData(["/api/auth/me"], result.user);
     return result.user;
   };
 
-  const logout = () => {
-    memoryToken = null;
-    writeTokenToStorage(null);
-    setToken(null);
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch {
+      // Si la red falla, igual limpiamos el cliente.
+    }
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();
   };
 
   return {
     user,
-    isLoading: isLoading && !!token,
+    isLoading: isLoading && !sessionChecked,
     isAuthenticated: !!user,
     login,
     logout,
