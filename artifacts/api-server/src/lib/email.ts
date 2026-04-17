@@ -1,6 +1,5 @@
 import { Resend } from "resend";
 import nodemailer from "nodemailer";
-import { logger } from "./logger.js";
 
 function getResend(): Resend | null {
   const key = process.env.RESEND_API_KEY;
@@ -36,7 +35,7 @@ async function sendEmail({
     return;
   }
 
-    logger.warn("RESEND_API_KEY no configurado — email no enviado");
+  console.warn("[email] RESEND_API_KEY no configurado — email no enviado");
 }
 
 export async function sendDeathReportEmail({
@@ -1013,7 +1012,7 @@ Este enlace es válido por 24 horas. Si no solicitaste este cambio, puedes ignor
 
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   if (!smtpPass) {
-    logger.warn({ toEmail }, "SMTP_APP_PASSWORD no configurado — email de reset no enviado");
+    console.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — email de reset no enviado a", toEmail);
     return;
   }
   const transporter = buildTransporter();

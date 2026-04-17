@@ -1,4 +1,4 @@
-import { v2 as cloudinary, type UploadApiResponse, type UploadApiErrorResponse } from "cloudinary";
+import { v2 as cloudinary } from "cloudinary";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -17,36 +17,26 @@ export function getCloudinaryResourceType(mimeType: string): "image" | "video" |
 
 export function uploadToCloudinary(
   buffer: Buffer,
-  options: { resource_type: "image" | "video" | "raw"; folder?: string; public_id?: string },
-): Promise<UploadApiResponse> {
+  options: { resource_type: "image" | "video" | "raw"; folder?: string; public_id?: string }
+): Promise<any> {
   return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: options.resource_type,
-        folder: options.folder ?? "legado",
-        use_filename: true,
-        unique_filename: true,
-        public_id: options.public_id,
-      },
-      (error: UploadApiErrorResponse | undefined, result: UploadApiResponse | undefined) => {
-        if (error) {
-          reject(error);
-          return;
+    cloudinary.uploader
+      .upload_stream(
+        {
+          resource_type: options.resource_type,
+          folder: options.folder ?? "legado",
+          use_filename: true,
+          unique_filename: true,
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
         }
-        if (!result) {
-          reject(new Error("Cloudinary upload returned no result"));
-          return;
-        }
-        resolve(result);
-      },
-    );
-    stream.end(buffer);
+      )
+      .end(buffer);
   });
 }
 
-export async function deleteFromCloudinary(
-  publicId: string,
-  resourceType: "image" | "video" | "raw" = "image",
-): Promise<{ result: string }> {
+export async function deleteFromCloudinary(publicId: string, resourceType: "image" | "video" | "raw" = "image") {
   return cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
 }

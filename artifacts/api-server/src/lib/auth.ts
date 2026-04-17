@@ -12,23 +12,8 @@ if (!jwtSecret) {
 }
 const JWT_SECRET = jwtSecret;
 
-export const JWT_EXPIRES_IN = "8h";
-export const JWT_EXPIRES_SECONDS = 8 * 60 * 60;
-
-/** Nombre de la cookie que lleva el JWT de sesión (httpOnly). */
-export const AUTH_COOKIE_NAME = "auth_token";
-
-/** Opciones estándar para la cookie de sesión. */
-export function getAuthCookieOptions() {
-  const isProduction = process.env.NODE_ENV === "production";
-  return {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: "strict" as const,
-    maxAge: JWT_EXPIRES_SECONDS * 1000,
-    path: "/",
-  };
-}
+const JWT_EXPIRES_IN = "8h";
+const JWT_EXPIRES_SECONDS = 8 * 60 * 60;
 
 export async function cleanupExpiredTokens(): Promise<void> {
   try {
@@ -38,10 +23,7 @@ export async function cleanupExpiredTokens(): Promise<void> {
   }
 }
 
-// En tests no queremos un setInterval huérfano.
-if (process.env.NODE_ENV !== "test") {
-  setInterval(() => void cleanupExpiredTokens(), 60 * 60 * 1000).unref();
-}
+setInterval(() => void cleanupExpiredTokens(), 60 * 60 * 1000).unref();
 
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
@@ -49,21 +31,6 @@ export function hashPassword(password: string): Promise<string> {
 
 export function comparePassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
-}
-
-/**
- * Hash dummy precalculado (ver abajo). Se usa para igualar tiempos de login
- * cuando el email no existe, evitando enumeración por timing attack.
- * El valor corresponde a bcrypt.hashSync("dummy-password-for-timing", 12).
- */
-const DUMMY_HASH = "$2a$12$CwTycUXWue0Thq9StjUM0uJ8nFVxkq/zQR7oRsMCYXjB3FvkLaOxu";
-
-/**
- * Compara contra un hash dummy para simular el costo de bcrypt.compare
- * cuando el usuario no existe. No revela nada útil al atacante.
- */
-export function dummyCompare(password: string): Promise<boolean> {
-  return bcrypt.compare(password, DUMMY_HASH);
 }
 
 export function signToken(payload: { userId: string; email: string; role: WarehouseRole }): string {
@@ -81,6 +48,9 @@ export function verifyToken(token: string): TokenPayload | null {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Revoke a token — propagates errors so logout failures surface as 500.
+// ---------------------------------------------------------------------------
 export async function revokeToken(jti: string, expiresAt: Date): Promise<void> {
   await db.insert(revokedTokensTable).values({ jti, expiresAt }).onConflictDoNothing();
 }
@@ -93,32 +63,15 @@ export type AuthenticatedRequest = Request & {
   tokenExp: number;
 };
 
-/**
- * Extrae el JWT desde la cookie httpOnly (preferido) o, como fallback
- * para compatibilidad durante la migración, desde el header Authorization.
- */
-function extractToken(req: Request): string | null {
-  // Cookie httpOnly (preferido — requiere cookie-parser).
-  const cookieToken = (req as Request & { cookies?: Record<string, string> }).cookies?.[AUTH_COOKIE_NAME];
-  if (cookieToken) return cookieToken;
-
-  // Fallback: header Authorization Bearer (compatibilidad temporal).
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    return authHeader.substring(7);
-  }
-
-  return null;
-}
-
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const token = extractToken(req);
-    if (!token) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(401).json({ error: "No autorizado" });
       return;
     }
 
+    const token = authHeader.substring(7);
     const payload = verifyToken(token);
     if (!payload) {
       res.status(401).json({ error: "Token inválido o expirado" });
@@ -174,3 +127,6 @@ export function requireRole(...roles: WarehouseRole[]) {
     next();
   };
 }
+
+// Suppress unused warning (JWT_EXPIRES_SECONDS used for reference)
+void JWT_EXPIRES_SECONDS;

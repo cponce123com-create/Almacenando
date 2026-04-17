@@ -5,16 +5,13 @@ import { logger } from "./logger.js";
 // Lazy loader for pdf-parse (v1.x — Node.js compatible, no browser DOM APIs needed).
 // Dynamic import works in both tsx ESM (dev) and esbuild CJS bundles (prod).
 type PdfParseFn = (buf: Buffer) => Promise<{ text: string; numpages: number }>;
-type PdfParseModule = { default?: PdfParseFn } | PdfParseFn;
-
 let _pdfParse: PdfParseFn | null = null;
-
 async function getPdfParse(): Promise<PdfParseFn> {
   if (_pdfParse) return _pdfParse;
   // Import lib/pdf-parse.js directly — avoids the index.js test runner that
   // tries to read './test/data/05-versions-space.pdf' relative to CWD.
-  const mod = (await import("pdf-parse/lib/pdf-parse.js")) as PdfParseModule;
-  const fn: unknown = typeof mod === "function" ? mod : mod.default;
+  const mod = await import("pdf-parse/lib/pdf-parse.js");
+  const fn = (mod as any).default ?? mod;
   if (typeof fn !== "function") {
     throw new Error(`pdf-parse no exportó una función válida (tipo: ${typeof fn})`);
   }
@@ -99,6 +96,7 @@ Formato de respuesta:
 async function extractFieldsWithAI(text: string): Promise<Omit<MsdsExtractedData, "extractedAt" | "pagesScanned" | "charCount">> {
   const client = getOpenAIClient();
 
+  // Truncate to ~15000 chars to stay within token limits (most MSDS are < 10k chars)
   const truncated = text.length > 15000
     ? text.slice(0, 15000) + "\n\n[... texto truncado por longitud ...]"
     : text;
@@ -134,6 +132,10 @@ async function extractFieldsWithAI(text: string): Promise<Omit<MsdsExtractedData
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+/**
+ * Downloads the MSDS file from Google Drive, extracts text, and uses AI to
+ * parse the 7 key safety fields. Returns structured MsdsExtractedData.
+ */
 export async function extractMsdsDataFromDrive(fileId: string): Promise<MsdsExtractedData> {
   logger.info({ fileId }, "Starting MSDS data extraction");
 
