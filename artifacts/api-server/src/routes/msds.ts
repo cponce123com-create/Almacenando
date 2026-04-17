@@ -514,6 +514,15 @@ const STATUS_FILL: Record<string, ExcelJS.Fill> = {
   NONE:          { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } }, // red-100
 };
 
+// "Días sin consumo" badge colors (applied to cell background only)
+function diasFill(dias: number | null): ExcelJS.Fill {
+  if (dias === null) return { type: "pattern", pattern: "solid", fgColor: { argb: "FFE5E7EB" } }; // gray-200 – sin dato
+  if (dias <= 30)   return { type: "pattern", pattern: "solid", fgColor: { argb: "FFD1FAE5" } }; // green-100
+  if (dias <= 90)   return { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF9C3" } }; // yellow-100
+  if (dias <= 180)  return { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFEDD5" } }; // orange-100
+  return               { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } }; // red-100 > 6 meses
+}
+
 function applyHeaderRow(ws: ExcelJS.Worksheet, headers: string[]) {
   const row = ws.addRow(headers);
   row.eachCell((cell) => {
@@ -521,34 +530,77 @@ function applyHeaderRow(ws: ExcelJS.Worksheet, headers: string[]) {
     cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
     cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
     cell.border = {
-      bottom: { style: "thin", color: { argb: "FF0D9488" } },
+      top:    { style: "thin", color: { argb: "FF0D9488" } },
+      bottom: { style: "medium", color: { argb: "FF0D9488" } },
+      left:   { style: "thin", color: { argb: "FF0D9488" } },
+      right:  { style: "thin", color: { argb: "FF0D9488" } },
     };
   });
-  row.height = 22;
+  row.height = 26;
 }
 
-function applyDataRow(ws: ExcelJS.Worksheet, values: (string | number | null)[], status: string) {
+function applyDataRow(
+  ws: ExcelJS.Worksheet,
+  values: (string | number | null)[],
+  status: string,
+  diasSinConsumo: number | null,
+) {
   const row = ws.addRow(values);
   const fill = STATUS_FILL[status] ?? STATUS_FILL.NONE;
-  row.eachCell({ includeEmpty: true }, (cell) => {
-    cell.fill = fill;
+
+  row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+    // Last column = "Días sin consumo" → special color coding
+    const isLastCol = colNumber === values.length;
+    cell.fill = isLastCol ? diasFill(diasSinConsumo) : fill;
     cell.alignment = { vertical: "middle", wrapText: false };
     cell.font = { size: 10 };
+    cell.border = {
+      bottom: { style: "hair", color: { argb: "FFD1D5DB" } },
+      right:  { style: "hair", color: { argb: "FFD1D5DB" } },
+    };
   });
   row.height = 18;
 }
 
+/** Computes the number of days between a date string (YYYY-MM-DD) and today. */
+function daysSince(dateStr: string | null | undefined): number | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((today.getTime() - d.getTime()) / 86_400_000);
+}
+
 router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
-  const condition = warehouse && warehouse !== "all"
-    ? eq(productsTable.warehouse, warehouse)
-    : undefined;
+  const useWarehouse = warehouse && warehouse !== "all";
+  const condition = useWarehouse ? eq(productsTable.warehouse, warehouse) : undefined;
 
-  const products = await db
-    .select()
-    .from(productsTable)
-    .where(condition)
-    .orderBy(asc(productsTable.warehouse), asc(productsTable.type), asc(productsTable.name));
+  // ── Fetch products + last-consumption in parallel ─────────────────────────
+  const [products, consumoRows] = await Promise.all([
+    db
+      .select()
+      .from(productsTable)
+      .where(condition)
+      .orderBy(asc(productsTable.warehouse), asc(productsTable.type), asc(productsTable.name)),
+    db.execute(
+      useWarehouse
+        ? sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
+               FROM balance_records
+               WHERE warehouse = ${warehouse}
+               ORDER BY code, balance_date DESC`
+        : sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
+               FROM balance_records
+               ORDER BY code, balance_date DESC`
+    ) as Promise<{ rows: Array<{ code: string; ultimoConsumo: string | null }> }>,
+  ]);
+
+  // Build a quick lookup: code → ultimoConsumo string
+  const consumoMap = new Map<string, string>();
+  for (const row of consumoRows.rows) {
+    if (row.ultimoConsumo) consumoMap.set(row.code, row.ultimoConsumo);
+  }
 
   const withMsds    = products.filter(p => p.msds);
   const withoutMsds = products.filter(p => !p.msds);
@@ -557,14 +609,19 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   wb.creator = "Almacén Químico";
   wb.created = new Date();
 
+  // ── Column definitions (shared between data sheets) ───────────────────────
   const HEADERS = [
     "Almacén", "Tipo", "Código", "Nombre", "Ubicación",
     "Estado MSDS", "Puntuación", "Archivo MSDS", "Razón de coincidencia",
     "Vinculado por", "Última verificación",
+    "Último consumo", "Días sin consumo",
   ];
-  const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 12, 34, 36, 14, 22];
+  // Column widths match the header order above
+  const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 11, 34, 36, 14, 22, 16, 16];
 
-  function productRow(p: Product): (string | number | null)[] {
+  function productRow(p: typeof products[number]): (string | number | null)[] {
+    const ultimoConsumo = consumoMap.get(p.code) ?? null;
+    const dias = daysSince(ultimoConsumo);
     return [
       p.warehouse ?? "",
       p.type ?? "",
@@ -577,37 +634,90 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
       p.msdsMatchReason ?? "",
       p.msdsMatchedBy ?? "",
       p.msdsLastCheckedAt ? new Date(p.msdsLastCheckedAt).toLocaleDateString("es-SV") : "",
+      ultimoConsumo
+        ? new Date(ultimoConsumo + "T00:00:00").toLocaleDateString("es-SV")
+        : "Sin registro",
+      dias !== null ? dias : "Sin registro",
     ];
   }
 
+  /** Adds the shared title block above the header row. */
+  function addSheetTitle(ws: ExcelJS.Worksheet, title: string, colCount: number) {
+    const titleRow = ws.addRow([title]);
+    const titleCell = titleRow.getCell(1);
+    titleCell.font  = { bold: true, size: 14, color: { argb: "FF0F766E" } };
+    titleCell.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0FDFA" } };
+    titleCell.alignment = { vertical: "middle", horizontal: "left" };
+    titleRow.height = 28;
+
+    // Sub-title row: generation date
+    const subRow = ws.addRow([
+      `Generado: ${new Date().toLocaleDateString("es-SV", { day: "2-digit", month: "long", year: "numeric" })}`,
+    ]);
+    subRow.getCell(1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
+    subRow.height = 14;
+
+    // Empty separator
+    ws.addRow([]);
+  }
+
+  /** Applies freeze + filter to the header row (row number passed in). */
+  function finalizeSheet(ws: ExcelJS.Worksheet, headerRowNum: number, colCount: number) {
+    const lastCol = String.fromCharCode(64 + colCount); // A=65 → 'A'+colCount
+    ws.autoFilter = { from: `A${headerRowNum}`, to: `${lastCol}${headerRowNum}` };
+    ws.views = [{ state: "frozen", ySplit: headerRowNum }];
+  }
+
   // ── Sheet 1: Con MSDS ──────────────────────────────────────────────────────
-  const ws1 = wb.addWorksheet("Con MSDS", { views: [{ state: "frozen", ySplit: 1 }] });
+  const ws1 = wb.addWorksheet("Con MSDS");
   ws1.columns = COL_WIDTHS.map((width, i) => ({ header: "", key: `c${i}`, width }));
+  addSheetTitle(ws1, `Con MSDS (${withMsds.length} productos)`, HEADERS.length);
+  const ws1HeaderRow = ws1.rowCount + 1;
   applyHeaderRow(ws1, HEADERS);
   for (const p of withMsds) {
-    applyDataRow(ws1, productRow(p), p.msdsStatus ?? "NONE");
+    const ultimoConsumo = consumoMap.get(p.code) ?? null;
+    applyDataRow(ws1, productRow(p), p.msdsStatus ?? "NONE", daysSince(ultimoConsumo));
   }
-  ws1.autoFilter = { from: "A1", to: `K1` };
+  finalizeSheet(ws1, ws1HeaderRow, HEADERS.length);
 
   // ── Sheet 2: Sin MSDS ─────────────────────────────────────────────────────
-  const ws2 = wb.addWorksheet("Sin MSDS", { views: [{ state: "frozen", ySplit: 1 }] });
+  const ws2 = wb.addWorksheet("Sin MSDS");
   ws2.columns = COL_WIDTHS.map((width, i) => ({ header: "", key: `c${i}`, width }));
+  addSheetTitle(ws2, `Sin MSDS (${withoutMsds.length} productos)`, HEADERS.length);
+  const ws2HeaderRow = ws2.rowCount + 1;
   applyHeaderRow(ws2, HEADERS);
   for (const p of withoutMsds) {
-    applyDataRow(ws2, productRow(p), "NONE");
+    const ultimoConsumo = consumoMap.get(p.code) ?? null;
+    applyDataRow(ws2, productRow(p), "NONE", daysSince(ultimoConsumo));
   }
-  ws2.autoFilter = { from: "A1", to: `K1` };
+  finalizeSheet(ws2, ws2HeaderRow, HEADERS.length);
 
   // ── Sheet 3: Resumen ──────────────────────────────────────────────────────
   const ws3 = wb.addWorksheet("Resumen");
-  ws3.columns = [{ width: 26 }, { width: 14 }];
-  const summaryTitle = ws3.addRow(["Resumen MSDS", ""]);
-  summaryTitle.getCell(1).font = { bold: true, size: 13, color: { argb: "FF0F766E" } };
-  ws3.addRow([]);
-  const hdr = ws3.addRow(["Estado", "Cantidad"]);
-  hdr.eachCell(c => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F766E" } }; });
+  ws3.columns = [{ width: 28 }, { width: 16 }, { width: 16 }];
 
-  const summary = [
+  // Title
+  const summaryTitle = ws3.addRow(["Informe MSDS — Resumen", "", ""]);
+  summaryTitle.getCell(1).font = { bold: true, size: 14, color: { argb: "FF0F766E" } };
+  summaryTitle.height = 28;
+  const subTitle = ws3.addRow([
+    `Generado: ${new Date().toLocaleDateString("es-SV", { day: "2-digit", month: "long", year: "numeric" })}`,
+    "", "",
+  ]);
+  subTitle.getCell(1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
+  ws3.addRow([]);
+
+  // Status breakdown
+  const hdr = ws3.addRow(["Estado MSDS", "Cantidad", "% del total"]);
+  hdr.eachCell(c => {
+    c.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F766E" } };
+    c.alignment = { horizontal: "center", vertical: "middle" };
+    c.border = { bottom: { style: "medium", color: { argb: "FF0D9488" } } };
+  });
+  hdr.height = 22;
+
+  const statusSummary = [
     { label: "Exacto",          key: "EXACT",         argb: "FFD1FAE5", text: "FF065F46" },
     { label: "Probable",        key: "PROBABLE",       argb: "FFFEF9C3", text: "FF854D0E" },
     { label: "Revisión manual", key: "MANUAL_REVIEW",  argb: "FFFFEDD5", text: "FF9A3412" },
@@ -615,17 +725,58 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   ];
   const counts: Record<string, number> = { EXACT: 0, PROBABLE: 0, MANUAL_REVIEW: 0, NONE: 0 };
   for (const p of products) { const k = p.msdsStatus ?? "NONE"; counts[k] = (counts[k] ?? 0) + 1; }
+  const total = products.length || 1;
 
-  for (const s of summary) {
-    const r = ws3.addRow([s.label, counts[s.key] ?? 0]);
+  for (const s of statusSummary) {
+    const cnt = counts[s.key] ?? 0;
+    const r = ws3.addRow([s.label, cnt, `${((cnt / total) * 100).toFixed(1)}%`]);
     r.eachCell(c => {
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: s.argb } };
-      c.font = { bold: true, color: { argb: s.text } };
+      c.font = { bold: true, color: { argb: s.text }, size: 10 };
+      c.alignment = { horizontal: "center", vertical: "middle" };
     });
+    r.height = 18;
   }
+
   ws3.addRow([]);
-  const total = ws3.addRow(["Total productos", products.length]);
-  total.eachCell(c => { c.font = { bold: true }; });
+  const totalRow = ws3.addRow(["Total productos", products.length, "100%"]);
+  totalRow.eachCell(c => {
+    c.font = { bold: true, size: 11 };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
+    c.alignment = { horizontal: "center", vertical: "middle" };
+  });
+  totalRow.height = 20;
+
+  // Consumption aging breakdown
+  ws3.addRow([]);
+  ws3.addRow([]);
+  const agingHdr = ws3.addRow(["Antigüedad de consumo", "Cantidad", "% del total"]);
+  agingHdr.eachCell(c => {
+    c.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1D4ED8" } }; // blue-700
+    c.alignment = { horizontal: "center", vertical: "middle" };
+    c.border = { bottom: { style: "medium", color: { argb: "FF1D4ED8" } } };
+  });
+  agingHdr.height = 22;
+
+  const agingBuckets = [
+    { label: "≤ 30 días",        argb: "FFD1FAE5", text: "FF065F46", test: (d: number | null) => d !== null && d <= 30 },
+    { label: "31 – 90 días",     argb: "FFFEF9C3", text: "FF854D0E", test: (d: number | null) => d !== null && d > 30 && d <= 90 },
+    { label: "91 – 180 días",    argb: "FFFFEDD5", text: "FF9A3412", test: (d: number | null) => d !== null && d > 90 && d <= 180 },
+    { label: "> 180 días",       argb: "FFFEE2E2", text: "FF991B1B", test: (d: number | null) => d !== null && d > 180 },
+    { label: "Sin registro",     argb: "FFE5E7EB", text: "FF374151", test: (d: number | null) => d === null },
+  ];
+
+  for (const bucket of agingBuckets) {
+    const cnt = products.filter(p => bucket.test(daysSince(consumoMap.get(p.code) ?? null))).length;
+    const r = ws3.addRow([bucket.label, cnt, `${((cnt / total) * 100).toFixed(1)}%`]);
+    r.eachCell(c => {
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bucket.argb } };
+      c.font = { bold: true, color: { argb: bucket.text }, size: 10 };
+      c.alignment = { horizontal: "center", vertical: "middle" };
+    });
+    r.height = 18;
+  }
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const warehouseSlug = (warehouse && warehouse !== "all" ? warehouse : "todos").replace(/\s+/g, "_");
