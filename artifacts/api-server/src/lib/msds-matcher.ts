@@ -462,7 +462,7 @@ export function matchProductWithFiles(
     status,
     score: best?.score ?? 0,
     best,
-    candidates: candidates.slice(0, 5), // return top 5
+    candidates: candidates.slice(0, 10), // return top 10
     reason,
   };
 }

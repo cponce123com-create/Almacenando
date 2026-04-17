@@ -253,9 +253,30 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
 
   const now = new Date();
 
+  // Track codes already processed to avoid duplicate work for same-code products
+  // (products with same code share the same MSDS — match once, apply to all by code)
+  const processedCodes = new Set<string>();
+
   for (const product of products) {
-    // Solo skip si fue vinculado MANUALMENTE por un humano
+    // Skip if already processed this code (handled via bulk update by code)
+    if (processedCodes.has(product.code)) {
+      skipped++;
+      continue;
+    }
+
+    // Protect manual links: if ANY product with this code was manually confirmed, skip all
+    // unless force=true
     if (!force && product.msdsMatchedBy === "manual") {
+      // Mark all products with same code as skipped
+      processedCodes.add(product.code);
+      skipped++;
+      continue;
+    }
+
+    // Also protect if the product has EXACT status from a manual link,
+    // even if msdsMatchedBy was not saved as "manual" (legacy records)
+    if (!force && product.msdsStatus === "EXACT" && product.msds && product.msdsUrl) {
+      processedCodes.add(product.code);
       skipped++;
       continue;
     }
@@ -268,6 +289,7 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
     const best = match.best;
     const status = match.status as MsdsMatchStatus;
 
+    // Apply to ALL products with the same code across all warehouses (not just this row)
     await db.update(productsTable)
       .set({
         msdsStatus: status,
@@ -285,11 +307,14 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
               updatedAt: now,
             }
           : {
+              msds: false,
+              msdsUrl: null,
               updatedAt: now,
             }),
       })
-      .where(eq(productsTable.id, product.id));
+      .where(eq(productsTable.code, product.code));
 
+    processedCodes.add(product.code);
     updated++;
   }
 
@@ -299,6 +324,54 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
     productsProcessed: updated,
     productsSkipped: skipped,
     totalProducts: products.length,
+    uniqueCodes: processedCodes.size,
+  });
+}));
+
+// ── POST /api/msds/:productId/candidates ─────────────────────────────────────
+// Returns fresh match candidates from Drive for a single product.
+// Unlike GET /match/:productId, this always fetches fresh Drive file list
+// and returns ALL candidates (up to 10). Used for the "Re-buscar" button
+// on products with NONE status.
+
+router.post("/:productId/candidates", requireAuth, asyncHandler(async (req, res) => {
+  if (!guardDriveConfig(res as any)) return;
+
+  const { productId } = req.params;
+
+  const [product] = await db
+    .select()
+    .from(productsTable)
+    .where(eq(productsTable.id, productId))
+    .limit(1);
+
+  if (!product) {
+    res.status(404).json({ error: "Producto no encontrado" });
+    return;
+  }
+
+  const files = await getDriveMsdsFiles();
+  const match = matchProductWithFiles(
+    { code: product.code, name: product.name, supplier: product.supplier, casNumber: product.casNumber },
+    files,
+  );
+
+  // Return top 10 candidates (more than the default 5)
+  const allCandidates = match.candidates;
+
+  res.json({
+    product: {
+      id: product.id,
+      code: product.code,
+      name: product.name,
+      warehouse: product.warehouse,
+      msdsStatus: product.msdsStatus,
+    },
+    filesScanned: files.length,
+    status: match.status,
+    score: match.score,
+    candidates: allCandidates,
+    hasCandidates: allCandidates.length > 0,
   });
 }));
 
@@ -562,65 +635,6 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   await wb.xlsx.write(res);
   res.end();
-}));
-
-// ── POST /api/msds/:productId/confirm ────────────────────────────────────────
-// Promotes a PROBABLE or MANUAL_REVIEW match to EXACT after human verification.
-
-router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor", "operator"), asyncHandler(async (req, res) => {
-  const { productId } = req.params;
-
-  const [product] = await db
-    .select()
-    .from(productsTable)
-    .where(eq(productsTable.id, productId))
-    .limit(1);
-
-  if (!product) {
-    res.status(404).json({ error: "Producto no encontrado" });
-    return;
-  }
-
-  // A confirmable product needs at least a fileId or existing msds link.
-  // MANUAL_REVIEW products have msdsFileId set but msds=false intentionally by rescan.
-  const hasLinkedFile = product.msdsFileId || product.msdsUrl;
-  if (!hasLinkedFile || product.msdsStatus === "NONE") {
-    res.status(400).json({ error: "El producto no tiene un MSDS candidato vinculado" });
-    return;
-  }
-
-  if (product.msdsStatus === "EXACT") {
-    res.status(400).json({ error: "El MSDS ya está marcado como exacto" });
-    return;
-  }
-
-  // For MANUAL_REVIEW products the URL was not saved; reconstruct it from the fileId.
-  const msdsUrl = product.msdsUrl
-    ?? (product.msdsFileId
-      ? `https://drive.google.com/file/d/${product.msdsFileId}/view`
-      : null);
-
-  const now = new Date();
-  await db.update(productsTable)
-    .set({
-      msds: true,
-      msdsUrl: msdsUrl ?? product.msdsUrl,
-      msdsStatus: "EXACT",
-      msdsMatchedBy: "manual",
-      msdsMatchReason: product.msdsMatchReason
-        ? `${product.msdsMatchReason} (confirmado manualmente)`
-        : "Confirmado manualmente",
-      updatedAt: now,
-    })
-    .where(eq(productsTable.id, productId));
-
-  const [updated] = await db
-    .select()
-    .from(productsTable)
-    .where(eq(productsTable.id, productId))
-    .limit(1);
-
-  res.json(updated);
 }));
 
 // ── POST /api/msds/confirm-all ───────────────────────────────────────────────
