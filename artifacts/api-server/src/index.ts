@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { seedWarehouseData, purgeDemoData } from "./lib/seed.js";
 import { cleanupExpiredTokens, hashPassword } from "./lib/auth.js";
+import { passwordSchema } from "./lib/password-schema.js";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { count } from "drizzle-orm";
@@ -25,6 +26,24 @@ async function bootstrapAdminIfNeeded() {
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) return;
+
+  // Validar que la contraseña cumpla la política (8+ chars, 1 mayúscula, 1 número).
+  // Si no cumple, NO creamos el admin — es más seguro abortar que tener un admin
+  // con contraseña débil. El mensaje en el log explica qué pasó.
+  const passwordCheck = passwordSchema.safeParse(password);
+  if (!passwordCheck.success) {
+    logger.error(
+      { issue: passwordCheck.error.issues[0]?.message },
+      "ADMIN_PASSWORD no cumple la política de seguridad. El admin NO será creado automáticamente. Usa una contraseña con al menos 8 caracteres, 1 mayúscula y 1 número.",
+    );
+    return;
+  }
+
+  // Validar que el email tenga un formato válido antes de guardarlo en la DB.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    logger.error({ email }, "ADMIN_EMAIL no tiene un formato válido. El admin NO será creado.");
+    return;
+  }
 
   try {
     const [{ total }] = await db.select({ total: count() }).from(usersTable);
