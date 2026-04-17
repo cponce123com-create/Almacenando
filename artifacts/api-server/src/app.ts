@@ -20,14 +20,7 @@ const trustProxyValue = /^\d+$/.test(trustProxyRaw) ? Number(trustProxyRaw) : tr
 app.set("trust proxy", trustProxyValue);
 
 // ---------------------------------------------------------------------------
-// Helmet con CSP en modo "report-friendly" — agrega headers de seguridad
-// pero permite los recursos externos que tu app necesita:
-//   - Cloudinary, Google Drive (imágenes)
-//   - Google Fonts
-//   - Scripts inline de Vite en desarrollo
-//
-// Si quieres endurecer la CSP más adelante, revisa la consola del navegador
-// en "Network" → busca warnings de "Refused to load" y agrega el dominio.
+// Helmet con CSP permisiva para recursos externos de la app.
 // ---------------------------------------------------------------------------
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -37,10 +30,8 @@ app.use(
       useDefaults: true,
       directives: {
         "default-src": ["'self'"],
-        // 'unsafe-inline' necesario para React + Tailwind.
         "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
-        // Permitir imágenes de los servicios que usa la app.
         "img-src": [
           "'self'",
           "data:",
@@ -50,11 +41,9 @@ app.use(
           "https://lh3.googleusercontent.com",
           "https://*.googleusercontent.com",
         ],
-        // Permitir scripts del propio dominio. En dev también 'unsafe-eval' para Vite HMR.
         "script-src": isProduction
           ? ["'self'"]
           : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        // Permitir conexiones (fetch, websockets) a servicios externos.
         "connect-src": [
           "'self'",
           "https://api.cloudinary.com",
@@ -67,7 +56,6 @@ app.use(
         "base-uri": ["'self'"],
       },
     },
-    // Necesario para que las imágenes de Cloudinary/Drive se muestren sin errores CORP.
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: "cross-origin" },
     referrerPolicy: { policy: "strict-origin-when-cross-origin" },
@@ -113,7 +101,6 @@ app.use(
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Permitir requests sin Origin (healthchecks, same-origin).
     if (!origin) return callback(null, true);
     const allowed = getAllowedOrigins();
     if (allowed.includes(origin)) return callback(null, true);
@@ -133,10 +120,32 @@ app.use("/api", generalApiLimiter, router);
 // Serve the React SPA in production.
 // ---------------------------------------------------------------------------
 if (process.env.NODE_ENV === "production") {
-  app.use(express.static(FRONTEND_DIST));
+  // Assets con hash en el nombre (index-XXXX.js, index-XXXX.css) se pueden
+  // cachear por mucho tiempo. Pero archivos como index.html, que NO tienen
+  // hash, deben recargarse siempre para que el usuario vea el código nuevo
+  // tras un deploy.
+  app.use(express.static(FRONTEND_DIST, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith("index.html")) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      } else if (/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|webp|ico)$/.test(filePath)) {
+        // Assets con hash → cache agresivo (1 año).
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    },
+  }));
+
+  // SPA fallback: siempre devuelve index.html sin caché para que el
+  // navegador recargue el frontend nuevo después de un deploy.
   app.get(/^\/(?!api).*$/, (_req: Request, res: Response) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.sendFile(path.join(FRONTEND_DIST, "index.html"));
   });
+
   logger.info({ frontendDist: FRONTEND_DIST }, "Serving frontend static files");
 }
 
