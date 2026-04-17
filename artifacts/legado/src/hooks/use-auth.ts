@@ -1,56 +1,35 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // ---------------------------------------------------------------------------
-// Autenticación basada en cookie httpOnly.
-//
-// El token JWT ya NO se guarda en localStorage (era vulnerable a XSS).
-// Ahora el backend emite una cookie httpOnly + Secure + SameSite=Strict en
-// /api/auth/login, y el navegador la envía automáticamente en cada request.
-// JS del frontend nunca puede leerla.
-//
+// Token persistence: stored in localStorage so it survives page refreshes
+// and React re-renders. memoryToken acts as an in-memory cache to avoid
+// repeated localStorage reads on every render.
 // ---------------------------------------------------------------------------
-// PARCHE GLOBAL DE FETCH
-// ---------------------------------------------------------------------------
-// Como muchas páginas de la app hacen fetch() directamente sin pasar
-// credentials:"include", parcheamos el fetch global UNA sola vez para que
-// TODAS las llamadas al propio origen (incluidas /api/**) envíen la cookie
-// de sesión automáticamente. Esto evita tener que tocar 20+ páginas.
-// ---------------------------------------------------------------------------
+const TOKEN_KEY = "auth_token";
 
-declare global {
-  interface Window {
-    __authFetchPatched?: boolean;
+function readTokenFromStorage(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
   }
 }
 
-if (typeof window !== "undefined" && !window.__authFetchPatched) {
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = (input: RequestInfo | URL, init: RequestInit = {}) => {
-    // Solo forzamos credentials para requests al mismo origen.
-    // (Si alguna vez haces fetch a otro dominio, no tocamos la config.)
-    let sameOrigin = true;
-    try {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-          ? input.href
-          : (input as Request).url;
-      if (url.startsWith("http://") || url.startsWith("https://")) {
-        sameOrigin = new URL(url).origin === window.location.origin;
-      }
-    } catch {
-      // Si no se puede parsear, asumimos mismo origen (comportamiento seguro).
+function writeTokenToStorage(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
     }
-
-    if (sameOrigin && init.credentials === undefined) {
-      init = { ...init, credentials: "include" };
-    }
-    return originalFetch(input, init);
-  };
-  window.__authFetchPatched = true;
+  } catch {
+    // localStorage may be blocked — fail silently.
+  }
 }
+
+// Seed the in-memory cache from localStorage on module load.
+let memoryToken: string | null = readTokenFromStorage();
 
 export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
 
@@ -63,41 +42,42 @@ export interface AuthUser {
   createdAt: string;
 }
 
-/**
- * Compatibilidad con código legado que llamaba getAuthToken().
- * Ya no hay token accesible desde JS — la cookie es httpOnly.
- */
-export function getAuthToken(): string | null {
-  return null;
+export function getAuthToken() {
+  return memoryToken;
 }
 
-/**
- * Compatibilidad con código legado que hace:
- *   fetch(url, { headers: getAuthHeaders() })
- * Devuelve un objeto vacío — la cookie viaja sola gracias al patch global.
- */
 export function getAuthHeaders(): Record<string, string> {
-  return {};
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const [sessionChecked, setSessionChecked] = useState(false);
+  const [token, setToken] = useState<string | null>(memoryToken);
 
-  const { data: user, isLoading } = useQuery<AuthUser | null>({
+  const { data: user, isLoading, error } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const res = await fetch("/api/auth/me");
-      if (!res.ok) return null;
+      const currentToken = getAuthToken();
+      if (!currentToken) return null;
+
+      const res = await fetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${currentToken}` }
+      });
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          memoryToken = null;
+          writeTokenToStorage(null);
+          setToken(null);
+        }
+        return null;
+      }
       return res.json();
     },
+    enabled: !!token,
     retry: false,
-    staleTime: 60_000,
   });
-
-  useEffect(() => {
-    if (!isLoading) setSessionChecked(true);
-  }, [isLoading]);
 
   const login = async (email: string, password: string): Promise<AuthUser> => {
     const res = await fetch("/api/auth/login", {
@@ -107,28 +87,29 @@ export function useAuth() {
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: "Error al iniciar sesión" }));
+      const err = await res.json();
       throw new Error(err.error || "Error al iniciar sesión");
     }
 
     const result = await res.json();
+    memoryToken = result.token;
+    writeTokenToStorage(result.token);
+    setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
     return result.user;
   };
 
-  const logout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch {
-      // Si la red falla, igual limpiamos el cliente.
-    }
+  const logout = () => {
+    memoryToken = null;
+    writeTokenToStorage(null);
+    setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();
   };
 
   return {
     user,
-    isLoading: isLoading && !sessionChecked,
+    isLoading: isLoading && !!token,
     isAuthenticated: !!user,
     login,
     logout,
