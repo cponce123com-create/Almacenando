@@ -2,7 +2,6 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { seedWarehouseData, purgeDemoData } from "./lib/seed.js";
 import { cleanupExpiredTokens, hashPassword } from "./lib/auth.js";
-import { passwordSchema } from "./lib/password-schema.js";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { count } from "drizzle-orm";
@@ -27,22 +26,6 @@ async function bootstrapAdminIfNeeded() {
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) return;
 
-  // Validar la contraseña contra la política antes de crear el admin.
-  const passwordCheck = passwordSchema.safeParse(password);
-  if (!passwordCheck.success) {
-    logger.error(
-      { issue: passwordCheck.error.issues[0]?.message },
-      "ADMIN_PASSWORD no cumple la política de seguridad. El admin NO será creado automáticamente. Usa una contraseña con al menos 8 caracteres, 1 mayúscula y 1 número.",
-    );
-    return;
-  }
-
-  // Validar que el email sea válido.
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    logger.error({ email }, "ADMIN_EMAIL no tiene un formato válido. El admin NO será creado.");
-    return;
-  }
-
   try {
     const [{ total }] = await db.select({ total: count() }).from(usersTable);
     if (Number(total) > 0) return;
@@ -66,10 +49,20 @@ async function bootstrapAdminIfNeeded() {
 app.listen(port, async () => {
   logger.info({ port }, "API Server running");
 
+  // Auto-create first admin when the database is empty (production bootstrap)
   await bootstrapAdminIfNeeded();
 
+  // Clean up any expired revoked tokens left over from a previous run.
   void cleanupExpiredTokens();
 
+  // -------------------------------------------------------------------
+  // Seed demo data SOLO si RUN_SEED=true está definido explícitamente.
+  // Esto evita que cada deploy en Render sobreescriba datos reales.
+  //
+  // Para correr el seed manualmente:
+  //   - En Render: ve a Environment → agrega RUN_SEED=true → redeploy
+  //   - Después del primer deploy exitoso: elimina esa variable
+  // -------------------------------------------------------------------
   if (process.env.RUN_SEED === "true") {
     logger.info("RUN_SEED=true — ejecutando seed de datos iniciales...");
     try {
