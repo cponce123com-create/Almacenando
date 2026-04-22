@@ -1,6 +1,6 @@
 // ── Album MSDS HTML builder ───────────────────────────────────────────────────
-// Pure function extracted from MsdsPage.handlePrintAlbum.
-// Accepts pre-generated QR data URLs so QRCode.toDataURL stays in the component.
+// Diseño profesional tipo etiqueta industrial con código de barras, QR,
+// secciones de PELIGRO y PRIMEROS AUXILIOS con iconos SVG.
 
 export interface MsdsProduct {
   id: string;
@@ -14,109 +14,77 @@ export interface MsdsProduct {
   msdsUrl?: string | null;
 }
 
-function levelConfig(level: string | null | undefined): { color: string; label: string } {
-  if (level === "alto_riesgo") return { color: "#c0392b", label: "⚠ PRODUCTO QUÍMICO – ALTO RIESGO" };
-  if (level === "controlado")  return { color: "#1a3a5c", label: "⚠ PRODUCTO QUÍMICO – USO CONTROLADO" };
-  return { color: "#e67e22", label: "⚠ PRODUCTO QUÍMICO – PRECAUCIÓN" };
+// ── Iconos de primeros auxilios (SVG inline) ──────────────────────────────────
+const ICON_EYES = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const ICON_SKIN = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0m0 0V5a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v4"/><path d="M6 14v0a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/></svg>`;
+const ICON_LUNG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.081 20C4.378 20 3 18.593 3 16.857v-3.714c0-1.03.502-2 1.33-2.571L12 5l7.67 5.572c.828.571 1.33 1.54 1.33 2.571v3.714C21 18.593 19.622 20 17.919 20c-.87 0-1.719-.37-2.34-1.025L12 15l-3.579 3.975A3.216 3.216 0 0 1 6.081 20z"/><line x1="12" y1="5" x2="12" y2="15"/></svg>`;
+const ICON_STOMACH = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M8 12s1-2 4-2 4 2 4 2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>`;
+
+// ── Mapeo de instrucciones de primeros auxilios por palabras clave ─────────────
+interface FirstAidParsed {
+  ojos: string;
+  piel: string;
+  inhalacion: string;
+  ingestion: string;
 }
 
-const D = `<polygon points="50,3 97,50 50,97 3,50" fill="white" stroke="#cc0000" stroke-width="7" stroke-linejoin="round"/>`;
-const ghsPictos: Record<string, string> = {
-  toxico: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <ellipse cx="50" cy="43" rx="17" ry="15" fill="black"/>
-    <ellipse cx="43" cy="41" rx="5" ry="5.5" fill="white"/>
-    <ellipse cx="57" cy="41" rx="5" ry="5.5" fill="white"/>
-    <ellipse cx="50" cy="48" rx="2.5" ry="2.5" fill="white"/>
-    <rect x="37" y="53" width="26" height="8" rx="2" fill="black"/>
-    <rect x="41" y="53" width="3" height="8" fill="white"/>
-    <rect x="47" y="53" width="3" height="8" fill="white"/>
-    <rect x="53" y="53" width="3" height="8" fill="white"/>
-    <line x1="28" y1="68" x2="72" y2="76" stroke="black" stroke-width="6" stroke-linecap="round"/>
-    <line x1="28" y1="76" x2="72" y2="68" stroke="black" stroke-width="6" stroke-linecap="round"/>
-    <circle cx="25" cy="72" r="6" fill="black"/>
-    <circle cx="75" cy="72" r="6" fill="black"/>
-  </svg>`,
-  inflamable: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <path d="M50,78 C33,78 26,63 29,49 C31,38 38,33 40,25 C42,18 40,12 40,12
-             C46,18 48,28 47,36 C49,30 52,20 57,16 C57,24 54,33 56,40
-             C60,33 63,29 67,31 C73,41 72,55 67,65 C63,73 57,78 50,78Z" fill="black"/>
-  </svg>`,
-  oxidante: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <circle cx="50" cy="68" r="14" fill="none" stroke="black" stroke-width="5"/>
-    <path d="M50,56 C40,56 34,45 37,34 C39,26 44,22 44,22
-             C46,29 46,36 45,42 C47,36 51,26 56,22 C56,30 53,38 55,44
-             C59,37 63,33 66,36 C71,44 69,55 63,58 C59,59 55,57 50,56Z" fill="black"/>
-  </svg>`,
-  gas_presion: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <rect x="38" y="44" width="24" height="30" rx="5" fill="black"/>
-    <ellipse cx="50" cy="44" rx="12" ry="7" fill="black"/>
-    <rect x="45" y="30" width="10" height="7" rx="2" fill="black"/>
-    <rect x="42" y="27" width="16" height="5" rx="2" fill="black"/>
-    <line x1="58" y1="30" x2="68" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/>
-    <rect x="34" y="72" width="32" height="5" rx="2" fill="black"/>
-  </svg>`,
-  corrosivo: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <rect x="25" y="20" width="16" height="20" rx="2" fill="none" stroke="black" stroke-width="4"/>
-    <path d="M30,40 Q28,50 27,57" stroke="black" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <path d="M20,65 Q24,59 27,65 Q30,71 33,65" stroke="black" stroke-width="3.5" fill="none"/>
-    <rect x="59" y="20" width="16" height="20" rx="2" fill="none" stroke="black" stroke-width="4"/>
-    <path d="M66,40 Q68,50 70,57" stroke="black" stroke-width="3" fill="none" stroke-linecap="round"/>
-    <path d="M56,62 Q60,56 67,58 Q73,60 75,67 Q71,74 62,74 Q56,72 56,62Z" fill="black"/>
-    <ellipse cx="63" cy="64" rx="3" ry="2.5" fill="white"/>
-    <ellipse cx="69" cy="68" rx="3" ry="2.5" fill="white"/>
-  </svg>`,
-  nocivo: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <rect x="44" y="26" width="12" height="32" rx="6" fill="black"/>
-    <circle cx="50" cy="70" r="7" fill="black"/>
-  </svg>`,
-  peligro_ambiental: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <rect x="46" y="52" width="8" height="22" fill="black"/>
-    <line x1="50" y1="55" x2="33" y2="40" stroke="black" stroke-width="4.5" stroke-linecap="round"/>
-    <line x1="50" y1="55" x2="67" y2="40" stroke="black" stroke-width="4.5" stroke-linecap="round"/>
-    <line x1="50" y1="47" x2="37" y2="32" stroke="black" stroke-width="3.5" stroke-linecap="round"/>
-    <line x1="50" y1="47" x2="63" y2="32" stroke="black" stroke-width="3.5" stroke-linecap="round"/>
-    <line x1="50" y1="40" x2="50" y2="25" stroke="black" stroke-width="4" stroke-linecap="round"/>
-    <path d="M62,63 Q70,58 76,62 Q70,69 62,63Z" fill="black"/>
-    <path d="M56,62 L62,58 L62,67Z" fill="black"/>
-    <circle cx="72" cy="61" r="1.8" fill="white"/>
-    <line x1="26" y1="74" x2="74" y2="74" stroke="black" stroke-width="3.5"/>
-  </svg>`,
-  peligro_salud: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <circle cx="50" cy="28" r="9" fill="black"/>
-    <path d="M40,40 Q36,57 34,72 L43,72 L48,58 L52,58 L57,72 L66,72 Q64,57 60,40 Z" fill="black"/>
-    <line x1="42" y1="50" x2="52" y2="50" stroke="white" stroke-width="3"/>
-    <line x1="47" y1="45" x2="47" y2="55" stroke="white" stroke-width="3"/>
-    <line x1="43" y1="46" x2="51" y2="54" stroke="white" stroke-width="2.5"/>
-    <line x1="51" y1="46" x2="43" y2="54" stroke="white" stroke-width="2.5"/>
-  </svg>`,
-  explosivo: `<svg width="36" height="36" viewBox="0 0 100 100">${D}
-    <path d="M50,72 L38,56 L21,60 L35,47 L26,31 L42,40 L50,22 L58,40 L74,31 L65,47 L79,60 L62,56 Z" fill="black"/>
-    <path d="M50,64 L41,53 L30,56 L40,47 L34,36 L46,43 L50,32 L54,43 L66,36 L60,47 L70,56 L59,53 Z" fill="white"/>
-    <circle cx="50" cy="50" r="7" fill="black"/>
-  </svg>`,
-};
+function parseFirstAid(text: string | null | undefined): FirstAidParsed {
+  const defaults = {
+    ojos:      "Enjuagar con agua abundante 10 min. Consultar médico.",
+    piel:      "Lavar con agua y jabón abundantemente.",
+    inhalacion:"Trasladar a lugar fresco y ventilado.",
+    ingestion: "No inducir el vómito. Beber agua y consultar médico.",
+  };
+  if (!text?.trim()) return defaults;
 
-function renderPictos(raw: string | null | undefined): string {
-  let keys: string[] = [];
-  try { keys = JSON.parse(raw ?? "[]") as string[]; } catch { /* empty */ }
-  if (!keys.length) return "";
-  const icons = keys.map((k) => ghsPictos[k] ?? "").filter(Boolean).join("");
-  return `<div style="display:flex;flex-wrap:wrap;gap:3px;justify-content:flex-end;flex-shrink:0;max-width:80px;">${icons}</div>`;
+  const lines = text.split(/[·\n\r;]/).map((s) => s.trim()).filter(Boolean);
+  const result = { ...defaults };
+
+  for (const line of lines) {
+    const l = line.toLowerCase();
+    if (l.includes("ojo") || l.includes("ocular") || l.includes("vista")) {
+      result.ojos = line.replace(/^(ojos?:?\s*)/i, "").trim() || result.ojos;
+    } else if (l.includes("piel") || l.includes("contacto") || l.includes("dérmico")) {
+      result.piel = line.replace(/^(piel:?\s*)/i, "").trim() || result.piel;
+    } else if (l.includes("inhalaci") || l.includes("vapor") || l.includes("gas") || l.includes("respir")) {
+      result.inhalacion = line.replace(/^(inhalaci[oó]n:?\s*)/i, "").trim() || result.inhalacion;
+    } else if (l.includes("ingesti") || l.includes("ingerir") || l.includes("tragar") || l.includes("boca")) {
+      result.ingestion = line.replace(/^(ingesti[oó]n:?\s*)/i, "").trim() || result.ingestion;
+    }
+  }
+  return result;
 }
 
-function renderFirstAid(text: string | null | undefined, color: string): string {
-  const items = text?.trim()
-    ? text.split(/[·\n]/).map((s) => s.trim()).filter(Boolean)
-    : [];
-  const bullets = items.length
-    ? items.map((i) => `<div style="margin-bottom:2px;">• ${i}</div>`).join("")
-    : `<div style="color:#aaa;font-style:italic;">Sin instrucciones registradas</div>`;
-  return `<div style="background:#fff8e1;border-top:1px solid #eee;padding:5px 8px;font-size:7.5px;color:#333;line-height:1.5;flex:1;">
-    <div style="font-weight:bold;color:${color};margin-bottom:3px;font-size:8px;">ⓘ En caso de contacto:</div>
-    ${bullets}
-  </div>`;
+// ── Hazard bullets según nivel ────────────────────────────────────────────────
+function hazardBullets(level: string | null | undefined): string[] {
+  if (level === "alto_riesgo") return [
+    "Producto de alto riesgo — manipular con EPP completo.",
+    "Puede causar daño grave por exposición mínima.",
+    "Mantener en área restringida y ventilada.",
+    "Prohibido almacenar con materiales incompatibles.",
+  ];
+  if (level === "controlado") return [
+    "Uso controlado — requiere autorización previa.",
+    "Evitar contacto prolongado con piel y mucosas.",
+    "No mezclar con ácidos ni oxidantes.",
+    "Mantener fuera del alcance de personas no autorizadas.",
+  ];
+  return [
+    "Puede irritar los ojos y la piel.",
+    "Evitar la inhalación de polvos o vapores.",
+    "Puede causar malestar gastrointestinal si se ingiere.",
+    "Mantener fuera del alcance de los niños.",
+  ];
 }
 
+// ── Configuración visual por nivel de riesgo ──────────────────────────────────
+function levelConfig(level: string | null | undefined) {
+  if (level === "alto_riesgo") return { headerBg: "#1a1a1a", headerLabel: "ALTO RIESGO" };
+  if (level === "controlado")  return { headerBg: "#2c3e50", headerLabel: "USO CONTROLADO" };
+  return { headerBg: "#2c2c2c", headerLabel: "PRECAUCIÓN" };
+}
+
+// ── Builder principal ─────────────────────────────────────────────────────────
 export function buildMsdsAlbumHtml(
   products: MsdsProduct[],
   qrDataUrls: Record<string, string>,
@@ -127,45 +95,105 @@ export function buildMsdsAlbumHtml(
 
   const pagesHtml = chunks.map((chunk) => {
     const cards = chunk.map((p) => {
-      const { color, label } = levelConfig(p.hazardLevel);
-      const pictoHtml = renderPictos(p.hazardPictograms);
-      const firstAidHtml = renderFirstAid(p.firstAid, color);
+      const { headerBg, headerLabel } = levelConfig(p.hazardLevel);
+      const fa = parseFirstAid(p.firstAid);
+      const bullets = hazardBullets(p.hazardLevel);
+      const typeLabel = p.category ?? "";
+
       return `
-      <div class="card" style="border:2px solid ${color};display:flex;flex-direction:column;">
-        <div style="background:${color};color:white;text-align:center;padding:4px 6px;font-size:9px;font-weight:bold;letter-spacing:0.5px;flex-shrink:0;">${label}</div>
-        <div style="display:flex;align-items:flex-start;padding:5px 7px;gap:5px;border-bottom:1px solid #eee;flex-shrink:0;">
-          <div style="flex:1;min-width:0;">
-            <div style="font-size:12px;font-weight:bold;color:#111;text-transform:uppercase;line-height:1.2;">${p.name}</div>
-            <div style="font-size:8px;color:#555;margin-top:3px;">Código: <strong>${p.code}</strong></div>
-            <div style="font-size:8px;color:#555;">Área: <strong>${p.warehouse}</strong></div>
-            ${p.category ? `<div style="font-size:8px;color:#555;">Tipo: ${p.category}</div>` : ""}
+      <div class="card">
+
+        <!-- ── CABECERA: Ícono + MSDS + nombre ── -->
+        <div class="card-header" style="background:${headerBg};">
+          <div class="header-left">
+            <svg width="22" height="22" viewBox="0 0 100 100">
+              <polygon points="50,4 96,96 4,96" fill="none" stroke="white" stroke-width="8" stroke-linejoin="round"/>
+              <text x="50" y="82" text-anchor="middle" font-size="52" font-weight="bold" fill="white" font-family="Arial">!</text>
+            </svg>
+            <div class="header-title">${p.name}</div>
           </div>
-          ${pictoHtml}
-        </div>
-        <div style="display:flex;align-items:stretch;border-bottom:1px solid #eee;flex-shrink:0;">
-          ${qrDataUrls[p.id] ? `<img src="${qrDataUrls[p.id]}" width="95" height="95" alt="QR" style="flex-shrink:0;display:block;border-right:1px solid #eee;">` : `<div style="width:95px;height:95px;flex-shrink:0;border-right:1px solid #eee;display:flex;align-items:center;justify-content:center;font-size:8px;color:#aaa;">Sin QR</div>`}
-          <div style="flex:1;min-width:0;padding:6px 8px;background:${color}0d;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:4px;">
-            <div style="font-size:7px;font-weight:bold;color:${color};letter-spacing:0.5px;text-transform:uppercase;">Escanea para ver</div>
-            <div style="font-size:8px;font-weight:bold;color:${color};letter-spacing:0.5px;text-transform:uppercase;">MSDS Completa</div>
-            <div style="font-size:11px;font-weight:bold;color:#1a1a2e;letter-spacing:1px;border-top:1px dashed ${color}80;padding-top:4px;width:100%;">${p.code}</div>
+          <div class="header-badge">
+            <div class="msds-box">MSDS</div>
+            <div class="msds-sub">FICHA DE SEGURIDAD</div>
           </div>
         </div>
-        ${firstAidHtml}
-        <div style="padding:6px 8px;border-top:1px solid #eee;background:#fafafa;text-align:center;flex-shrink:0;">
-          <svg class="barcode-lg" data-code="${p.code}" style="width:90%;height:36px;display:inline-block;"></svg>
-          <div style="font-size:8px;color:#666;margin-top:2px;letter-spacing:1px;">${p.code}</div>
+
+        <!-- ── SUBTÍTULO tipo ── -->
+        <div class="card-type">Tipo: ${typeLabel ? typeLabel.toUpperCase() : "PRODUCTO QUÍMICO"}</div>
+
+        <!-- ── CÓDIGO + ÁREA ── -->
+        <div class="card-meta">
+          <div class="meta-item">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="2.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            <span class="meta-label">CÓDIGO</span>
+            <span class="meta-value">${p.code}</span>
+          </div>
+          <div class="meta-sep"></div>
+          <div class="meta-item">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#444" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <span class="meta-label">ÁREA</span>
+            <span class="meta-value">${p.warehouse}</span>
+          </div>
         </div>
+
+        <!-- ── SECCIÓN PELIGRO ── -->
+        <div class="section-title danger-title">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          PELIGRO
+        </div>
+        <div class="section-body danger-body">
+          ${bullets.map((b) => `<div class="bullet">• ${b}</div>`).join("")}
+        </div>
+
+        <!-- ── SECCIÓN PRIMEROS AUXILIOS ── -->
+        <div class="section-title aid-title">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          PRIMEROS AUXILIOS
+        </div>
+        <div class="section-body aid-body">
+          <div class="aid-row">
+            <span class="aid-icon">${ICON_EYES}</span>
+            <span><strong>Ojos:</strong> ${fa.ojos}</span>
+          </div>
+          <div class="aid-row">
+            <span class="aid-icon">${ICON_SKIN}</span>
+            <span><strong>Piel:</strong> ${fa.piel}</span>
+          </div>
+          <div class="aid-row">
+            <span class="aid-icon">${ICON_LUNG}</span>
+            <span><strong>Inhalación:</strong> ${fa.inhalacion}</span>
+          </div>
+          <div class="aid-row">
+            <span class="aid-icon">${ICON_STOMACH}</span>
+            <span><strong>Ingestión:</strong> ${fa.ingestion}</span>
+          </div>
+        </div>
+
+        <!-- ── FOOTER: QR + Código de barras ── -->
+        <div class="card-footer">
+          <div class="footer-qr">
+            ${qrDataUrls[p.id]
+              ? `<img src="${qrDataUrls[p.id]}" width="52" height="52" alt="QR"/>`
+              : `<div class="qr-placeholder">Sin QR</div>`}
+            <div class="footer-qr-label">ESCANEA PARA VER<br>MSDS COMPLETA</div>
+          </div>
+          <div class="footer-barcode">
+            <div class="barcode-label">CÓDIGO DE BARRAS</div>
+            <svg class="barcode-svg" data-code="${p.code}" style="width:110px;height:38px;display:block;"></svg>
+            <div class="barcode-num">${p.code}</div>
+          </div>
+        </div>
+
       </div>`;
     }).join("");
 
     return `
-      <div style="background:#c0392b;color:white;text-align:center;padding:6px;font-size:13px;font-weight:bold;letter-spacing:1px;margin-bottom:8px;">
-        ⚠ PRODUCTOS QUÍMICOS – FICHAS DE SEGURIDAD MSDS
+      <div class="page-header">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+        PRODUCTOS QUÍMICOS – FICHAS DE SEGURIDAD MSDS
       </div>
       <div class="page">${cards}</div>
-      <div style="text-align:center;font-size:8px;color:#999;border-top:1px solid #ddd;padding-top:4px;margin-top:6px;">
-        Documento confidencial de uso interno – en caso de emergencia contactar al responsable del almacén
-      </div>
+      <div class="page-footer">Documento de uso interno — En caso de emergencia contactar al responsable del almacén</div>
       <div class="page-break"></div>`;
   }).join("");
 
@@ -175,27 +203,244 @@ export function buildMsdsAlbumHtml(
   <meta charset="utf-8">
   <title>Álbum MSDS — ${warehouseLabel}</title>
   <style>
-    @page { size: A4 portrait; margin: 0.8cm; }
+    @page { size: A4 portrait; margin: 0.7cm; }
     @media print { * { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    body { margin: 0; padding: 0; font-family: Arial, sans-serif; background: white; }
+
+    body {
+      margin: 0; padding: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: white;
+      font-size: 7.5px;
+      color: #111;
+    }
+
+    /* ── Encabezado de página ── */
+    .page-header {
+      background: #c0392b;
+      color: white;
+      text-align: center;
+      padding: 5px 8px;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 0.8px;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .page-footer {
+      text-align: center;
+      font-size: 7px;
+      color: #999;
+      border-top: 1px solid #ddd;
+      padding-top: 3px;
+      margin-top: 4px;
+    }
+
+    /* ── Grid de tarjetas ── */
     .page {
-      width: 100%;
-      height: 26.7cm;
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: repeat(3, 1fr);
-      gap: 0.5cm;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-auto-rows: auto;
+      gap: 5px;
+      width: 100%;
       box-sizing: border-box;
     }
     .page-break { break-after: page; page-break-after: always; }
+
+    /* ── Tarjeta ── */
     .card {
-      border: 2px solid #ccc;
-      border-radius: 6px;
+      border: 1.5px solid #222;
+      border-radius: 5px;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
       break-inside: avoid;
       page-break-inside: avoid;
+      background: white;
+    }
+
+    /* ── Cabecera de tarjeta ── */
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 5px 7px;
+      gap: 5px;
+    }
+    .header-left {
+      display: flex;
+      align-items: flex-start;
+      gap: 5px;
+      flex: 1;
+      min-width: 0;
+    }
+    .header-title {
+      font-size: 9.5px;
+      font-weight: 900;
+      color: white;
+      text-transform: uppercase;
+      line-height: 1.25;
+      letter-spacing: 0.3px;
+    }
+    .header-badge {
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .msds-box {
+      background: white;
+      color: #111;
+      font-size: 9px;
+      font-weight: 900;
+      padding: 1px 5px;
+      border-radius: 2px;
+      letter-spacing: 1px;
+    }
+    .msds-sub {
+      font-size: 5.5px;
+      color: #ddd;
+      margin-top: 1px;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    /* ── Tipo ── */
+    .card-type {
+      font-size: 7px;
+      color: #555;
+      padding: 2px 7px;
+      border-bottom: 1px solid #e0e0e0;
+      letter-spacing: 0.2px;
+    }
+
+    /* ── Meta (código + área) ── */
+    .card-meta {
+      display: flex;
+      align-items: center;
+      padding: 4px 7px;
+      gap: 6px;
+      border-bottom: 1px solid #e0e0e0;
+      background: #f9f9f9;
+    }
+    .meta-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .meta-label {
+      font-size: 6px;
+      color: #888;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .meta-value {
+      font-size: 8.5px;
+      font-weight: 900;
+      color: #111;
+      letter-spacing: 0.5px;
+    }
+    .meta-sep {
+      width: 1px;
+      height: 16px;
+      background: #ddd;
+      margin: 0 4px;
+    }
+
+    /* ── Secciones ── */
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 7px;
+      font-size: 7.5px;
+      font-weight: 900;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: white;
+    }
+    .danger-title { background: #2c2c2c; }
+    .aid-title    { background: #1a3a2a; }
+
+    .section-body {
+      padding: 4px 7px;
+      border-bottom: 1px solid #e8e8e8;
+    }
+    .danger-body { background: #fafafa; }
+    .aid-body    { background: #f5fbf7; }
+
+    .bullet {
+      font-size: 7px;
+      color: #222;
+      line-height: 1.55;
+    }
+
+    .aid-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 4px;
+      font-size: 7px;
+      color: #222;
+      line-height: 1.5;
+      margin-bottom: 2px;
+    }
+    .aid-row:last-child { margin-bottom: 0; }
+    .aid-icon {
+      flex-shrink: 0;
+      color: #2c7a4b;
+      margin-top: 1px;
+    }
+
+    /* ── Footer QR + barcode ── */
+    .card-footer {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 7px;
+      background: #f0f0f0;
+      border-top: 1px solid #ddd;
+    }
+    .footer-qr {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .footer-qr-label {
+      font-size: 5.5px;
+      color: #555;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      line-height: 1.3;
+    }
+    .qr-placeholder {
+      width: 52px; height: 52px;
+      border: 1px dashed #ccc;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 6px; color: #aaa;
+    }
+    .footer-barcode {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 1px;
+    }
+    .barcode-label {
+      font-size: 6px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      align-self: flex-start;
+    }
+    .barcode-num {
+      font-size: 8px;
+      font-weight: bold;
+      letter-spacing: 1.5px;
+      color: #111;
+      align-self: flex-start;
     }
   </style>
 </head>
@@ -205,8 +450,15 @@ export function buildMsdsAlbumHtml(
     var script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js';
     script.onload = function() {
-      document.querySelectorAll('.barcode-lg').forEach(function(el) {
-        JsBarcode(el, el.dataset.code, { format: 'CODE128', displayValue: false, height: 32, margin: 0, width: 1.4 });
+      document.querySelectorAll('.barcode-svg').forEach(function(el) {
+        JsBarcode(el, el.dataset.code, {
+          format: 'CODE128',
+          displayValue: false,
+          height: 36,
+          margin: 2,
+          width: 1.5,
+          background: 'transparent'
+        });
       });
       window.print();
     };
