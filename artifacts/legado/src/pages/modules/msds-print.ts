@@ -64,14 +64,10 @@ function hazardBullets(level: string | null | undefined): string[] {
   ];
 }
 
-// ── Generador de código de barras CODE128 inline SVG ─────────────────────────
-// Implementación completa sin dependencias externas.
+// ── Generador de código de barras CODE128B inline SVG ────────────────────────
+// Sin dependencias externas. Índices 0-based coincidentes con PATTERNS[].
 function generateBarcodeSVG(text: string, width: number, height: number): string {
-  // Tabla CODE128B
-  const CODE128B: Record<string, number> = {};
-  const chars = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
-  chars.split("").forEach((c, i) => { CODE128B[c] = i + 32; });
-
+  // PATTERNS[i] corresponde al símbolo CODE128 con valor i (0..106)
   const PATTERNS: string[] = [
     "11011001100","11001101100","11001100110","10010011000","10010001100",
     "10001001100","10011001000","10011000100","10001100100","11001001000",
@@ -96,19 +92,23 @@ function generateBarcodeSVG(text: string, width: number, height: number): string
     "10111101110","11101011110","11110101110","11010000100","11010010000",
     "11010011100","11000111010",
   ];
-
-  const START_B = 104;
-  const STOP    = 106;
+  // Stop pattern fijo
   const STOP_PATTERN = "1100011101011";
 
-  // Encode
+  // En CODE128B: carácter con código ASCII `a` tiene valor (a - 32)
+  // (espacio=0, '!'=1, ..., '0'=16, ..., '-'=13, etc.)
+  const charToVal = (c: string): number => {
+    const v = c.charCodeAt(0) - 32;
+    return (v >= 0 && v <= 95) ? v : 0;
+  };
+
+  const START_B = 104; // valor del símbolo START B
   const codes: number[] = [START_B];
   let checksum = START_B;
   for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    const val = (CODE128B[c] !== undefined) ? CODE128B[c] : (CODE128B["?"] ?? 31);
-    codes.push(val);
-    checksum += val * (i + 1);
+    const v = charToVal(text[i]);
+    codes.push(v);
+    checksum += v * (i + 1);
   }
   codes.push(checksum % 103);
 
