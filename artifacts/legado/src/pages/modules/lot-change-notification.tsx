@@ -381,7 +381,7 @@ export default function LotChangeNotificationPage() {
                       {filteredProducts.map((product) => (
                         <CommandItem
                           key={product.id}
-                          value={`${product.code} ${product.name}`}
+                          value={product.id}
                           onSelect={() => handleProductSelect(product.id)}
                           className="cursor-pointer"
                         >

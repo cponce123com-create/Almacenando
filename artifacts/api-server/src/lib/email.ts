@@ -502,7 +502,7 @@ ${senderName} - Pesador de Turno`;
 
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   if (!smtpPass) {
-    logger.warn({ toEmail }, "SMTP_APP_PASSWORD no configurado — email de reset no enviado");
+    logger.warn("SMTP_APP_PASSWORD no configurado — email de lote no enviado");
     return;
   }
 
