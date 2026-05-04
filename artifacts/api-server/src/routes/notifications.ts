@@ -17,24 +17,10 @@ import { z } from "zod/v4";
 
 const router = Router();
 
-// ── Shared Schema for Item List Templates ─────────────────────────────────────
-
-const itemSchema = z.object({
-  code: z.string(),
-  name: z.string().min(1),
-  quantity: z.coerce.number().min(0, "La cantidad debe ser un número positivo"),
-  unit: z.string().min(1),
-});
-
-const itemListSchema = z.object({
-  items: z.array(itemSchema).min(1, "Debe agregar al menos un ítem"),
-  notes: z.string().optional(),
-});
-
 // ── Lot Change ────────────────────────────────────────────────────────────────
 
 const lotChangeSchema = z.object({
-  productId: z.string().min(1, "El ID del producto es requerido"),
+  productId: z.string().min(1, "El producto es requerido"),
   oldLot: z.string().min(1, "El lote antiguo es requerido"),
   newLot: z.string().min(1, "El nuevo lote es requerido"),
   productionOrder: z.string().min(1, "La orden de producción es requerida"),
@@ -63,43 +49,38 @@ router.post(
 
     const { productId, oldLot, newLot, productionOrder } = parsed.data;
 
-    try {
-      const [product] = await db
-        .select({ id: productsTable.id, name: productsTable.name })
-        .from(productsTable)
-        .where(eq(productsTable.id, productId))
-        .limit(1);
+    const [product] = await db
+      .select({ id: productsTable.id, name: productsTable.name })
+      .from(productsTable)
+      .where(eq(productsTable.id, productId))
+      .limit(1);
 
-      if (!product) {
-        res.status(404).json({ error: "Producto no encontrado" });
-        return;
-      }
-
-      const [sender] = await db
-        .select({ name: usersTable.name })
-        .from(usersTable)
-        .where(eq(usersTable.id, authedReq.userId))
-        .limit(1);
-      const senderName = sender?.name ?? authedReq.userId;
-
-      await writeAuditLog({
-        userId: authedReq.userId,
-        action: "lot_change_notification",
-        resource: "products",
-        resourceId: productId,
-        details: { productName: product.name, oldLot, newLot, productionOrder, recipients: [...LOT_CHANGE_RECIPIENTS] },
-        ipAddress: req.ip,
-      });
-
-      res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: LOT_CHANGE_RECIPIENTS.length });
-
-      // Enviar email en background, sin bloquear la respuesta
-      sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName })
-        .catch((err) => console.error("Error enviando email de lote:", err));
-    } catch (error) {
-      console.error("Error en /lot-change:", error);
-      res.status(500).json({ error: "No se pudo procesar la solicitud" });
+    if (!product) {
+      res.status(404).json({ error: "Producto no encontrado" });
+      return;
     }
+
+    const [sender] = await db
+      .select({ name: usersTable.name })
+      .from(usersTable)
+      .where(eq(usersTable.id, authedReq.userId))
+      .limit(1);
+    const senderName = sender?.name ?? authedReq.userId;
+
+    await writeAuditLog({
+      userId: authedReq.userId,
+      action: "lot_change_notification",
+      resource: "products",
+      resourceId: productId,
+      details: { productName: product.name, oldLot, newLot, productionOrder, recipients: [...LOT_CHANGE_RECIPIENTS] },
+      ipAddress: req.ip,
+    });
+
+    res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: LOT_CHANGE_RECIPIENTS.length });
+
+    // Enviar email en background, sin bloquear la respuesta
+    sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName })
+      .catch((err) => console.error("Error enviando email de lote:", err));
   })
 );
 
@@ -131,24 +112,17 @@ router.post(
 
     const { productCode, productName } = parsed.data;
 
-    try {
-      await Promise.all([
-        sendProductOutEmail({ productCode, productName }),
-        writeAuditLog({
-          userId: authedReq.userId,
-          action: "email_notification",
-          resource: "products",
-          resourceId: productCode || productName,
-          details: { template: "product_out", productCode, productName, to: PRODUCT_OUT_TO, cc: [...PRODUCT_OUT_CC] },
-          ipAddress: req.ip,
-        }),
-      ]);
+    await sendProductOutEmail({ productCode, productName });
+    await writeAuditLog({
+      userId: authedReq.userId,
+      action: "email_notification",
+      resource: "products",
+      resourceId: productCode || productName,
+      details: { template: "product_out", productCode, productName, to: PRODUCT_OUT_TO, cc: [...PRODUCT_OUT_CC] },
+      ipAddress: req.ip,
+    });
 
-      res.json({ message: "Notificación enviada correctamente", productName, to: PRODUCT_OUT_TO, cc: PRODUCT_OUT_CC.length });
-    } catch (error) {
-      console.error("Error en /product-out:", error);
-      res.status(500).json({ error: "No se pudo procesar la solicitud" });
-    }
+    res.json({ message: "Notificación enviada correctamente", productName, to: PRODUCT_OUT_TO, cc: PRODUCT_OUT_CC.length });
   })
 );
 
@@ -171,23 +145,16 @@ router.post(
       return;
     }
 
-    try {
-      await Promise.all([
-        sendStockColoranteEmail(parsed.data.items),
-        writeAuditLog({
-          userId: authedReq.userId,
-          action: "email_notification",
-          resource: "notifications",
-          details: { template: "stock_colorante", items: parsed.data.items, to: STOCK_COLOR_TO, cc: [...STOCK_COLOR_CC] },
-          ipAddress: req.ip,
-        }),
-      ]);
+    await sendStockColoranteEmail(parsed.data.items);
+    await writeAuditLog({
+      userId: authedReq.userId,
+      action: "email_notification",
+      resource: "notifications",
+      details: { template: "stock_colorante", items: parsed.data.items, to: STOCK_COLOR_TO, cc: [...STOCK_COLOR_CC] },
+      ipAddress: req.ip,
+    });
 
-      res.json({ message: "Correo de stock de colorante enviado", to: STOCK_COLOR_TO, cc: STOCK_COLOR_CC.length });
-    } catch (error) {
-      console.error("Error en /stock-colorante:", error);
-      res.status(500).json({ error: "No se pudo procesar la solicitud" });
-    }
+    res.json({ message: "Correo de stock de colorante enviado", to: STOCK_COLOR_TO, cc: STOCK_COLOR_CC.length });
   })
 );
 
@@ -210,23 +177,16 @@ router.post(
       return;
     }
 
-    try {
-      await Promise.all([
-        sendStockAuxiliarEmail(parsed.data.items),
-        writeAuditLog({
-          userId: authedReq.userId,
-          action: "email_notification",
-          resource: "notifications",
-          details: { template: "stock_auxiliar", items: parsed.data.items, to: STOCK_AUX_TO, cc: [...STOCK_AUX_CC] },
-          ipAddress: req.ip,
-        }),
-      ]);
+    await sendStockAuxiliarEmail(parsed.data.items);
+    await writeAuditLog({
+      userId: authedReq.userId,
+      action: "email_notification",
+      resource: "notifications",
+      details: { template: "stock_auxiliar", items: parsed.data.items, to: STOCK_AUX_TO, cc: [...STOCK_AUX_CC] },
+      ipAddress: req.ip,
+    });
 
-      res.json({ message: "Correo de stock de auxiliar enviado", to: STOCK_AUX_TO, cc: STOCK_AUX_CC.length });
-    } catch (error) {
-      console.error("Error en /stock-auxiliar:", error);
-      res.status(500).json({ error: "No se pudo procesar la solicitud" });
-    }
+    res.json({ message: "Correo de stock de auxiliar enviado", to: STOCK_AUX_TO, cc: STOCK_AUX_CC.length });
   })
 );
 
@@ -250,23 +210,16 @@ router.post(
       return;
     }
 
-    try {
-      await Promise.all([
-        sendOrderApprovalEmail(parsed.data.items, parsed.data.notes),
-        writeAuditLog({
-          userId: authedReq.userId,
-          action: "email_notification",
-          resource: "notifications",
-          details: { template: "order_approval", items: parsed.data.items, to: ORDER_APPROVAL_TO },
-          ipAddress: req.ip,
-        }),
-      ]);
+    await sendOrderApprovalEmail(parsed.data.items, parsed.data.notes);
+    await writeAuditLog({
+      userId: authedReq.userId,
+      action: "email_notification",
+      resource: "notifications",
+      details: { template: "order_approval", items: parsed.data.items, to: ORDER_APPROVAL_TO },
+      ipAddress: req.ip,
+    });
 
-      res.json({ message: "Solicitud de aprobación enviada", to: ORDER_APPROVAL_TO });
-    } catch (error) {
-      console.error("Error en /order-approval:", error);
-      res.status(500).json({ error: "No se pudo procesar la solicitud" });
-    }
+    res.json({ message: "Solicitud de aprobación enviada", to: ORDER_APPROVAL_TO });
   })
 );
 
@@ -290,24 +243,31 @@ router.post(
       return;
     }
 
-    try {
-      await Promise.all([
-        sendPlasticBagEmail(parsed.data.items, parsed.data.notes),
-        writeAuditLog({
-          userId: authedReq.userId,
-          action: "email_notification",
-          resource: "notifications",
-          details: { template: "plastic_bag", items: parsed.data.items, to: [...PLASTIC_BAG_TO], cc: [...PLASTIC_BAG_CC] },
-          ipAddress: req.ip,
-        }),
-      ]);
+    await sendPlasticBagEmail(parsed.data.items, parsed.data.notes);
+    await writeAuditLog({
+      userId: authedReq.userId,
+      action: "email_notification",
+      resource: "notifications",
+      details: { template: "plastic_bag", items: parsed.data.items, to: [...PLASTIC_BAG_TO], cc: [...PLASTIC_BAG_CC] },
+      ipAddress: req.ip,
+    });
 
-      res.json({ message: "Solicitud de bolsas enviada", to: PLASTIC_BAG_TO.length, cc: PLASTIC_BAG_CC.length });
-    } catch (error) {
-      console.error("Error en /plastic-bag:", error);
-      res.status(500).json({ error: "No se pudo procesar la solicitud" });
-    }
+    res.json({ message: "Solicitud de bolsas enviada", to: PLASTIC_BAG_TO.length, cc: PLASTIC_BAG_CC.length });
   })
 );
+
+// ── Shared Schema for Item List Templates ─────────────────────────────────────
+
+const itemSchema = z.object({
+  code: z.string(),
+  name: z.string().min(1),
+  quantity: z.string().min(1),
+  unit: z.string().min(1),
+});
+
+const itemListSchema = z.object({
+  items: z.array(itemSchema).min(1, "Debe agregar al menos un ítem"),
+  notes: z.string().optional(),
+});
 
 export default router;
