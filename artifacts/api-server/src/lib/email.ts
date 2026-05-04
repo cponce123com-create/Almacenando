@@ -515,13 +515,17 @@ ${senderName} - Pesador de Turno`;
     auth: { user: SMTP_USER, pass: smtpPass },
   });
 
-  await transporter.sendMail({
-    from: `"Almacén Químico" <${SMTP_USER}>`,
-    to: [...LOT_CHANGE_RECIPIENTS],
-    subject,
-    text,
-    html,
-  });
+  try {
+    await transporter.sendMail({
+      from: `"Almacén Químico" <${SMTP_USER}>`,
+      to: [...LOT_CHANGE_RECIPIENTS],
+      subject,
+      text,
+      html,
+    });
+  } catch (smtpErr) {
+    logger.error({ smtpErr }, "SMTP sendMail falló — email de cambio de lote no enviado");
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

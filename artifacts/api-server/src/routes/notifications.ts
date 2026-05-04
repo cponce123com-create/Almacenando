@@ -82,19 +82,20 @@ router.post(
         .limit(1);
       const senderName = sender?.name ?? authedReq.userId;
 
-      await Promise.all([
-        sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName }),
-        writeAuditLog({
-          userId: authedReq.userId,
-          action: "lot_change_notification",
-          resource: "products",
-          resourceId: productId,
-          details: { productName: product.name, oldLot, newLot, productionOrder, recipients: [...LOT_CHANGE_RECIPIENTS] },
-          ipAddress: req.ip,
-        }),
-      ]);
+      await writeAuditLog({
+        userId: authedReq.userId,
+        action: "lot_change_notification",
+        resource: "products",
+        resourceId: productId,
+        details: { productName: product.name, oldLot, newLot, productionOrder, recipients: [...LOT_CHANGE_RECIPIENTS] },
+        ipAddress: req.ip,
+      });
 
       res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: LOT_CHANGE_RECIPIENTS.length });
+
+      // Enviar email en background, sin bloquear la respuesta
+      sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName })
+        .catch((err) => console.error("Error enviando email de lote:", err));
     } catch (error) {
       console.error("Error en /lot-change:", error);
       res.status(500).json({ error: "No se pudo procesar la solicitud" });
