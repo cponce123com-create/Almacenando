@@ -510,8 +510,8 @@ ${senderName} - Pesador de Turno`;
 
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
+    port: 465,
+    secure: true,
     auth: { user: SMTP_USER, pass: smtpPass },
   });
 
@@ -752,8 +752,8 @@ Supervisor de Cocina Colores`;
 
   const transporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
+    port: 465,
+    secure: true,
     auth: { user: SMTP_USER, pass: smtpPass },
   });
 
