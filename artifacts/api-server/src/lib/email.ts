@@ -500,32 +500,14 @@ ${senderName} - Pesador de Turno`;
   </div>
 </div>`.trim();
 
-  const smtpPass = process.env.SMTP_APP_PASSWORD;
-  if (!smtpPass) {
-    logger.warn("SMTP_APP_PASSWORD no configurado — email de lote no enviado");
-    return;
-  }
-
-  const SMTP_USER = "carlos.ponce@sanjacinto.com.pe";
-
-  const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: { user: SMTP_USER, pass: smtpPass },
+  const transporter = buildTransporter();
+  await transporter.sendMail({
+    from: `"Almacén Químico" <${SMTP_USER}>`,
+    to: [...LOT_CHANGE_RECIPIENTS],
+    subject,
+    text,
+    html,
   });
-
-  try {
-    await transporter.sendMail({
-      from: `"Almacén Químico" <${SMTP_USER}>`,
-      to: [...LOT_CHANGE_RECIPIENTS],
-      subject,
-      text,
-      html,
-    });
-  } catch (smtpErr) {
-    logger.error({ smtpErr }, "SMTP sendMail falló — email de cambio de lote no enviado");
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
