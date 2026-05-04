@@ -34,7 +34,7 @@ const itemListSchema = z.object({
 // ── Lot Change ────────────────────────────────────────────────────────────────
 
 const lotChangeSchema = z.object({
-  productId: z.string().uuid("El ID del producto debe ser un UUID válido"),
+  productId: z.string().min(1, "El ID del producto es requerido"),
   oldLot: z.string().min(1, "El lote antiguo es requerido"),
   newLot: z.string().min(1, "El nuevo lote es requerido"),
   productionOrder: z.string().min(1, "La orden de producción es requerida"),
