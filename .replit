@@ -67,16 +67,9 @@ timeoutMs = 20000
 [nix]
 channel = "stable-25_05"
 
+# ⚠️ Credenciales movidas a Replit Secrets (Environment Variables).
+# Las variables que estaban aquí (ADMIN_*, EMAIL_*, GOOGLE_DRIVE_*)
+# ahora deben configurarse en la pestaña "Secrets" del dashboard de Replit.
+# Nunca commitees secretos reales en este archivo.
+
 [userenv]
-
-[userenv.production]
-ADMIN_EMAIL = "cponce123.com@gmail.com"
-ADMIN_NAME = "Administrador"
-ADMIN_PASSWORD = "Hadrones456%"
-
-[userenv.shared]
-EMAIL_USER = "cponce123.com@gmail.com"
-EMAIL_PASS = "qfbqaqbbwrmrtbjv"
-APP_URL = "https://legadoapp.replit.app"
-GOOGLE_DRIVE_PHOTOS_FOLDER_ID = "13itTgo0Q2oIAczbIzXRT35COpimJPlUT"
-GOOGLE_DRIVE_MSDS_FOLDER_ID = "1KXBRFuGbUsHoDfT8d_bZQiBOG-vVY8s9"

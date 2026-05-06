@@ -51,3 +51,5 @@ attached_assets/*.json
 *.env
 *.pem
 *.key
+*.p12
+.replit

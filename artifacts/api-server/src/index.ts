@@ -65,7 +65,7 @@ async function bootstrapAdminIfNeeded() {
   }
 }
 
-app.listen(port, async () => {
+const server = app.listen(port, async () => {
   logger.info({ port }, "API Server running");
 
   // Auto-create first admin when the database is empty (production bootstrap)
@@ -107,3 +107,23 @@ app.listen(port, async () => {
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown — handles SIGTERM/SIGINT to close connections cleanly.
+// Render sends SIGTERM with a 30s grace period before SIGKILL.
+// ---------------------------------------------------------------------------
+function gracefulShutdown(signal: string) {
+  logger.info({ signal }, "Shutdown signal received — closing server...");
+  server.close(() => {
+    logger.info("Server closed. Exiting.");
+    process.exit(0);
+  });
+  // Force exit after 10s if graceful close hangs
+  setTimeout(() => {
+    logger.error("Forced shutdown after timeout");
+    process.exit(1);
+  }, 10_000);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

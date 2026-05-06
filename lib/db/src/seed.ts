@@ -10,16 +10,15 @@ import {
   personnelTable,
   eppMasterTable,
 } from "./schema";
-import { randomBytes, createHash } from "crypto";
+import { randomBytes } from "crypto";
+import bcrypt from "bcryptjs";
 
 function generateId(): string {
   return randomBytes(12).toString("hex");
 }
 
 async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const hash = createHash("sha256").update(salt + password).digest("hex");
-  return `${salt}:${hash}`;
+  return bcrypt.hash(password, 12);
 }
 
 const chemicalProducts = [

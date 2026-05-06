@@ -379,7 +379,12 @@ router.post("/:productId/candidates", requireAuth, asyncHandler(async (req, res)
 // Removes the MSDS link from a product and resets match fields.
 
 router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator"), asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const { productId } = z.object({ productId: z.string().min(1) }).parse(req.body);
+  const parsed = z.object({ productId: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos inválidos", details: parsed.error.issues });
+    return;
+  }
+  const { productId } = parsed.data;
 
   const [product] = await db
     .select()

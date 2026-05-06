@@ -80,7 +80,7 @@ export function SamplePhotoPanel({
 
     const toUpload = files.slice(0, remaining);
     const previews: UploadingFile[] = toUpload.map(f => ({
-      id: Math.random().toString(36).slice(2),
+      id: crypto.randomUUID(),
       preview: URL.createObjectURL(f),
       status: "uploading" as const,
     }));

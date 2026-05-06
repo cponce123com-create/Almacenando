@@ -120,7 +120,7 @@ const api = async (path: string, opts?: RequestInit) => {
   return res.json();
 };
 
-const newItem = (): EmailItem => ({ id: Math.random().toString(36).slice(2), code: "", name: "", quantity: "", unit: "" });
+const newItem = (): EmailItem => ({ id: crypto.randomUUID(), code: "", name: "", quantity: "", unit: "" });
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 

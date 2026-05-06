@@ -70,7 +70,7 @@ function PhotoPickerInline({
     const slots = 5 - pendingPhotos.length;
     if (slots <= 0) return;
     const toAdd = arr.slice(0, slots).map(file => ({
-      id: Math.random().toString(36).slice(2),
+      id: crypto.randomUUID(),
       file,
       preview: URL.createObjectURL(file),
     }));

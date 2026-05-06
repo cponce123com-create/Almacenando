@@ -347,7 +347,7 @@ function CandidateList({
                     🔗 {c.link}
                   </a>
                   <button
-                    onClick={() => window.open(c.link, "_blank")}
+                    onClick={() => { const w = window.open(c.link, "_blank", "noopener,noreferrer"); if (w) w.opener = null; }}
                     style={{
                       fontSize: 10, padding: "2px 8px", borderRadius: 4,
                       border: "1px solid #0d9488", color: "#0d9488", background: "transparent",
@@ -1380,7 +1380,7 @@ export default function MsdsPage() {
                           <p style={{ fontSize: 10, color: "#94a3b8", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>URL de la ficha</p>
                           <div style={{ display: "flex", gap: 4 }}>
                             <Button
-                              onClick={() => window.open(selected.msdsUrl!, "_blank")}
+                              onClick={() => { const w = window.open(selected.msdsUrl!, "_blank", "noopener,noreferrer"); if (w) w.opener = null; }}
                               style={{ fontSize: 10, padding: "2px 7px", height: "auto", gap: 3, background: "#0d9488", color: "#fff", border: "none" }}
                             >
                               <Download style={{ width: 10, height: 10 }} /> Ver
@@ -1519,7 +1519,7 @@ export default function MsdsPage() {
                         <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
                           {selected.msdsUrl && (
                             <Button
-                              onClick={() => window.open(selected.msdsUrl!, "_blank")}
+                              onClick={() => { const w = window.open(selected.msdsUrl!, "_blank", "noopener,noreferrer"); if (w) w.opener = null; }}
                               style={{ fontSize: 10, padding: "3px 9px", height: "auto", gap: 3, background: "#0d9488", color: "#fff", border: "none" }}
                             >
                               <Download style={{ width: 10, height: 10 }} /> Ver

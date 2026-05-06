@@ -203,7 +203,12 @@ router.post("/setup", asyncHandler(async (req, res) => {
     return;
   }
 
-  const { key } = z.object({ key: z.string() }).parse(req.body);
+  const parsed = z.object({ key: z.string() }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Datos inválidos" });
+    return;
+  }
+  const { key } = parsed.data;
   if (key !== setupKey) {
     res.status(401).json({ error: "Clave de configuración inválida" });
     return;

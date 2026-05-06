@@ -16,6 +16,10 @@ services:
 
     startCommand: node artifacts/api-server/dist/index.cjs
 
+    # Health check — Render pings /api/healthz every 30s.
+    # If it fails 3 consecutive times, the service restarts.
+    healthCheckPath: /api/healthz
+
     envVars:
       - key: NODE_ENV
         value: production
