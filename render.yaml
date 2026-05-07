@@ -60,3 +60,33 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+
+      # Admin bootstrap (solo primer deploy)
+      - key: ADMIN_SETUP_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_NAME
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+
+      # Email — Resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+
+      # Email — SMTP Gmail
+      - key: SMTP_USER
+        sync: false
+
+      # OpenAI (extracción MSDS)
+      - key: AI_INTEGRATIONS_OPENAI_BASE_URL
+        sync: false
+      - key: AI_INTEGRATIONS_OPENAI_API_KEY
+        sync: false
+
+      # Gemini (compatibilidad química)
+      - key: GEMINI_API_KEY
+        sync: false

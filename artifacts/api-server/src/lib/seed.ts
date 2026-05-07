@@ -40,11 +40,11 @@ const chemicalProducts = [
 ];
 
 const demoUsers = [
-  { email: "supervisor@almacen.com", name: "Carlos Mendoza", role: "supervisor" as const, password: "Almacen2024!" },
-  { email: "operario@almacen.com", name: "María Quispe", role: "operator" as const, password: "Almacen2024!" },
-  { email: "calidad@almacen.com", name: "Luis Torres", role: "quality" as const, password: "Almacen2024!" },
-  { email: "admin@almacen.com", name: "Ana García", role: "admin" as const, password: "Almacen2024!" },
-  { email: "consulta@almacen.com", name: "Pedro Vargas", role: "readonly" as const, password: "Almacen2024!" },
+  { email: "supervisor@almacen.com", name: "Carlos Mendoza", role: "supervisor" as const, password: "Demo2025!" },
+  { email: "operario@almacen.com", name: "María Quispe", role: "operator" as const, password: "Demo2025!" },
+  { email: "calidad@almacen.com", name: "Luis Torres", role: "quality" as const, password: "Demo2025!" },
+  { email: "admin@almacen.com", name: "Ana García", role: "admin" as const, password: "Demo2025!" },
+  { email: "consulta@almacen.com", name: "Pedro Vargas", role: "readonly" as const, password: "Demo2025!" },
 ];
 
 const demoPersonnel = [
