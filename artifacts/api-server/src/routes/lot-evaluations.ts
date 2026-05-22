@@ -277,16 +277,14 @@ router.post(
   requireRole("supervisor", "admin", "operator"),
   upload.single("file"), asyncHandler(async (req, res) => {
     if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
-    let workbook: XLSX.WorkBook;
-    try { workbook = XLSX.read(req.file.buffer, { type: "buffer", cellDates: false }); }
-    catch { res.status(400).json({ error: "El archivo no es un Excel válido (.xlsx o .xls)" }); return; }
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) { res.status(400).json({ error: "El archivo no contiene hojas de cálculo" }); return; }
-    const ws = workbook.Sheets[sheetName];
-    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
-    if (rawRows.length === 0) { res.status(400).json({ error: "El archivo está vacío" }); return; }
+    let rawRows: Record<string, unknown>[];
+    try {
+      rawRows = parseExcelBuffer(req.file.buffer, { cellDates: false }).rawRows;
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message }); return;
+    }
 
-    const headers = Object.keys(rawRows[0]).map(h => String(h).toLowerCase().trim().replace(/\s+/g, " "));
+    const headers = normalizeHeaders(rawRows, " ");
     const colMap: Record<string, string | null> = {};
     for (const field of Object.keys(COL_ALIASES)) colMap[field] = findCol(headers, field);
 

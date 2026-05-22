@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
+import { parseExcelBuffer, normalizeHeaders, sendExcelResponse } from "../lib/excel-parser.js";
 import { db } from "@workspace/db";
 import { productsTable, inventoryRecordsTable, inventoryBoxesTable, immobilizedProductsTable, samplesTable, dyeLotsTable, finalDispositionTable, cuadreRecordsTable, cuadreItemsTable } from "@workspace/db";
 import { eq, count, and, sql } from "drizzle-orm";
@@ -167,15 +168,13 @@ router.post(
   upload.single("file"), asyncHandler(async (req, res) => {
     if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
     const defaultWarehouse = (req.query.warehouse as string) || "General";
-    let workbook: XLSX.WorkBook;
-    try { workbook = XLSX.read(req.file.buffer, { type: "buffer" }); }
-    catch { res.status(400).json({ error: "El archivo no es un Excel válido (.xlsx o .xls)" }); return; }
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) { res.status(400).json({ error: "El archivo no contiene hojas de cálculo" }); return; }
-    const ws = workbook.Sheets[sheetName];
-    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
-    if (rawRows.length === 0) { res.status(400).json({ error: "El archivo está vacío" }); return; }
-    const headers = Object.keys(rawRows[0]).map(h => h.toLowerCase().trim().replace(/\s+/g, "_"));
+    let rawRows: Record<string, unknown>[];
+    try {
+      rawRows = parseExcelBuffer(req.file.buffer).rawRows;
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message }); return;
+    }
+    const headers = normalizeHeaders(rawRows);
     const missingCols = REQUIRED_COLUMNS.filter(col => !headers.includes(col));
     if (missingCols.length > 0) {
       res.status(400).json({ error: `Columnas requeridas faltantes: ${missingCols.join(", ")}`, missing: missingCols });
