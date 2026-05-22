@@ -25,6 +25,11 @@ export async function cleanupExpiredTokens(): Promise<void> {
 
 setInterval(() => void cleanupExpiredTokens(), 60 * 60 * 1000).unref();
 
+/**
+ * Hashea una contraseña con bcrypt (12 rounds).
+ * @param password - Contraseña en texto plano.
+ * @returns Hash de la contraseña.
+ */
 export function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 12);
 }
@@ -113,6 +118,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 }
 
+/**
+ * Middleware de autorización por rol.
+ * Verifica que el usuario autenticado tenga uno de los roles especificados.
+ * Responde 403 si el rol es insuficiente.
+ * @param roles - Roles permitidos (ej: "admin", "supervisor").
+ */
 export function requireRole(...roles: WarehouseRole[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const authedReq = req as AuthenticatedRequest;
