@@ -30,7 +30,7 @@ const api = async (path: string, opts?: RequestInit) => {
   return res.json();
 };
 
-const emptyForm = { code: "", description: "", unit: "", status: "active" as const };
+const emptyForm = { code: "", description: "", unit: "", status: "active" as "active" | "inactive" };
 type FormState = typeof emptyForm;
 type FormErrors = Partial<Record<keyof FormState, string>>;
 

@@ -102,7 +102,7 @@ router.put("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req, r
     res.status(404).json({ error: "Usuario no encontrado" });
     return;
   }
-  void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "user", resourceId: id, ipAddress: req.ip });
+  void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "user", resourceId: id as string, ipAddress: req.ip as string });
   res.json(updated);
 }));
 
@@ -144,9 +144,9 @@ router.post("/:id/reset-password", requireAuth, requireRole("admin"), passwordRe
     userId: authedReq.userId,
     action: "update",
     resource: "user",
-    resourceId: id,
+    resourceId: id as string,
     details: { action: "password_reset_requested" },
-    ipAddress: req.ip,
+    ipAddress: req.ip as string,
   });
   res.json({ message: `Email de reset enviado a ${user.email}` });
 }));
@@ -163,7 +163,7 @@ router.delete("/:id", requireAuth, requireRole("admin"), asyncHandler(async (req
     res.status(404).json({ error: "Usuario no encontrado" });
     return;
   }
-  void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "user", resourceId: id, ipAddress: req.ip });
+  void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "user", resourceId: id as string, ipAddress: req.ip as string });
   res.json({ message: "Usuario eliminado" });
 }));
 

@@ -87,58 +87,51 @@ async function uploadBoxPhotos(files: Files, productLabel: string, date: string)
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
+// Optimizado: una sola consulta SQL agregada en vez de N iteraciones en JS.
 
 router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
-
-  const allProducts = await db.select({ id: productsTable.id })
-    .from(productsTable)
-    .where(
-      warehouse && warehouse !== "all"
-        ? and(eq(productsTable.status, "active"), eq(productsTable.warehouse, warehouse))
-        : eq(productsTable.status, "active")
-    );
-
-  const totalProducts = allProducts.length;
-
-  if (totalProducts === 0) {
-    res.json({ totalProducts: 0, withoutRecords: 0, exact: 0, withDifference: 0, surplus: 0, shortage: 0 });
-    return;
-  }
-
-  const warehouseCondition = warehouse && warehouse !== "all"
-    ? sql`AND warehouse = ${warehouse}`
+  const warehouseCond = warehouse && warehouse !== "all"
+    ? sql`AND p.warehouse = ${warehouse}`
     : sql``;
 
-  const latestPerProduct = await db.execute(sql`
-    SELECT DISTINCT ON (product_id)
-      product_id, previous_balance, physical_count
-    FROM inventory_records
-    WHERE 1=1 ${warehouseCondition}
-    ORDER BY product_id, record_date DESC, created_at DESC
+  const result = await db.execute(sql`
+    WITH latest AS (
+      SELECT DISTINCT ON (ir.product_id)
+        ir.product_id,
+        ir.previous_balance::numeric,
+        ir.physical_count::numeric
+      FROM inventory_records ir
+      JOIN products p ON p.id = ir.product_id
+      WHERE p.status = 'active' ${warehouseCond}
+      ORDER BY ir.product_id, ir.record_date DESC, ir.created_at DESC
+    )
+    SELECT
+      COUNT(*)::int AS total_products,
+      COUNT(*) FILTER (WHERE l.product_id IS NULL)::int AS without_records,
+      COUNT(*) FILTER (
+        WHERE l.product_id IS NOT NULL AND l.physical_count IS NOT NULL
+          AND ABS(l.physical_count - l.previous_balance) < 0.01
+      )::int AS exact,
+      COUNT(*) FILTER (
+        WHERE l.product_id IS NOT NULL AND l.physical_count IS NOT NULL
+          AND (l.physical_count - l.previous_balance) >= 0.01
+      )::int AS surplus,
+      COUNT(*) FILTER (
+        WHERE l.product_id IS NOT NULL AND l.physical_count IS NOT NULL
+          AND (l.physical_count - l.previous_balance) <= -0.01
+      )::int AS shortage
+    FROM products p
+    LEFT JOIN latest l ON l.product_id = p.id
+    WHERE p.status = 'active' ${warehouseCond}
   `);
 
-  const latestMap = new Map<string, { previousBalance: string; physicalCount: string | null }>();
-  for (const row of latestPerProduct.rows as any[]) {
-    latestMap.set(row.product_id, {
-      previousBalance: row.previous_balance ?? "0",
-      physicalCount: row.physical_count ?? null,
-    });
-  }
-
-  let withoutRecords = 0, exact = 0, surplus = 0, shortage = 0;
-
-  for (const product of allProducts) {
-    const latest = latestMap.get(product.id);
-    if (!latest) { withoutRecords++; continue; }
-    if (latest.physicalCount === null) { withoutRecords++; continue; }
-    const sys = parseFloat(latest.previousBalance) || 0;
-    const phys = parseFloat(latest.physicalCount) || 0;
-    const diff = phys - sys;
-    if (Math.abs(diff) < 0.01) exact++;
-    else if (diff > 0) surplus++;
-    else shortage++;
-  }
+  const row = result.rows[0] as Record<string, number> | undefined;
+  const totalProducts = row?.total_products ?? 0;
+  const withoutRecords = row?.without_records ?? 0;
+  const exact = row?.exact ?? 0;
+  const surplus = row?.surplus ?? 0;
+  const shortage = row?.shortage ?? 0;
 
   res.json({ totalProducts, withoutRecords, exact, withDifference: surplus + shortage, surplus, shortage });
 }));
@@ -152,12 +145,15 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
     ? eq(inventoryRecordsTable.warehouse, warehouse)
     : undefined;
 
-  const [{ total }] = await db.select({ total: count() }).from(inventoryRecordsTable).where(condition);
-  const records = await db.select().from(inventoryRecordsTable)
-    .where(condition)
-    .orderBy(desc(inventoryRecordsTable.recordDate))
-    .limit(limit)
-    .offset(offset);
+  const [countResult, records] = await Promise.all([
+    db.select({ total: count() }).from(inventoryRecordsTable).where(condition),
+    db.select().from(inventoryRecordsTable)
+      .where(condition)
+      .orderBy(desc(inventoryRecordsTable.recordDate))
+      .limit(limit)
+      .offset(offset),
+  ]);
+  const total = countResult[0]?.total ?? 0;
 
   if (records.length === 0) {
     res.json({ data: [], total, page, limit });
@@ -340,7 +336,7 @@ router.put(
       try {
         await validateMimeType(req.file.buffer, "image");
         const ext = "." + (req.file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
-        const fileName = buildInventoryPhotoName(parsed.data.productId ?? id, parsed.data.recordDate ?? new Date().toISOString().slice(0, 10), 0, ext);
+        const fileName = buildInventoryPhotoName(parsed.data.productId ?? (id as string), parsed.data.recordDate ?? new Date().toISOString().slice(0, 10), 0, ext);
         const { url } = await uploadFileToDrive(req.file.buffer, fileName, req.file.mimetype);
         photoUrl = url;
       } catch { /* ignore */ }
@@ -356,7 +352,7 @@ router.put(
       .where(eq(inventoryRecordsTable.id, id as string)).returning();
 
     if (!updated) { res.status(404).json({ error: "Registro no encontrado" }); return; }
-    void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
+    void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "inventory_record", resourceId: id, ipAddress: req.ip as string });
     res.json(updated);
   })
 );

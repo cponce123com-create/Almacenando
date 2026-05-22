@@ -103,7 +103,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     const authedReq = req as AuthenticatedRequest;
     authedReq.userId = payload.userId;
-    authedReq.userRole = userRows[0]!.role;
+    authedReq.userRole = userRows[0]!.role as AuthenticatedRequest["userRole"];
     authedReq.userEmail = payload.email;
     authedReq.jti = payload.jti;
     authedReq.tokenExp = payload.exp;

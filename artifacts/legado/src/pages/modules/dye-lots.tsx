@@ -245,10 +245,10 @@ export default function LotesyTinturasPage() {
   const setF = (k: keyof FormData, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSubmit = () => {
-    if (!form.productId)         return toast({ title: "Error", description: "Selecciona un producto.", variant: "destructive" });
-    if (!form.lotNumber.trim())  return toast({ title: "Error", description: "El número de lote es requerido.", variant: "destructive" });
-    if (!form.quantity || isNaN(Number(form.quantity))) return toast({ title: "Error", description: "La cantidad debe ser un número válido.", variant: "destructive" });
-    if (!form.receiptDate)       return toast({ title: "Error", description: "La fecha de recepción es requerida.", variant: "destructive" });
+    if (!form.productId)         { toast({ title: "Error", description: "Selecciona un producto.", variant: "destructive" }); return; }
+    if (!form.lotNumber.trim())  { toast({ title: "Error", description: "El número de lote es requerido.", variant: "destructive" }); return; }
+    if (!form.quantity || isNaN(Number(form.quantity))) { toast({ title: "Error", description: "La cantidad debe ser un número válido.", variant: "destructive" }); return; }
+    if (!form.receiptDate)       { toast({ title: "Error", description: "La fecha de recepción es requerida.", variant: "destructive" }); return; }
 
     const payload = {
       ...form,

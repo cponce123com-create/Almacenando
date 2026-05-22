@@ -1,12 +1,39 @@
 import { Router } from "express";
 import { requireAuth } from "../lib/auth.js";
 import { logger } from "../lib/logger.js";
+import { createHash } from "crypto";
 
 const router = Router();
 
 // ── Gemini REST helper ────────────────────────────────────────────────────────
 // Usa la API gratuita de Gemini. Obtené tu clave en: https://aistudio.google.com/apikey
 // Luego agregá GEMINI_API_KEY en las variables de entorno de Render.
+
+// Cache en memoria para respuestas de IA (TTL 24h)
+const aiCache = new Map<string, { data: unknown; ts: number }>();
+const AI_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+function getCachedResult(key: string): unknown | null {
+  const entry = aiCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > AI_CACHE_TTL) {
+    aiCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedResult(key: string, data: unknown): void {
+  aiCache.set(key, { data, ts: Date.now() });
+  // Evitar memory leak: limpiar si el caché crece demasiado
+  if (aiCache.size > 500) {
+    const entries = [...aiCache.entries()];
+    const cutoff = Date.now() - AI_CACHE_TTL;
+    for (const [k, v] of entries) {
+      if (v.ts < cutoff) aiCache.delete(k);
+    }
+  }
+}
 
 function getGeminiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -21,7 +48,7 @@ function getGeminiKey(): string {
 async function callGemini(prompt: string): Promise<string> {
   const key = getGeminiKey();
   const model = "gemini-2.0-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -33,7 +60,10 @@ async function callGemini(prompt: string): Promise<string> {
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": key,
+    },
     body: JSON.stringify(body),
   });
 
@@ -72,6 +102,15 @@ router.post("/ai-analyze", requireAuth, async (req, res) => {
     if (!name?.trim()) {
       return res.status(400).json({ error: "El campo 'name' es requerido" });
     }
+
+    // ── Cache lookup ────────────────────────────────────────────────────────
+    const cacheKey = createHash("md5").update(`${name.trim()}|${code ?? ""}|${category ?? ""}`).digest("hex");
+    const cached = getCachedResult(cacheKey);
+    if (cached) {
+      logger.info({ name: name.trim() }, "Cache hit for compatibility analysis");
+      return res.json(cached);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     const substList = SUBSTANCES.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
@@ -135,6 +174,8 @@ Reglas de incompatibilidad críticas individuales (prevalecen sobre la clase ONU
       return res.status(500).json({ error: "Respuesta de IA con formato inesperado" });
     }
 
+    // Cachear respuesta exitosa para evitar consumir cuota innecesariamente
+    setCachedResult(cacheKey, parsed);
     return res.json(parsed);
   } catch (err) {
     logger.error({ err }, "Error en compatibility/ai-analyze");

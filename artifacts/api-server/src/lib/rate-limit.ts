@@ -7,7 +7,7 @@ export const authLoginLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Demasiados intentos de inicio de sesión. Espera 15 minutos antes de intentar de nuevo." },
-  skip: () => process.env.DISABLE_RATE_LIMIT === "true",
+  skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
 });
 
 /** 3 death report submissions per hour per IP */
@@ -17,7 +17,7 @@ export const deathReportLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Has enviado demasiados reportes. Espera una hora antes de intentar de nuevo." },
-  skip: () => process.env.DISABLE_RATE_LIMIT === "true",
+  skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
 });
 
 /** 10 lookups per 15 minutes per IP (looser, but prevents enumeration) */
@@ -27,7 +27,7 @@ export const lookupLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Demasiadas consultas. Espera 15 minutos." },
-  skip: () => process.env.DISABLE_RATE_LIMIT === "true",
+  skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
 });
 
 /** 10 destructive (DELETE /all) requests per 15 minutes per IP */
@@ -37,7 +37,7 @@ export const destructiveActionLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Demasiadas operaciones destructivas. Espera 15 minutos antes de intentar de nuevo." },
-  skip: () => process.env.DISABLE_RATE_LIMIT === "true",
+  skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
 });
 
 /** 3 password reset requests per hour per IP */
@@ -47,7 +47,7 @@ export const passwordResetLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Demasiados intentos de restablecimiento. Espera una hora antes de intentar de nuevo." },
-  skip: () => process.env.DISABLE_RATE_LIMIT === "true",
+  skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
 });
 
 /** 500 requests per 15 minutes per IP — general API catch-all */
@@ -57,5 +57,5 @@ export const generalApiLimiter = rateLimit({
   standardHeaders: "draft-7",
   legacyHeaders: false,
   message: { error: "Demasiadas solicitudes. Intenta más tarde." },
-  skip: () => process.env.DISABLE_RATE_LIMIT === "true",
+  skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
 });

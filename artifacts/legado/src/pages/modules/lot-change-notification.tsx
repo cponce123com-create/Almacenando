@@ -42,14 +42,9 @@ const CONFIG = {
   },
 } as const;
 
-const LOT_CHANGE_RECIPIENTS = [
-  "judith.yachachin@sanjacinto.com.pe",
-  "laboratorio.quimico@sanjacinto.com.pe",
-  "laboratorista.tintoreria@sanjacinto.com.pe",
-  "controlistas.tintoreria@sanjacinto.com.pe",
-  "ruben.roldan@sanjacinto.com.pe",
-  "supervisor.tintoreria@sanjacinto.com.pe",
-] as const;
+// Destinatarios configurados en backend vía NOTIFY_LOT_CHANGE env var.
+// El frontend muestra la cantidad; los emails reales están en el servidor.
+const LOT_CHANGE_RECIPIENTS = [] as readonly string[];
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 interface Product {

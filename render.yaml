@@ -78,7 +78,29 @@ services:
         sync: false
 
       # Email — SMTP Gmail
-      - key: SMTP_USER
+      - key: SMTP_EMAIL
+        sync: false
+
+      # Notificaciones — destinatarios
+      - key: NOTIFY_LOT_CHANGE
+        sync: false
+      - key: NOTIFY_PRODUCT_OUT
+        sync: false
+      - key: NOTIFY_PRODUCT_OUT_CC
+        sync: false
+      - key: NOTIFY_STOCK_COLOR
+        sync: false
+      - key: NOTIFY_STOCK_COLOR_CC
+        sync: false
+      - key: NOTIFY_STOCK_AUX
+        sync: false
+      - key: NOTIFY_STOCK_AUX_CC
+        sync: false
+      - key: NOTIFY_ORDER_APPROVAL
+        sync: false
+      - key: NOTIFY_PLASTIC_BAG
+        sync: false
+      - key: NOTIFY_PLASTIC_BAG_CC
         sync: false
 
       # OpenAI (extracción MSDS)

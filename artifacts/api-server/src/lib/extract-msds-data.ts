@@ -36,7 +36,7 @@ export interface MsdsExtractedData {
   charCount: number;
 }
 
-// ── OpenAI client (Replit AI Integrations proxy) ──────────────────────────────
+// ── OpenAI client ─────────────────────────────────────────────────────────────
 
 function getOpenAIClient(): OpenAI {
   const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;

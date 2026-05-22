@@ -1,5 +1,7 @@
 import { Resend } from "resend";
 import nodemailer from "nodemailer";
+import { logger } from "./logger.js";
+import { getLotChangeRecipients, getProductOutRecipients, getStockColorRecipients, getStockAuxRecipients, getOrderApprovalRecipient, getPlasticBagRecipients, getSmtpUserEmail } from "./email-recipients.js";
 
 
 function getResend(): Resend | null {
@@ -401,15 +403,6 @@ export async function sendTimeCapsuleEmail({
 // Notificación de cambio de lote (pesador de turno) — Almacén Químico
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const LOT_CHANGE_RECIPIENTS = [
-  "judith.yachachin@sanjacinto.com.pe",
-  "laboratorio.quimico@sanjacinto.com.pe",
-  "laboratorista.tintoreria@sanjacinto.com.pe",
-  "controlistas.tintoreria@sanjacinto.com.pe",
-  "ruben.roldan@sanjacinto.com.pe",
-  "supervisor.tintoreria@sanjacinto.com.pe",
-] as const;
-
 export async function sendLotChangeNotificationEmail({
   productName,
   oldLot,
@@ -502,8 +495,8 @@ ${senderName} - Pesador de Turno`;
 
   const transporter = buildTransporter();
   await transporter.sendMail({
-    from: `"Almacén Químico" <${SMTP_USER}>`,
-    to: [...LOT_CHANGE_RECIPIENTS],
+    from: `"Almacén Químico" <${smtpUser}>`,
+    to: getLotChangeRecipients(),
     subject,
     text,
     html,
@@ -647,14 +640,6 @@ Accede al sistema para más detalles: ${appUrl}
 // Notificación de fin de producto — Almacén Químico
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const PRODUCT_OUT_TO = "judith.yachachin@sanjacinto.com.pe";
-export const PRODUCT_OUT_CC = [
-  "laboratorio.tintoreria@sanjacinto.com.pe",
-  "laboratorista.tintoreria@sanjacinto.com.pe",
-  "ruben.roldan@sanjacinto.com.pe",
-  "denis.miranda@sanjacinto.com.pe",
-] as const;
-
 export async function sendProductOutEmail({
   productCode,
   productName,
@@ -664,11 +649,11 @@ export async function sendProductOutEmail({
 }): Promise<void> {
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   if (!smtpPass) {
-    console.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — notificación de fin de producto no enviada");
+    logger.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — notificación de fin de producto no enviada");
     return;
   }
 
-  const SMTP_USER = "carlos.ponce@sanjacinto.com.pe";
+  const smtpUser = getSmtpUserEmail();
   const codeLabel = productCode.trim() ? ` (${productCode.trim()})` : "";
   const subject = `Término de Producto${codeLabel} — ${productName}`;
 
@@ -736,13 +721,13 @@ Supervisor de Cocina Colores`;
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
-    auth: { user: SMTP_USER, pass: smtpPass },
+    auth: { user: smtpUser, pass: smtpPass },
   });
 
   await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${SMTP_USER}>`,
-    to: PRODUCT_OUT_TO,
-    cc: [...PRODUCT_OUT_CC],
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to: getProductOutRecipients().to,
+    cc: getProductOutRecipients().cc,
     subject,
     text,
     html,
@@ -753,7 +738,7 @@ Supervisor de Cocina Colores`;
 // Helpers comunes para plantillas de correo recurrente
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SMTP_USER = "carlos.ponce@sanjacinto.com.pe";
+const smtpUser = getSmtpUserEmail();
 
 function buildTransporter() {
   const smtpPass = process.env.SMTP_APP_PASSWORD;
@@ -765,7 +750,7 @@ function buildTransporter() {
     host: "smtp.gmail.com",
     port: 465,
     secure: true,
-    auth: { user: SMTP_USER, pass: smtpPass },
+    auth: { user: smtpUser, pass: smtpPass },
   });
 }
 
@@ -804,13 +789,6 @@ function infoTable(rows: Array<[string, string]>, borderColor = "#3b82f6", bgCol
 // 2. Stock físico del colorante
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const STOCK_COLOR_TO = "judith.yachachin@sanjacinto.com.pe";
-export const STOCK_COLOR_CC = [
-  "laboratorio.tintoreria@sanjacinto.com.pe",
-  "laboratorista.tintoreria@sanjacinto.com.pe",
-  "ruben.roldan@sanjacinto.com.pe",
-] as const;
-
 export async function sendStockColoranteEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>) {
   const transporter = buildTransporter();
   const rows = items.map(i =>
@@ -829,9 +807,9 @@ export async function sendStockColoranteEmail(items: Array<{ code: string; name:
   );
 
   await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${SMTP_USER}>`,
-    to: STOCK_COLOR_TO,
-    cc: [...STOCK_COLOR_CC],
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to: getStockColorRecipients().to,
+    cc: getStockColorRecipients().cc,
     subject: "Stock Físico de Colorantes — Almacén Químico",
     text,
     html,
@@ -841,13 +819,6 @@ export async function sendStockColoranteEmail(items: Array<{ code: string; name:
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. Stock físico del auxiliar
 // ─────────────────────────────────────────────────────────────────────────────
-
-export const STOCK_AUX_TO = "judith.yachachin@sanjacinto.com.pe";
-export const STOCK_AUX_CC = [
-  "laboratorio.tintoreria@sanjacinto.com.pe",
-  "laboratorista.tintoreria@sanjacinto.com.pe",
-  "ruben.roldan@sanjacinto.com.pe",
-] as const;
 
 export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>) {
   const transporter = buildTransporter();
@@ -867,9 +838,9 @@ export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: 
   );
 
   await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${SMTP_USER}>`,
-    to: STOCK_AUX_TO,
-    cc: [...STOCK_AUX_CC],
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to: getStockAuxRecipients().to,
+    cc: getStockAuxRecipients().cc,
     subject: "Stock Físico de Auxiliares — Almacén Químico",
     text,
     html,
@@ -879,8 +850,6 @@ export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: 
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. Solicitud de aprobación de orden interna
 // ─────────────────────────────────────────────────────────────────────────────
-
-export const ORDER_APPROVAL_TO = "denis.miranda@sanjacinto.com.pe";
 
 export async function sendOrderApprovalEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes?: string) {
   const transporter = buildTransporter();
@@ -905,8 +874,8 @@ export async function sendOrderApprovalEmail(items: Array<{ code: string; name: 
   );
 
   await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${SMTP_USER}>`,
-    to: ORDER_APPROVAL_TO,
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to: getOrderApprovalRecipient(),
     subject: "Solicitud de Aprobación de Orden Interna — Almacén Químico",
     text,
     html,
@@ -916,12 +885,6 @@ export async function sendOrderApprovalEmail(items: Array<{ code: string; name: 
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. Solicitud de peso de bolsas plásticas
 // ─────────────────────────────────────────────────────────────────────────────
-
-export const PLASTIC_BAG_TO = [
-  "almacen.despacho.repuestos@sanjacinto.com.pe",
-  "almacen.recepcion.repuestos@sanjacinto.com.pe",
-] as const;
-export const PLASTIC_BAG_CC = ["alex.laredo@sanjacinto.com.pe"] as const;
 
 export async function sendPlasticBagEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes?: string) {
   const transporter = buildTransporter();
@@ -946,9 +909,9 @@ export async function sendPlasticBagEmail(items: Array<{ code: string; name: str
   );
 
   await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${SMTP_USER}>`,
-    to: [...PLASTIC_BAG_TO],
-    cc: [...PLASTIC_BAG_CC],
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to: getPlasticBagRecipients().to,
+    cc: getPlasticBagRecipients().cc,
     subject: "Solicitud de Peso de Bolsas Plásticas — Almacén Químico",
     text,
     html,
@@ -1002,12 +965,12 @@ Este enlace es válido por 24 horas. Si no solicitaste este cambio, puedes ignor
 
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   if (!smtpPass) {
-    console.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — email de reset no enviado a", toEmail);
+    logger.warn({ toEmail }, "[email-smtp] SMTP_APP_PASSWORD no configurado — email de reset no enviado");
     return;
   }
   const transporter = buildTransporter();
   await transporter.sendMail({
-    from: `"Almacén Químico" <${SMTP_USER}>`,
+    from: `"Almacén Químico" <${smtpUser}>`,
     to: toEmail,
     subject: "Restablecimiento de contraseña — Almacén Químico",
     text,

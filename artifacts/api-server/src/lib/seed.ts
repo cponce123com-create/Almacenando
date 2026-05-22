@@ -64,6 +64,10 @@ const demoEpp = [
 ];
 
 export async function seedWarehouseData() {
+  if (process.env.NODE_ENV === "production") {
+    logger.warn("Seed skipped: refusing to run in production");
+    return;
+  }
   logger.info("Starting warehouse data seed...");
 
   // -------------------------------------------------------------------------
@@ -127,7 +131,7 @@ export async function seedWarehouseData() {
         id: generateId(),
         ...product,
         status: "active",
-      }).onConflictDoNothing();
+      } as any).onConflictDoNothing();
     } catch (err) {
       logger.warn({ code: product.code, err }, "Could not insert product");
     }
@@ -186,10 +190,10 @@ export async function seedWarehouseData() {
         id: generateId(),
         productId: pId,
         recordDate: today,
-        previousBalance: inv.prev,
-        inputs: inv.inputs,
-        outputs: inv.outputs,
-        finalBalance: finalBal,
+        previousBalance: Number(inv.prev),
+        inputs: Number(inv.inputs),
+        outputs: Number(inv.outputs),
+        finalBalance: Number(finalBal),
         registeredBy: operatorId,
         notes: "Registro inicial de inventario",
       });
@@ -225,7 +229,7 @@ export async function seedWarehouseData() {
       await db.insert(immobilizedProductsTable).values({
         id: generateId(),
         productId: pId,
-        quantity: item.qty,
+        quantity: Number(item.qty),
         reason: item.reason,
         immobilizedDate: today,
         status: "immobilized",
@@ -258,7 +262,7 @@ export async function seedWarehouseData() {
         id: generateId(),
         productId: pId,
         sampleCode: s.code,
-        quantity: s.qty,
+        quantity: Number(s.qty),
         unit: "L",
         sampleDate: today,
         purpose: s.purpose,
@@ -304,7 +308,7 @@ export async function seedWarehouseData() {
         id: generateId(),
         productId: pId,
         lotNumber: dl.lot,
-        quantity: dl.qty,
+        quantity: Number(dl.qty),
         expirationDate: expDateStr,
         receiptDate: today,
         supplier: dl.supplier,

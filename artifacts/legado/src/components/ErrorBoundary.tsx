@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: ErrorInfo) {
+  override componentDidCatch(error: Error, info: ErrorInfo) {
     // Log to console so developers can see the full stack trace
     console.error("[ErrorBoundary] Caught render error:", error, info.componentStack);
   }
@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: null });
   };
 
-  render() {
+  override render() {
     if (this.state.hasError) {
       const { moduleName = "este módulo" } = this.props;
       return (

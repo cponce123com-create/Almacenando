@@ -31,7 +31,7 @@ function getAuthHeaders() {
 async function api(path: string, opts?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...getAuthHeaders(), ...(opts?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders(), ...(opts?.headers ?? {}) } as HeadersInit,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

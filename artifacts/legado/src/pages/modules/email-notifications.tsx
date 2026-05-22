@@ -25,7 +25,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 interface Product { id: string; code: string; name: string; warehouse: string; status: string; }
 interface Supply  { id: string; code: string; description: string; unit: string; status: string; }
 
-interface EmailItem { id: string; code: string; name: string; quantity: string; unit: string; }
+interface EmailItem { id: string; code: string; name: string; quantity: string; unit: string; _supplyId?: string; _productId?: string; }
 
 // ─── Templates config ─────────────────────────────────────────────────────────
 type TemplateId = "product-out" | "stock-colorante" | "stock-auxiliar" | "order-approval" | "plastic-bag";
@@ -40,7 +40,7 @@ interface TemplateConfig {
   endpoint: string;
   to: string[];
   cc?: string[];
-  itemSource: "product" | "supply" | "both";
+  itemSource: "product" | "supply" | "both" | "inventory";
   hasNotes: boolean;
   isSingleProduct?: boolean;
 }
@@ -54,8 +54,8 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-red-600",
     bgColor: "bg-red-50",
     endpoint: "/api/notifications/product-out",
-    to: ["judith.yachachin@sanjacinto.com.pe"],
-    cc: ["laboratorio.tintoreria@sanjacinto.com.pe", "laboratorista.tintoreria@sanjacinto.com.pe", "ruben.roldan@sanjacinto.com.pe", "denis.miranda@sanjacinto.com.pe"],
+    to: ["configurado-en-backend vía NOTIFY_PRODUCT_OUT"],
+    cc: ["configurado-en-backend vía NOTIFY_PRODUCT_OUT_CC"],
     itemSource: "product",
     hasNotes: false,
     isSingleProduct: true,
@@ -68,9 +68,9 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-blue-600",
     bgColor: "bg-blue-50",
     endpoint: "/api/notifications/stock-colorante",
-    to: ["judith.yachachin@sanjacinto.com.pe"],
-    cc: ["laboratorio.tintoreria@sanjacinto.com.pe", "laboratorista.tintoreria@sanjacinto.com.pe", "ruben.roldan@sanjacinto.com.pe"],
-    itemSource: "product",
+    to: ["configurado-en-backend vía NOTIFY_STOCK_COLOR"],
+    cc: ["configurado-en-backend vía NOTIFY_STOCK_COLOR_CC"],
+    itemSource: "inventory",
     hasNotes: false,
   },
   {
@@ -81,9 +81,9 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-violet-600",
     bgColor: "bg-violet-50",
     endpoint: "/api/notifications/stock-auxiliar",
-    to: ["judith.yachachin@sanjacinto.com.pe"],
-    cc: ["laboratorio.tintoreria@sanjacinto.com.pe", "laboratorista.tintoreria@sanjacinto.com.pe", "ruben.roldan@sanjacinto.com.pe"],
-    itemSource: "product",
+    to: ["configurado-en-backend vía NOTIFY_STOCK_AUX"],
+    cc: ["configurado-en-backend vía NOTIFY_STOCK_AUX_CC"],
+    itemSource: "inventory",
     hasNotes: false,
   },
   {
@@ -94,7 +94,7 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-amber-600",
     bgColor: "bg-amber-50",
     endpoint: "/api/notifications/order-approval",
-    to: ["denis.miranda@sanjacinto.com.pe"],
+    to: ["configurado-en-backend vía NOTIFY_ORDER_APPROVAL"],
     itemSource: "supply",
     hasNotes: true,
   },
@@ -106,8 +106,8 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-emerald-600",
     bgColor: "bg-emerald-50",
     endpoint: "/api/notifications/plastic-bag",
-    to: ["almacen.despacho.repuestos@sanjacinto.com.pe", "almacen.recepcion.repuestos@sanjacinto.com.pe"],
-    cc: ["alex.laredo@sanjacinto.com.pe"],
+    to: ["configurado-en-backend vía NOTIFY_PLASTIC_BAG"],
+    cc: ["configurado-en-backend vía NOTIFY_PLASTIC_BAG_CC"],
     itemSource: "supply",
     hasNotes: true,
   },

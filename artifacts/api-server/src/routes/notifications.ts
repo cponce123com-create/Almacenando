@@ -5,14 +5,9 @@ import { eq } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
-import {
-  sendLotChangeNotificationEmail, LOT_CHANGE_RECIPIENTS,
-  sendProductOutEmail, PRODUCT_OUT_TO, PRODUCT_OUT_CC,
-  sendStockColoranteEmail, STOCK_COLOR_TO, STOCK_COLOR_CC,
-  sendStockAuxiliarEmail, STOCK_AUX_TO, STOCK_AUX_CC,
-  sendOrderApprovalEmail, ORDER_APPROVAL_TO,
-  sendPlasticBagEmail, PLASTIC_BAG_TO, PLASTIC_BAG_CC,
-} from "../lib/email.js";
+import { logger } from "../lib/logger.js";
+import { sendLotChangeNotificationEmail, sendProductOutEmail, sendStockColoranteEmail, sendStockAuxiliarEmail, sendOrderApprovalEmail, sendPlasticBagEmail } from "../lib/email.js";
+import { getLotChangeRecipients, getProductOutRecipients, getStockColorRecipients, getStockAuxRecipients, getOrderApprovalRecipient, getPlasticBagRecipients } from "../lib/email-recipients.js";
 import { z } from "zod/v4";
 
 const router = Router();
@@ -72,15 +67,15 @@ router.post(
       action: "lot_change_notification",
       resource: "products",
       resourceId: productId,
-      details: { productName: product.name, oldLot, newLot, productionOrder, recipients: [...LOT_CHANGE_RECIPIENTS] },
+      details: { productName: product.name, oldLot, newLot, productionOrder, recipients: getLotChangeRecipients() },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: LOT_CHANGE_RECIPIENTS.length });
+    res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: getLotChangeRecipients().length });
 
     // Enviar email en background, sin bloquear la respuesta
     sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName })
-      .catch((err) => console.error("Error enviando email de lote:", err));
+      .catch((err) => logger.error({ err }, "Error enviando email de lote"));
   })
 );
 
@@ -111,6 +106,7 @@ router.post(
     }
 
     const { productCode, productName } = parsed.data;
+    const { to: outTo, cc: outCc } = getProductOutRecipients();
 
     await sendProductOutEmail({ productCode, productName });
     await writeAuditLog({
@@ -118,11 +114,11 @@ router.post(
       action: "email_notification",
       resource: "products",
       resourceId: productCode || productName,
-      details: { template: "product_out", productCode, productName, to: PRODUCT_OUT_TO, cc: [...PRODUCT_OUT_CC] },
+      details: { template: "product_out", productCode, productName, to: outTo, cc: outCc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Notificación enviada correctamente", productName, to: PRODUCT_OUT_TO, cc: PRODUCT_OUT_CC.length });
+    res.json({ message: "Notificación enviada correctamente", productName, to: outTo, cc: outCc.length });
   })
 );
 
@@ -146,15 +142,16 @@ router.post(
     }
 
     await sendStockColoranteEmail(parsed.data.items);
+    const { to: colorTo, cc: colorCc } = getStockColorRecipients();
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "stock_colorante", items: parsed.data.items, to: STOCK_COLOR_TO, cc: [...STOCK_COLOR_CC] },
+      details: { template: "stock_colorante", items: parsed.data.items, to: colorTo, cc: colorCc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Correo de stock de colorante enviado", to: STOCK_COLOR_TO, cc: STOCK_COLOR_CC.length });
+    res.json({ message: "Correo de stock de colorante enviado", to: colorTo, cc: colorCc.length });
   })
 );
 
@@ -178,15 +175,16 @@ router.post(
     }
 
     await sendStockAuxiliarEmail(parsed.data.items);
+    const { to: auxTo, cc: auxCc } = getStockAuxRecipients();
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "stock_auxiliar", items: parsed.data.items, to: STOCK_AUX_TO, cc: [...STOCK_AUX_CC] },
+      details: { template: "stock_auxiliar", items: parsed.data.items, to: auxTo, cc: auxCc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Correo de stock de auxiliar enviado", to: STOCK_AUX_TO, cc: STOCK_AUX_CC.length });
+    res.json({ message: "Correo de stock de auxiliar enviado", to: auxTo, cc: auxCc.length });
   })
 );
 
@@ -215,11 +213,11 @@ router.post(
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "order_approval", items: parsed.data.items, to: ORDER_APPROVAL_TO },
+      details: { template: "order_approval", items: parsed.data.items, to: getOrderApprovalRecipient() },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Solicitud de aprobación enviada", to: ORDER_APPROVAL_TO });
+    res.json({ message: "Solicitud de aprobación enviada", to: getOrderApprovalRecipient() });
   })
 );
 
@@ -244,15 +242,16 @@ router.post(
     }
 
     await sendPlasticBagEmail(parsed.data.items, parsed.data.notes);
+    const { to: bagTo, cc: bagCc } = getPlasticBagRecipients();
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "plastic_bag", items: parsed.data.items, to: [...PLASTIC_BAG_TO], cc: [...PLASTIC_BAG_CC] },
+      details: { template: "plastic_bag", items: parsed.data.items, to: bagTo, cc: bagCc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Solicitud de bolsas enviada", to: PLASTIC_BAG_TO.length, cc: PLASTIC_BAG_CC.length });
+    res.json({ message: "Solicitud de bolsas enviada", to: bagTo.length, cc: bagCc.length });
   })
 );
 

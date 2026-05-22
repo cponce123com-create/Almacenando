@@ -20,14 +20,22 @@ app.set("trust proxy", 1);
 //   X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, etc.
 // Se coloca ANTES de cualquier ruta.
 // ---------------------------------------------------------------------------
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "https://res.cloudinary.com", "https://drive.google.com"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
 
 // ---------------------------------------------------------------------------
 // Static frontend serving (production only)
 //
-// In Replit, the frontend (legado) is served separately as a static artifact
-// on "/" and the API runs on "/api". On Render there is only ONE service, so
-// the Express server must serve both:
+// On Render there is only ONE service, so the Express server must serve both:
 //   - /api/*  → API routes (registered below)
 //   - /*      → React SPA (legado/dist/public)
 //
@@ -41,16 +49,8 @@ const FRONTEND_DIST = process.env.FRONTEND_DIST_PATH
 function getAllowedOrigins(): string[] {
   const origins: string[] = [];
   if (process.env.APP_URL) origins.push(process.env.APP_URL.replace(/\/$/, ""));
-  if (process.env.REPLIT_DOMAINS) {
-    for (const d of process.env.REPLIT_DOMAINS.split(",")) {
-      origins.push(`https://${d.trim()}`);
-    }
-  }
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    origins.push(`https://${process.env.REPLIT_DEV_DOMAIN}`);
-  }
   if (process.env.NODE_ENV !== "production") {
-    origins.push("http://localhost:3000", "http://localhost:5173", "http://localhost:19854");
+    origins.push("http://localhost:3000", "http://localhost:5173");
   }
   return origins;
 }

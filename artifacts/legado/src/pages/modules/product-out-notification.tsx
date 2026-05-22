@@ -13,13 +13,9 @@ import { PackageX, Loader2, ChevronsUpDown, Check, Mail, AlertCircle, Database, 
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const PRODUCT_OUT_TO = "judith.yachachin@sanjacinto.com.pe";
-const PRODUCT_OUT_CC = [
-  "laboratorio.tintoreria@sanjacinto.com.pe",
-  "laboratorista.tintoreria@sanjacinto.com.pe",
-  "ruben.roldan@sanjacinto.com.pe",
-  "denis.miranda@sanjacinto.com.pe",
-];
+// Destinatarios configurados en backend vía NOTIFY_PRODUCT_OUT / NOTIFY_PRODUCT_OUT_CC
+const PRODUCT_OUT_TO = "configurado-en-backend";
+const PRODUCT_OUT_CC = [] as readonly string[];
 
 interface Product {
   id: string;

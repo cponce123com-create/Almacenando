@@ -43,8 +43,8 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
     return;
   }
 
-  const token = signToken({ userId: user.id, email: user.email, role: user.role });
-  void writeAuditLog({ userId: user.id, action: "login", resource: "session", resourceId: user.id, ipAddress: req.ip });
+  const token = signToken({ userId: user.id, email: user.email, role: user.role as "supervisor" | "operator" | "quality" | "admin" | "readonly" });
+  void writeAuditLog({ userId: user.id, action: "login", resource: "session", resourceId: user.id, ipAddress: req.ip as string });
   res.json({
     user: {
       id: user.id,
