@@ -269,4 +269,23 @@ const itemListSchema = z.object({
   notes: z.string().optional(),
 });
 
+// ── GET /api/notifications/recipients ─────────────────────────────────────────
+// Devuelve los destinatarios configurados vía variables de entorno.
+
+router.get("/recipients", requireAuth, asyncHandler(async (_req, res) => {
+  const { to: productOutTo, cc: productOutCc } = getProductOutRecipients();
+  const { to: colorTo, cc: colorCc } = getStockColorRecipients();
+  const { to: auxTo, cc: auxCc } = getStockAuxRecipients();
+  const { to: bagTo, cc: bagCc } = getPlasticBagRecipients();
+
+  res.json({
+    lotChange: getLotChangeRecipients(),
+    productOut: { to: productOutTo, cc: productOutCc },
+    stockColor: { to: colorTo, cc: colorCc },
+    stockAux: { to: auxTo, cc: auxCc },
+    orderApproval: getOrderApprovalRecipient(),
+    plasticBag: { to: bagTo, cc: bagCc },
+  });
+}));
+
 export default router;
