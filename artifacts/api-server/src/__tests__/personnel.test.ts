@@ -38,22 +38,31 @@ describe("Personnel API", () => {
     expect((await request(createApp()).get("/api/personnel")).status).toBe(401);
   });
 
-  it("POST / creates person (when no duplicate employeeId)", async () => {
-    auth(); dbSelectMock.mockReturnValueOnce(makeChain([])); // duplicate check
-    dbInsertMock.mockReturnValue({ values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "1", employeeId: "E001", name: "Juan", role: "operator", status: "active" }]) }) });
-    const r = await request(createApp()).post("/api/personnel").set("Authorization", `Bearer ${TOKEN}`).send({ employeeId: "E001", name: "Juan", role: "operator" });
+  it("POST / creates person", async () => {
+    dbSelectMock
+      .mockReturnValueOnce(makeChain([{ status: "active", role: "admin" }]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([]));
+    dbInsertMock.mockReturnValue({ values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "1", employeeId: "E001", name: "Juan", position: "Operador", department: "Producción", role: "operator", status: "active" }]) }) });
+    const r = await request(createApp()).post("/api/personnel").set("Authorization", `Bearer ${TOKEN}`).send({ employeeId: "E001", name: "Juan", position: "Operador", department: "Producción" });
     expect(r.status).toBe(201);
   });
 
   it("DELETE /:id removes person", async () => {
-    auth();
+    dbSelectMock
+      .mockReturnValueOnce(makeChain([{ status: "active", role: "admin" }]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([]));
     dbDeleteMock.mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "1" }]) }) });
     const r = await request(createApp()).delete("/api/personnel/1").set("Authorization", `Bearer ${TOKEN}`);
     expect(r.status).toBe(200);
   });
 
   it("DELETE /:id returns 404 for non-existent", async () => {
-    auth();
+    dbSelectMock
+      .mockReturnValueOnce(makeChain([{ status: "active", role: "admin" }]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([]));
     dbDeleteMock.mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) }) });
     const r = await request(createApp()).delete("/api/personnel/nonexistent").set("Authorization", `Bearer ${TOKEN}`);
     expect(r.status).toBe(404);
