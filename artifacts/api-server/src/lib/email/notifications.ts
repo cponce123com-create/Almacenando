@@ -1,0 +1,331 @@
+/**
+ * notifications.ts
+ *
+ * Plantillas de email para notificaciones internas vía SMTP Gmail.
+ * Incluye: cambio de lote, fin de producto, stock colorante/auxiliar,
+ * aprobación de orden, y solicitud de bolsas plásticas.
+ */
+
+import nodemailer from "nodemailer";
+import { logger } from "../logger.js";
+import { buildTransporter, getResend } from "./provider.js";
+import { smtpHeader, smtpFooter, smtpWrap, infoTable } from "./helpers.js";
+import { getSmtpUserEmail } from "../email-recipients.js";
+
+const smtpUser = getSmtpUserEmail();
+
+// ── Lot Change ────────────────────────────────────────────────────────────────
+
+export async function sendLotChangeNotificationEmail({
+  productName,
+  oldLot,
+  newLot,
+  productionOrder,
+  senderName,
+}: {
+  productName: string;
+  oldLot: string;
+  newLot: string;
+  productionOrder: string;
+  senderName: string;
+}): Promise<void> {
+  const subject = `Notificación de Cambio de Lote - ${productName}`;
+
+  const text = `Estimada Judith,
+
+Le informo que se ha realizado un cambio de lote para el siguiente producto:
+
+  Producto:      ${productName}
+  Lote Anterior: ${oldLot}
+  Nuevo Lote:    ${newLot}
+  O.P.:          ${productionOrder}
+  Enviado por:   ${senderName}
+
+Saludos Cordiales.
+
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  const tableRows: Array<[string, string]> = [
+    ["Producto", productName],
+    ["Lote Anterior", oldLot],
+    ["Nuevo Lote", newLot],
+    ["O.P.", productionOrder],
+    ["Enviado por", senderName],
+  ];
+
+  const resend = getResend();
+  if (resend) {
+    const { getLotChangeRecipients } = await import("../email-recipients.js");
+    const to = getLotChangeRecipients();
+    if (to.length > 0) {
+      await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
+        to,
+        subject,
+        text,
+      });
+    }
+    return;
+  }
+
+  logger.warn("[email] RESEND_API_KEY no configurado — email no enviado");
+}
+
+// ── Dye Lot Notification ──────────────────────────────────────────────────────
+
+export async function sendDyeLotNotificationEmail({
+  productName,
+  lotNumber,
+  quantity,
+  expirationDate,
+  supplier,
+  certificateNumber,
+  qualityStatus,
+  senderName,
+  recipients,
+}: {
+  productName: string;
+  lotNumber: string;
+  quantity: string;
+  expirationDate: string;
+  supplier?: string;
+  certificateNumber?: string;
+  qualityStatus: string;
+  senderName: string;
+  recipients: string[];
+}): Promise<void> {
+  const subject = `Nuevo Lote Registrado - ${productName} (${lotNumber})`;
+
+  const text = `Se ha registrado un nuevo lote:
+
+Producto: ${productName}
+Lote: ${lotNumber}
+Cantidad: ${quantity}
+Vencimiento: ${expirationDate}
+Proveedor: ${supplier ?? "—"}
+Certificado: ${certificateNumber ?? "—"}
+Estado: ${qualityStatus}
+Registrado por: ${senderName}`;
+
+  const resend = getResend();
+  if (resend) {
+    await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
+      to: recipients,
+      subject,
+      text,
+    });
+    return;
+  }
+
+  logger.warn("[email] RESEND_API_KEY no configurado — email no enviado");
+}
+
+// ── Product Out ───────────────────────────────────────────────────────────────
+
+export async function sendProductOutEmail({
+  productCode,
+  productName,
+}: {
+  productCode: string;
+  productName: string;
+}): Promise<void> {
+  const smtpPass = process.env.SMTP_APP_PASSWORD;
+  if (!smtpPass) {
+    logger.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — notificación de fin de producto no enviada");
+    return;
+  }
+
+  const smtpUserFromEnv = getSmtpUserEmail();
+  const codeLabel = productCode.trim() ? ` (${productCode.trim()})` : "";
+  const subject = `⚠️ Término de Producto${codeLabel} — ${productName}`;
+
+  const text = `Estimada Judith,
+
+Le informo que el siguiente producto ha llegado a su término total en nuestro almacén:
+
+  Código:   ${productCode.trim() || "—"}
+  Producto: ${productName}
+
+Saludos Cordiales.
+
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  const { getProductOutRecipients } = await import("../email-recipients.js");
+  const { to, cc } = getProductOutRecipients();
+
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user: smtpUserFromEnv, pass: smtpPass },
+  });
+
+  await transporter.sendMail({
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUserFromEnv}>`,
+    to,
+    cc,
+    subject,
+    text,
+  });
+}
+
+// ── Stock Colorante ───────────────────────────────────────────────────────────
+
+export async function sendStockColoranteEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>) {
+  const transporter = buildTransporter();
+  const rows = items.map(i =>
+    `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
+  ).join("\n");
+  const text = `Buenas días,
+
+Se informa el siguiente stock físico de colorantes:
+
+${rows}
+
+Saludos Cordiales.
+
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
+  const html = smtpWrap(
+    smtpHeader("Stock de Colorantes", "🧪", "#2563eb"),
+    infoTable(tableRows),
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
+
+  const { getStockColorRecipients } = await import("../email-recipients.js");
+  const { to, cc } = getStockColorRecipients();
+
+  await transporter.sendMail({
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to,
+    cc,
+    subject: "Reporte de Stock de Colorantes",
+    text,
+    html,
+  });
+}
+
+// ── Stock Auxiliar ────────────────────────────────────────────────────────────
+
+export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>) {
+  const transporter = buildTransporter();
+  const rows = items.map(i =>
+    `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
+  ).join("\n");
+  const text = `Buenas días,
+
+Se informa el siguiente stock físico de auxiliares:
+
+${rows}
+
+Saludos Cordiales.
+
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
+  const html = smtpWrap(
+    smtpHeader("Stock de Auxiliares", "🧪", "#7c3aed"),
+    infoTable(tableRows),
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
+
+  const { getStockAuxRecipients } = await import("../email-recipients.js");
+  const { to, cc } = getStockAuxRecipients();
+
+  await transporter.sendMail({
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to,
+    cc,
+    subject: "Reporte de Stock de Auxiliares",
+    text,
+    html,
+  });
+}
+
+// ── Order Approval ────────────────────────────────────────────────────────────
+
+export async function sendOrderApprovalEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes?: string) {
+  const transporter = buildTransporter();
+  const rows = items.map(i =>
+    `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
+  ).join("\n");
+  const notesLine = notes ? `
+Observaciones: ${notes}
+` : "";
+  const text = `Buenas días,
+
+Se solicita la aprobación de la siguiente orden:
+
+${rows}${notesLine}
+
+Saludos Cordiales.
+
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
+  const body = infoTable(tableRows) + (notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : "");
+  const html = smtpWrap(
+    smtpHeader("Aprobación de Orden Interna", "📋", "#d97706"),
+    body,
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
+
+  const { getOrderApprovalRecipient } = await import("../email-recipients.js");
+
+  await transporter.sendMail({
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to: getOrderApprovalRecipient(),
+    subject: "Solicitud de Aprobación de Orden Interna",
+    text,
+    html,
+  });
+}
+
+// ── Plastic Bag ───────────────────────────────────────────────────────────────
+
+export async function sendPlasticBagEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes?: string) {
+  const transporter = buildTransporter();
+  const rows = items.map(i =>
+    `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
+  ).join("\n");
+  const notesLine = notes ? `
+Observaciones: ${notes}
+` : "";
+  const text = `Buenas días,
+
+Se solicita el peso de las siguientes bolsas plásticas:
+
+${rows}${notesLine}
+
+Saludos Cordiales.
+
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
+  const body = infoTable(tableRows) + (notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : "");
+  const html = smtpWrap(
+    smtpHeader("Solicitud de Peso — Bolsas Plásticas", "🛍️", "#059669"),
+    body,
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
+
+  const { getPlasticBagRecipients } = await import("../email-recipients.js");
+  const { to, cc } = getPlasticBagRecipients();
+
+  await transporter.sendMail({
+    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
+    to,
+    cc,
+    subject: "Solicitud de Peso de Bolsas Plásticas",
+    text,
+    html,
+  });
+}

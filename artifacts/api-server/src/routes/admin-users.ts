@@ -11,7 +11,7 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { passwordSchema } from "../lib/password-schema.js";
 import { passwordResetLimiter } from "../lib/rate-limit.js";
-import { sendPasswordResetEmail } from "../lib/email.js";
+import { sendPasswordResetEmail } from "../lib/email/index.js";
 import { parsePagination } from "../lib/pagination.js";
 
 const router = Router();
