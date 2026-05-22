@@ -20,9 +20,15 @@ vi.mock("../lib/id.js", () => ({ generateId: () => "mid" }));
 import personnelRouter from "../routes/personnel.js";
 
 function makeChain(rows: Record<string, unknown>[]) {
-  const p = Promise.resolve(rows);
-  const t: any = { then: p.then.bind(p), catch: p.catch.bind(p), finally: p.finally.bind(p), where: () => t, limit: () => t, orderBy: () => t, offset: () => t, returning: () => p };
-  return { from: () => t } as any;
+  const chain: Record<string, unknown> = {};
+  chain.from = () => chain;
+  chain.where = () => chain;
+  chain.limit = () => Promise.resolve(rows);
+  chain.orderBy = () => chain;
+  chain.offset = () => chain;
+  chain.returning = () => Promise.resolve(rows);
+  chain.set = () => chain;
+  return { from: () => chain } as any;
 }
 function auth() { dbSelectMock.mockReturnValueOnce(makeChain([{ status: "active", role: "admin" }])).mockReturnValueOnce(makeChain([])); }
 
