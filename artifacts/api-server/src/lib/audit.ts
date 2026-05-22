@@ -53,7 +53,7 @@ export async function cleanupOldAuditLogs(): Promise<void> {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 180);
     await db.delete(auditLogsTable).where(lt(auditLogsTable.createdAt, cutoff));
-  } catch { /* non-critical */ }
+  } catch { logger.warn("Audit log cleanup failed"); }
 }
 
 setInterval(() => void cleanupOldAuditLogs(), 24 * 60 * 60 * 1000).unref();

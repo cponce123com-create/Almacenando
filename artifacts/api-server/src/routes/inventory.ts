@@ -258,7 +258,7 @@ router.post(
         const fileName = buildInventoryPhotoName(productLabel, recordDate, 0, ext);
         const { url } = await uploadFileToDrive(file.buffer, fileName, file.mimetype);
         legacyPhotoUrl = url;
-      } catch { /* ignore */ }
+      } catch { logger.warn("Legacy photo upload failed"); }
     }
     const mainPhotoUrl = photoUrls[0] ?? legacyPhotoUrl;
 
@@ -339,10 +339,7 @@ router.put(
         const fileName = buildInventoryPhotoName(parsed.data.productId ?? (id as string), parsed.data.recordDate ?? new Date().toISOString().slice(0, 10), 0, ext);
         const { url } = await uploadFileToDrive(req.file.buffer, fileName, req.file.mimetype);
         photoUrl = url;
-      } catch { /* ignore */ }
-    }
-
-    const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+      } catch { logger.warn({ fileId: id }, "Failed to upload inventory photo"); }
     delete updateData.boxesData;
     if (photoUrl) updateData.photoUrl = photoUrl;
 
@@ -370,6 +367,12 @@ router.delete(
       .where(eq(inventoryRecordsTable.id, id as string)).returning();
     if (!deleted) { res.status(404).json({ error: "Registro no encontrado" }); return; }
     void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
+    res.json({ message: "Registro eliminado" });
+  })
+);
+
+export default router;
+d: id, ipAddress: req.ip });
     res.json({ message: "Registro eliminado" });
   })
 );

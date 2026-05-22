@@ -19,9 +19,9 @@ const router = Router();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function guardDriveConfig(res: Parameters<typeof asyncHandler>[0] extends (...args: infer A) => unknown ? A[1] : never): boolean {
+function guardDriveConfig(res: import("express").Response): boolean {
   if (!isMsdsDriveConfigured()) {
-    (res as any).status(503).json({
+    res.status(503).json({
       error: "Google Drive MSDS no configurado. Agrega GOOGLE_DRIVE_MSDS_FOLDER_ID y GOOGLE_SERVICE_ACCOUNT_JSON.",
     });
     return false;
@@ -979,7 +979,7 @@ router.post("/:productId/extract", requireAuth, requireRole("admin", "supervisor
 
   await db.update(productsTable)
     .set({
-      msdsExtractedData: extracted as any,
+      msdsExtractedData: extracted as unknown as import("drizzle-orm/pg-core").JsonValue,
       msdsExtractedAt: new Date(),
       updatedAt: new Date(),
     })
@@ -1008,3 +1008,4 @@ router.delete("/:productId/extract", requireAuth, requireRole("admin", "supervis
 }));
 
 export default router;
+ router;

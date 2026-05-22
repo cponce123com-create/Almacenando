@@ -73,7 +73,7 @@ async function callGemini(prompt: string): Promise<string> {
     throw new Error(`Gemini error: ${errMsg}`);
   }
 
-  const data = await res.json() as any;
+  const data = await res.json() as Record<string, unknown>;
   return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
 }
 
@@ -195,3 +195,4 @@ Reglas de incompatibilidad críticas individuales (prevalecen sobre la clase ONU
 });
 
 export default router;
+ router;
