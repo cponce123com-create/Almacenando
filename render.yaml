@@ -8,7 +8,8 @@ services:
     # -----------------------------------------------------------------------
     # Build Command
     # -----------------------------------------------------------------------
-    buildCommand: >
+    buildCommand: > 
+      pnpm config set onlyBuiltDependencies '@swc/core,core-js,esbuild,msw,unrs-resolver' --location project &&
       pnpm install --no-frozen-lockfile &&
       BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/legado build &&
       pnpm --filter @workspace/api-server build &&
