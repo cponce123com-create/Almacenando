@@ -72,40 +72,112 @@ const SB = {
 
 type ModuleRole = "admin" | "supervisor" | "operator" | "quality" | "readonly";
 
-export const modules: Array<{
+type ModuleItem = {
   name: string;
   href: string;
   icon: React.ElementType;
   roles?: ModuleRole[];
-}> = [
-  { name: "Dashboard",            href: "/dashboard",    icon: LayoutDashboard },
-  { name: "Maestro de Productos", href: "/products",     icon: Package },
-  { name: "Saldo Actualizado",    href: "/balances",     icon: Scale },
-  { name: "Inventarios",          href: "/inventory",    icon: ClipboardList },
-  { name: "Cuadre",               href: "/cuadre",       icon: Warehouse },
-  { name: "Ubicaciones",          href: "/locations",    icon: MapPin },
-  { name: "Escáner",              href: "/scanner",      icon: Scan },
-  { name: "Preparación de Pedidos",          href: "/picking",      icon: PackageCheck },
-  { name: "Mapa del Almacén",        href: "/warehouse-map", icon: Map },
-  { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },
-  { name: "Productos Sobrantes",  href: "/sobrantes",    icon: ArchiveX },
-  { name: "Muestras",             href: "/samples",      icon: TestTube },
-  { name: "Lotes / Tinturas",     href: "/dye-lots",     icon: Layers },
-  { name: "Cambio de Lote",       href: "/lot-change-notification",  icon: BellIcon,         roles: ["operator", "supervisor", "admin"] },
-  { name: "Envío de Correos",     href: "/email-notifications",      icon: Mail,         roles: ["operator", "supervisor", "admin"] },
-  { name: "Suministros",          href: "/supplies",                 icon: PackageSearch, roles: ["operator", "supervisor", "admin"] },
-  { name: "Control de Lotes",     href: "/lot-evaluations", icon: Microscope },
-  { name: "Disposición Final",    href: "/disposition",  icon: Recycle },
-  { name: "MSDS",                 href: "/msds",         icon: ShieldCheck },
-  { name: "Compatibilidad",      href: "/compatibility", icon: FlaskConical },
-  { name: "Documentos",           href: "/documents",    icon: FileText },
-  { name: "EPP",                  href: "/epp",          icon: Shield },
-  { name: "Personal",             href: "/personnel",    icon: Users },
-  { name: "Reportes",             href: "/reports",      icon: BarChart2 },
-  { name: "Administración",       href: "/admin-users",  icon: Settings },
+};
+
+type NavGroup = {
+  label?: string;
+  icon?: React.ElementType;
+  items: ModuleItem[];
+};
+
+export const navGroups: NavGroup[] = [
+  {
+    // Dashboard — no label (standalone)
+    items: [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: "Gestión de Productos",
+    items: [
+      { name: "Maestro de Productos", href: "/products", icon: Package },
+      { name: "Lotes / Tinturas", href: "/dye-lots", icon: Layers },
+      { name: "Control de Lotes", href: "/lot-evaluations", icon: Microscope },
+      { name: "Muestras", href: "/samples", icon: TestTube },
+      { name: "Disposición Final", href: "/disposition", icon: Recycle },
+    ],
+  },
+  {
+    label: "Inventario y Almacén",
+    icon: Warehouse,
+    items: [
+      { name: "Saldo Actualizado", href: "/balances", icon: Scale },
+      { name: "Inventarios", href: "/inventory", icon: ClipboardList },
+      { name: "Cuadre", href: "/cuadre", icon: Warehouse },
+      { name: "Ubicaciones", href: "/locations", icon: MapPin },
+      { name: "Mapa del Almacén", href: "/warehouse-map", icon: Map },
+      { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },
+      { name: "Productos Sobrantes", href: "/sobrantes", icon: ArchiveX },
+    ],
+  },
+  {
+    label: "Operaciones Logísticas",
+    icon: PackageCheck,
+    items: [
+      { name: "Escáner", href: "/scanner", icon: Scan },
+      { name: "Preparación de Pedidos", href: "/picking", icon: PackageCheck },
+      { name: "Suministros", href: "/supplies", icon: PackageSearch, roles: ["operator", "supervisor", "admin"] },
+    ],
+  },
+  {
+    label: "Seguridad y Calidad",
+    icon: ShieldCheck,
+    items: [
+      { name: "MSDS", href: "/msds", icon: ShieldCheck },
+      { name: "Compatibilidad", href: "/compatibility", icon: FlaskConical },
+      { name: "EPP", href: "/epp", icon: Shield },
+      { name: "Documentos", href: "/documents", icon: FileText },
+    ],
+  },
+  {
+    label: "Notificaciones",
+    icon: BellIcon,
+    items: [
+      { name: "Cambio de Lote", href: "/lot-change-notification", icon: BellIcon, roles: ["operator", "supervisor", "admin"] },
+      { name: "Envío de Correos", href: "/email-notifications", icon: Mail, roles: ["operator", "supervisor", "admin"] },
+    ],
+  },
+  {
+    label: "Administración",
+    icon: Settings,
+    items: [
+      { name: "Personal", href: "/personnel", icon: Users },
+      { name: "Reportes", href: "/reports", icon: BarChart2 },
+      { name: "Administración", href: "/admin-users", icon: Settings },
+    ],
+  },
 ];
 
-function NavItem({ item, onClick, mobile = false }: { item: typeof modules[0]; onClick?: () => void; mobile?: boolean }) {
+// Backwards compatibility — flat list of all modules derived from navGroups
+export const modules: ModuleItem[] = navGroups.flatMap(g => g.items);
+
+function GroupHeader({ label, icon: Icon, isFirst }: { label: string; icon?: React.ElementType; isFirst?: boolean }) {
+  return (
+    <div style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "16px 12px 6px",
+      fontSize: 10,
+      fontWeight: 600,
+      textTransform: "uppercase",
+      letterSpacing: "0.08em",
+      color: SB.mutedText,
+      borderTop: isFirst ? "none" : "1px solid rgba(255,255,255,0.05)",
+      marginTop: isFirst ? 0 : 6,
+    }}>
+      {Icon && <Icon style={{ width: 12, height: 12, opacity: 0.6 }} />}
+      {label}
+    </div>
+  );
+}
+
+function NavItem({ item, onClick, mobile = false }: { item: ModuleItem; onClick?: () => void; mobile?: boolean }) {
   const [location] = useLocation();
   const isActive = location === item.href || location.startsWith(item.href + "/");
   const [hovered, setHovered] = useState(false);
@@ -273,11 +345,37 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Navigation */}
       <nav style={{ flex: 1, padding: "12px 10px", overflowY: "auto" }}>
-        {modules
-          .filter(item => !item.roles || (user?.role && item.roles.includes(user.role as ModuleRole)))
-          .map((item) => (
-            <NavItem key={item.href} item={item} onClick={onNavClick} mobile={!!onNavClick} />
-          ))}
+        {(() => {
+          let isFirstRenderedGroup = true;
+          return navGroups.map((group) => {
+            const visibleItems = group.items.filter(
+              item => !item.roles || (user?.role && item.roles.includes(user.role as ModuleRole))
+            );
+            if (visibleItems.length === 0) return null;
+
+            const result: ReactNode[] = [];
+
+            if (group.label) {
+              result.push(
+                <GroupHeader
+                  key={`header-${group.label}`}
+                  label={group.label}
+                  icon={group.icon}
+                  isFirst={isFirstRenderedGroup}
+                />
+              );
+              isFirstRenderedGroup = false;
+            }
+
+            visibleItems.forEach((item) => {
+              result.push(
+                <NavItem key={item.href} item={item} onClick={onNavClick} mobile={!!onNavClick} />
+              );
+            });
+
+            return result;
+          });
+        })()}
       </nav>
 
       {/* User footer */}
