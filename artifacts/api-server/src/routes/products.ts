@@ -207,7 +207,8 @@ router.post(
           existingMap.set(key, id); inserted++;
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Error desconocido";
+        const pgErr = err instanceof Error && "cause" in err ? (err as any).cause?.message : null;
+        const msg = pgErr ?? (err instanceof Error ? err.message : "Error desconocido");
         const code = String(row.codigo ?? "").trim() || `fila ${rowNum}`;
         errors.push({ row: rowNum, code, error: msg });
       }
