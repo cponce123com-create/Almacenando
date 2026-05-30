@@ -120,8 +120,6 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: "Error interno del servidor" });
 });
 
-export default app;
-─────────────────────────────────────
 
 router.post(
   "/:id/photos",
