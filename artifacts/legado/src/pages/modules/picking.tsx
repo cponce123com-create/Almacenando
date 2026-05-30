@@ -476,7 +476,7 @@ export default function PreparacionDePedidosPage() {
 
             {/* Product picker dialog */}
             <Dialog open={showProductDialog} onOpenChange={setShowProductDialog}>
-              <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-y-auto">
+              <DialogContent className="sm:max-w-xl max-w-[95vw] max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Seleccionar Productos</DialogTitle>
                 </DialogHeader>
@@ -639,7 +639,7 @@ export default function PreparacionDePedidosPage() {
                 <div className="flex flex-col items-center gap-3 text-slate-400">
                   <Eye className="w-10 h-10" />
                   <p className="text-sm font-medium">Selecciona una orden de la lista de órdenes activas</p>
-                  <Button variant="outline" size="sm" onClick={() => setTab("orders")} className="gap-1.5">
+                  <Button variant="outline" size="sm" onClick={() => setTab("orders")} className="gap-1.5 min-h-[44px]">
                     <ListTodo className="w-3.5 h-3.5" />
                     Ver órdenes
                   </Button>
@@ -811,6 +811,7 @@ export default function PreparacionDePedidosPage() {
                                     size="sm"
                                     onClick={() => handleManualScan(item.id)}
                                     disabled={scanItemMutation.isPending}
+                                    className="min-h-[44px]"
                                   >
                                     {scanItemMutation.isPending ? (
                                       <Loader2 className="w-3 h-3 animate-spin" />

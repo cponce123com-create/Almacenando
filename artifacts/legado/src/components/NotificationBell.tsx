@@ -130,7 +130,7 @@ export function NotificationBell() {
               <Button
                 variant="ghost"
                 size="sm"
-                className="gap-1 text-xs text-emerald-600"
+                className="gap-1 text-xs text-emerald-600 min-h-[44px]"
                 onClick={() => markAllReadMutation.mutate()}
                 disabled={markAllReadMutation.isPending}
               >

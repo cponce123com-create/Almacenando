@@ -250,28 +250,28 @@ export default function GestionDeUbicacionesPage() {
                 <TableBody>
                   {paginated.map((loc) => (
                     <TableRow key={loc.id} className="hover:bg-slate-50/70 transition-colors">
-                      <TableCell>
+                      <TableCell className="text-xs">
                         <span className="px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded text-xs font-medium">
                           {loc.warehouse}
                         </span>
                       </TableCell>
-                      <TableCell className="text-slate-700">{loc.zone}</TableCell>
-                      <TableCell className="font-medium text-slate-900">{loc.rack}</TableCell>
-                      <TableCell className="text-slate-700">{loc.shelf}</TableCell>
-                      <TableCell className="text-slate-700">{loc.position}</TableCell>
-                      <TableCell>
+                      <TableCell className="text-slate-700 text-xs">{loc.zone}</TableCell>
+                      <TableCell className="font-medium text-slate-900 text-xs">{loc.rack}</TableCell>
+                      <TableCell className="text-slate-700 text-xs">{loc.shelf}</TableCell>
+                      <TableCell className="text-slate-700 text-xs">{loc.position}</TableCell>
+                      <TableCell className="text-xs">
                         <Badge variant="outline" className="text-xs">
                           {TYPE_LABELS[loc.type] ?? loc.type}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="text-xs">
                         {loc.isNearScale ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                         ) : (
                           <XCircle className="w-4 h-4 text-slate-300" />
                         )}
                       </TableCell>
-                      <TableCell className="text-center">
+                      <TableCell className="text-xs text-center">
                         {loc.isActive ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
                             <CheckCircle2 className="w-3 h-3" />
@@ -304,6 +304,7 @@ export default function GestionDeUbicacionesPage() {
                   size="sm"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="min-h-[44px]"
                 >
                   Anterior
                 </Button>
@@ -315,6 +316,7 @@ export default function GestionDeUbicacionesPage() {
                   size="sm"
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="min-h-[44px]"
                 >
                   Siguiente
                 </Button>

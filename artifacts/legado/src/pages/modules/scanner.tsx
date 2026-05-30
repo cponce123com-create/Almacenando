@@ -287,7 +287,7 @@ export default function ScannerPage() {
             {canWrite && scannedCode && !scanResult && !scanError && (
               <Card>
                 <CardContent className="pt-4">
-                  <Button onClick={handleGenerateBarcode} className="gap-2 w-full" size="sm" disabled={isGenerating}>
+                  <Button onClick={handleGenerateBarcode} className="gap-2 w-full min-h-[44px]" size="sm" disabled={isGenerating}>
                     {isGenerating ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
@@ -318,7 +318,7 @@ export default function ScannerPage() {
                           onClick={handleGenerateBarcode}
                           variant="outline"
                           size="sm"
-                          className="mt-3 gap-1.5 border-red-300 text-red-600"
+                          className="mt-3 gap-1.5 border-red-300 text-red-600 min-h-[44px]"
                           disabled={isGenerating}
                         >
                           {isGenerating ? (

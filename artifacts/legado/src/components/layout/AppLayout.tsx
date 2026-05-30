@@ -219,13 +219,12 @@ function NavItem({ item, onClick, mobile = false }: { item: ModuleItem; onClick?
   );
 }
 
-// Bottom nav items shown on mobile (up to 4, filtered by role, + Menú)
+// Bottom nav items shown on mobile (up to 4, filtered by role, + Más)
 const BOTTOM_NAV: Array<{ name: string; href: string; icon: React.ElementType; roles?: ModuleRole[] }> = [
-  { name: "Inicio",      href: "/dashboard",           icon: LayoutDashboard },
-  { name: "Inventario",  href: "/inventory",            icon: ClipboardList },
-  { name: "Suministros", href: "/supplies",             icon: PackageSearch,  roles: ["operator","supervisor","admin"] },
-  { name: "Correos",     href: "/email-notifications",  icon: Mail,           roles: ["operator","supervisor","admin"] },
-  { name: "Reportes",    href: "/reports",              icon: BarChart2 },
+  { name: "Inicio",      href: "/dashboard",    icon: LayoutDashboard },
+  { name: "Escáner",     href: "/scanner",      icon: Scan },
+  { name: "Picking",     href: "/picking",      icon: PackageCheck },
+  { name: "Ubicaciones", href: "/locations",    icon: MapPin },
 ];
 
 function MobileBottomNav({ onMenuOpen }: { onMenuOpen: () => void }) {

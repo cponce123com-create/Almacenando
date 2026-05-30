@@ -280,7 +280,7 @@ export default function MapaDelAlmacenPage() {
 
       {/* Rack Products Dialog */}
       <Dialog open={!!selectedRack} onOpenChange={(open) => !open && setSelectedRack(null)}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package className="w-5 h-5 text-emerald-500" />
