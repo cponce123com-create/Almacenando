@@ -84,8 +84,6 @@ const api = async (path: string, opts?: RequestInit) => {
 
 export default function MapaDelAlmacenPage() {
   const { warehouse, setWarehouse } = useWarehouse();
-  const { toast: _toast } = useAuth();
-  const { user: _user } = useAuth();
 
   const [selectedRack, setSelectedRack] = useState<Rack | null>(null);
   const [filterWarehouse, setFilterWarehouse] = useState<string>(warehouse);
