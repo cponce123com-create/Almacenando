@@ -167,15 +167,18 @@ router.post(
 
       if (!order) throw new Error("Error al crear la orden de picking");
 
-      for (const item of enrichedItems) {
-        await tx.insert(pickItemsTable).values({
-          id: generateId(),
-          orderId,
-          productId: item.productId,
-          quantity: item.quantity,
-          locationId: item.locationId,
-        });
-      }
+      // FIX: Bulk insert ALL items in ONE query instead of N individual inserts.
+      // Before: for (const item of enrichedItems) { await tx.insert(...) }
+      // After:  single tx.insert with an array of values.
+      const itemValues = enrichedItems.map((item) => ({
+        id: generateId(),
+        orderId,
+        productId: item.productId,
+        quantity: item.quantity,
+        locationId: item.locationId,
+      }));
+
+      await tx.insert(pickItemsTable).values(itemValues);
 
       createdItems = await tx
         .select()

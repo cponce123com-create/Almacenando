@@ -99,12 +99,33 @@ export function useAuth() {
     return result.user;
   };
 
-  const logout = () => {
+  // ---------------------------------------------------------------------------
+  // FIX: logout now calls POST /api/auth/logout so the server revokes the JWT
+  // and adds it to the blocklist. Without this call, the token stays valid
+  // for up to 8 hours even after the user "logged out".
+  // ---------------------------------------------------------------------------
+  const logout = async () => {
+    const currentToken = memoryToken;
+
+    // Clear local state immediately so the UI responds instantly
     memoryToken = null;
     writeTokenToStorage(null);
     setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();
+
+    // Revoke the token on the server (fire-and-forget, non-blocking)
+    if (currentToken) {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${currentToken}` },
+        });
+      } catch {
+        // Network error during logout — token will expire naturally after 8h.
+        // Local session is already cleared so the user is effectively logged out.
+      }
+    }
   };
 
   return {
@@ -113,6 +134,7 @@ export function useAuth() {
     isAuthenticated: !!user,
     login,
     logout,
+    error,
   };
 }
 

@@ -165,56 +165,122 @@ router.post(
   "/import",
   requireAuth,
   requireRole("supervisor", "admin", "operator"),
-  upload.single("file"), asyncHandler(async (req, res) => {
-    if (!req.file) { res.status(400).json({ error: "No se recibió ningún archivo" }); return; }
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: "No se recibió ningún archivo" });
+      return;
+    }
+
     const defaultWarehouse = (req.query.warehouse as string) || "General";
+
     let rawRows: Record<string, unknown>[];
     try {
       rawRows = parseExcelBuffer(req.file.buffer).rawRows;
     } catch (e) {
-      res.status(400).json({ error: (e as Error).message }); return;
-    }
-    const headers = normalizeHeaders(rawRows);
-    const missingCols = REQUIRED_COLUMNS.filter(col => !headers.includes(col));
-    if (missingCols.length > 0) {
-      res.status(400).json({ error: `Columnas requeridas faltantes: ${missingCols.join(", ")}`, missing: missingCols });
+      res.status(400).json({ error: (e as Error).message });
       return;
     }
-    const normalizedRows = rawRows.map(row => {
+
+    const headers = normalizeHeaders(rawRows);
+    const missingCols = REQUIRED_COLUMNS.filter((col) => !headers.includes(col));
+    if (missingCols.length > 0) {
+      res.status(400).json({
+        error: `Columnas requeridas faltantes: ${missingCols.join(", ")}`,
+        missing: missingCols,
+      });
+      return;
+    }
+
+    const normalizedRows = rawRows.map((row) => {
       const n: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(row)) n[k.toLowerCase().trim().replace(/\s+/g, "_")] = v;
+      for (const [k, v] of Object.entries(row))
+        n[k.toLowerCase().trim().replace(/\s+/g, "_")] = v;
       return n;
     });
-    const existing = await db.select({ id: productsTable.id, code: productsTable.code, warehouse: productsTable.warehouse }).from(productsTable);
-    const existingMap = new Map(existing.map(p => [`${p.warehouse}::${p.code}`, p.id]));
-    let inserted = 0, updated = 0;
+
+    // Pre-validate all rows BEFORE touching the database.
+    const validRows: Array<{ rowNum: number; mapped: ReturnType<typeof rowToProduct> }> = [];
     const errors: Array<{ row: number; code: string; error: string }> = [];
+
     for (let i = 0; i < normalizedRows.length; i++) {
-      const row = normalizedRows[i]; const rowNum = i + 2;
-      try {
-        const mapped = rowToProduct(row, defaultWarehouse);
-        if (!mapped.code) { errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" }); continue; }
-        if (!mapped.name) { errors.push({ row: rowNum, code: mapped.code, error: "El campo 'descripcion' es obligatorio" }); continue; }
-        if (!mapped.unit) { errors.push({ row: rowNum, code: mapped.code, error: "El campo 'um' es obligatorio" }); continue; }
-        const key = `${mapped.warehouse}::${mapped.code}`;
-        const existingId = existingMap.get(key);
-        if (existingId) {
-          await db.update(productsTable).set({ ...mapped, updatedAt: new Date() }).where(eq(productsTable.id, existingId));
-          updated++;
-        } else {
-          const id = generateId();
-          await db.insert(productsTable).values({ id, ...mapped });
-          existingMap.set(key, id); inserted++;
-        }
-      } catch (err: unknown) {
-        const pgErr = err instanceof Error && "cause" in err ? (err as any).cause?.message : null;
-        const msg = pgErr ?? (err instanceof Error ? err.message : "Error desconocido");
-        const code = String(row.codigo ?? "").trim() || `fila ${rowNum}`;
-        errors.push({ row: rowNum, code, error: msg });
+      const row = normalizedRows[i]!;
+      const rowNum = i + 2;
+      const mapped = rowToProduct(row, defaultWarehouse);
+
+      if (!mapped.code) {
+        errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" });
+        continue;
       }
+      if (!mapped.name) {
+        errors.push({ row: rowNum, code: mapped.code, error: "El campo 'descripcion' es obligatorio" });
+        continue;
+      }
+      if (!mapped.unit) {
+        errors.push({ row: rowNum, code: mapped.code, error: "El campo 'um' es obligatorio" });
+        continue;
+      }
+      validRows.push({ rowNum, mapped });
     }
+
+    if (errors.length > 0 && validRows.length === 0) {
+      res.json({ inserted: 0, updated: 0, errors, total: normalizedRows.length });
+      return;
+    }
+
+    // ── FIX: Wrap ALL database writes in a single transaction ──────────────
+    let inserted = 0;
+    let updated = 0;
+
+    try {
+      await db.transaction(async (tx) => {
+        // Load existing products INSIDE the transaction for consistency
+        const existing = await tx
+          .select({ id: productsTable.id, code: productsTable.code, warehouse: productsTable.warehouse })
+          .from(productsTable);
+
+        const existingMap = new Map(existing.map((p) => [`${p.warehouse}::${p.code}`, p.id]));
+
+        const toInsert: Array<{ id: string } & ReturnType<typeof rowToProduct>> = [];
+        const toUpdate: Array<{ id: string; mapped: ReturnType<typeof rowToProduct> }> = [];
+
+        for (const { mapped } of validRows) {
+          const key = `${mapped.warehouse}::${mapped.code}`;
+          const existingId = existingMap.get(key);
+          if (existingId) {
+            toUpdate.push({ id: existingId, mapped });
+          } else {
+            const id = generateId();
+            toInsert.push({ id, ...mapped });
+            existingMap.set(key, id);
+          }
+        }
+
+        // Bulk insert new products (1 query instead of N)
+        if (toInsert.length > 0) {
+          await tx.insert(productsTable).values(toInsert);
+          inserted = toInsert.length;
+        }
+
+        // Individual updates (each targets a different row by ID)
+        for (const { id, mapped } of toUpdate) {
+          await tx
+            .update(productsTable)
+            .set({ ...mapped, updatedAt: new Date() })
+            .where(eq(productsTable.id, id));
+          updated++;
+        }
+      });
+    } catch (err: unknown) {
+      const pgErr = err instanceof Error && "cause" in err
+        ? (err as { cause?: { message?: string } }).cause?.message
+        : null;
+      const msg = pgErr ?? (err instanceof Error ? err.message : "Error desconocido");
+      errors.push({ row: 0, code: "TRANSACTION", error: `Error de base de datos: ${msg}. Ningún cambio fue guardado.` });
+    }
+
     res.json({ inserted, updated, errors, total: normalizedRows.length });
-  })
+  }),
 );
 
 async function checkProductDependencies(id: string) {
