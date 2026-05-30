@@ -41,7 +41,7 @@ services:
       - key: LOG_LEVEL
         value: info
 
-      # Email corporativo Gmail (SMTP)
+      # SMTP Gmail — notificaciones internas del almacén
       - key: SMTP_EMAIL
         sync: false          # Ej: almacen@tuempresa.com
       - key: SMTP_APP_PASSWORD
@@ -71,14 +71,10 @@ services:
       - key: ADMIN_PASSWORD
         sync: false
 
-      # Email — Resend
+      # Resend — emails transaccionales (reset de contraseña)
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM_EMAIL
-        sync: false
-
-      # Email — SMTP Gmail
-      - key: SMTP_EMAIL
         sync: false
 
       # Notificaciones — destinatarios

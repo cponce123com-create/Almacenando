@@ -40,7 +40,7 @@ export function comparePassword(password: string, hash: string): Promise<boolean
 
 export function signToken(payload: { userId: string; email: string; role: WarehouseRole }): string {
   const jti = randomUUID();
-  return jwt.sign({ ...payload, jti }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign({ ...payload, jti }, JWT_SECRET, { expiresIn: JWT_EXPIRES_SECONDS });
 }
 
 type TokenPayload = { userId: string; email: string; role: WarehouseRole; jti: string; exp: number };
@@ -138,6 +138,3 @@ export function requireRole(...roles: WarehouseRole[]) {
     next();
   };
 }
-
-// Suppress unused warning (JWT_EXPIRES_SECONDS used for reference)
-void JWT_EXPIRES_SECONDS;

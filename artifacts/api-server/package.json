@@ -19,7 +19,6 @@
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.6.1",
     "compression": "^1.8.0",
-    "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "exceljs": "^4.4.0",
@@ -42,7 +41,6 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
-    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/helmet": "^4.0.0",

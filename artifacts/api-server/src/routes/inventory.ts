@@ -230,7 +230,7 @@ router.post(
 
     let boxEntries: { weight: string; lot: string }[] = [];
     if (parsed.data.boxesData) {
-      try { boxEntries = JSON.parse(parsed.data.boxesData); } catch { /* ignore */ }
+      try { boxEntries = JSON.parse(parsed.data.boxesData); } catch (err) { logger.warn({ err }, "boxesData JSON inválido — se ignorarán las cajas"); }
     }
     const activeBoxes = boxEntries.filter(b => b.weight && parseFloat(b.weight) > 0);
 

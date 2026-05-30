@@ -57,7 +57,25 @@ async function checkLowStock(): Promise<number> {
     const title = `Stock bajo: ${product.name}`;
     const message = `${product.name} (${product.code}) tiene ${product.stock} unidades, por debajo del mínimo de ${product.minimumStock}.`;
 
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
     for (const user of supervisors) {
+      // Evitar duplicados: saltar si ya existe una notificación no leída y reciente (< 24h)
+      const [existing] = await db
+        .select({ id: notificationsTable.id })
+        .from(notificationsTable)
+        .where(
+          and(
+            eq(notificationsTable.userId, user.id),
+            eq(notificationsTable.title, title),
+            eq(notificationsTable.isRead, false),
+            gte(notificationsTable.createdAt, twentyFourHoursAgo),
+          ),
+        )
+        .limit(1);
+
+      if (existing) continue;
+
       const id = generateId();
       await db.insert(notificationsTable).values({
         id,
@@ -117,6 +135,23 @@ async function checkExpiringLots(): Promise<number> {
     const message = `El lote ${lot.batchCode} de ${lot.productName} (${lot.productCode}) vence en ${daysLeft} días (${lot.expirationDate}).`;
 
     for (const user of qualityUsers) {
+      // Evitar duplicados: saltar si ya existe una notificación no leída y reciente (< 24h)
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const [existing] = await db
+        .select({ id: notificationsTable.id })
+        .from(notificationsTable)
+        .where(
+          and(
+            eq(notificationsTable.userId, user.id),
+            eq(notificationsTable.title, title),
+            eq(notificationsTable.isRead, false),
+            gte(notificationsTable.createdAt, twentyFourHoursAgo),
+          ),
+        )
+        .limit(1);
+
+      if (existing) continue;
+
       const id = generateId();
       await db.insert(notificationsTable).values({
         id,

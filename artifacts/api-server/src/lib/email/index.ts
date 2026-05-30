@@ -11,15 +11,6 @@ export { getEmailProviderStatus } from "./provider.js";
 // Helpers (no se exportaban públicamente antes — se agregan para testabilidad)
 export { smtpHeader, smtpFooter, smtpWrap, infoTable } from "./helpers.js";
 
-// Personal templates (Resend)
-export {
-  sendDeathReportEmail,
-  sendAccessLinkEmail,
-  sendEncryptionKeyEmail,
-  sendTrustedContactInviteEmail,
-  sendTimeCapsuleEmail,
-} from "./personal.js";
-
 // Notification templates (SMTP)
 export {
   sendLotChangeNotificationEmail,
