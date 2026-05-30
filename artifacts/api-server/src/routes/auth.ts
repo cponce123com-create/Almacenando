@@ -26,6 +26,20 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
+// Proyección explícita — evita cargar columnas sensibles (passwordHash, etc.)
+const userProjection = {
+  id: usersTable.id,
+  email: usersTable.email,
+  name: usersTable.name,
+  passwordHash: usersTable.passwordHash,
+  passwordResetToken: usersTable.passwordResetToken,
+  passwordResetExpiresAt: usersTable.passwordResetExpiresAt,
+  role: usersTable.role,
+  status: usersTable.status,
+  createdAt: usersTable.createdAt,
+  updatedAt: usersTable.updatedAt,
+};
+
 router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {

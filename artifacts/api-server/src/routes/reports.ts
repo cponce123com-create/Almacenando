@@ -110,15 +110,6 @@ router.get("/immobilized", requireAuth, asyncHandler(async (req, res) => {
   res.json(records);
 }));
 
-router.get("/samples", requireAuth, asyncHandler(async (req, res) => {
-  const { from, to, status } = req.query as Record<string, string | undefined>;
-  const dateFilter = buildDateFilter(samplesTable.sampleDate, from, to);
-  const statusFilter = status ? eq(samplesTable.status, status) : undefined;
-  const records = await db.select().from(samplesTable)
-    .where(and(dateFilter, statusFilter))
-    .orderBy(desc(samplesTable.sampleDate));
-  res.json(records);
-}));
 
 router.get("/disposition", requireAuth, asyncHandler(async (req, res) => {
   const { from, to, status } = req.query as Record<string, string | undefined>;

@@ -211,6 +211,8 @@ router.delete(
       .set({ photos, updatedAt: new Date() })
       .where(eq(immobilizedProductsTable.id, id as string)).returning();
 
+    const authedReq2 = req as AuthenticatedRequest;
+    void writeAuditLog({ userId: authedReq2.userId, action: "delete", resource: "immobilized_photo", resourceId: id, details: { photoIndex: idx }, ipAddress: req.ip });
     res.json(updated);
   })
 );
