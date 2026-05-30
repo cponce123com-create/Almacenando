@@ -1,0 +1,35 @@
+name: Backup PostgreSQL
+
+on:
+  schedule:
+    # Todos los domingos a las 6:00 AM UTC
+    - cron: "0 6 * * 0"
+  # También se puede ejecutar manualmente desde GitHub Actions
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Dump database
+        run: pg_dump "${{ secrets.DATABASE_URL }}" --no-owner --no-acl --format=custom -f backup_$(date +%Y-%m-%d).dump
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-db
+          path: backup_*.dump
+          retention-days: 90
+
+      - name: Restore from backup (manual trigger only)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.restore == 'true'
+        run: |
+          echo "Para restaurar: pg_restore --no-owner --dbname=\$DATABASE_URL backup_*.dump"
