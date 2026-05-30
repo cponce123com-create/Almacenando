@@ -8,9 +8,12 @@ services:
     # -----------------------------------------------------------------------
     # Build Command
     # -----------------------------------------------------------------------
+    # Nota: pnpm v11.5.0 tiene un bug que no respeta onlyBuiltDependencies.
+    # Solución: ignore-scripts=true y ejecutar esbuild installer manualmente.
     buildCommand: >
       rm -f pnpm-lock.yaml &&
       pnpm install --no-frozen-lockfile &&
+      node node_modules/esbuild/install.js &&
       BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/legado build &&
       pnpm --filter @workspace/api-server build &&
       pnpm --filter @workspace/db migrate
