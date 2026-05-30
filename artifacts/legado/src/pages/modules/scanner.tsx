@@ -85,7 +85,7 @@ export default function ScannerPage() {
       const data = await api(`/api/barcode/by-barcode/${encodeURIComponent(barcode)}`);
       setScanResult(data);
     } catch (err: unknown) {
-      setScanError((err as Error).message || "C\u00f3digo de barras no encontrado");
+      setScanError((err as Error).message || "Código de barras no encontrado");
     }
   }, []);
 
@@ -100,12 +100,12 @@ export default function ScannerPage() {
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
-        throw new Error(e.error ?? "Error al generar c\u00f3digo de barras");
+        throw new Error(e.error ?? "Error al generar código de barras");
       }
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "C\u00f3digo generado", description: "El c\u00f3digo de barras fue generado exitosamente." });
+      toast({ title: "Código generado", description: "El código de barras fue generado exitosamente." });
       qc.invalidateQueries({ queryKey: ["/api/barcode"] });
     },
     onError: (err: Error) => {
@@ -160,9 +160,9 @@ export default function ScannerPage() {
       );
       setScannerActive(true);
     } catch (err: unknown) {
-      const msg = (err as Error).message || "Error al iniciar la c\u00e1mara";
+      const msg = (err as Error).message || "Error al iniciar la cámara";
       setCameraError(msg);
-      toast({ title: "Error de c\u00e1mara", description: msg, variant: "destructive" });
+      toast({ title: "Error de cámara", description: msg, variant: "destructive" });
     }
   }, [lookupBarcode, toast]);
 
@@ -203,8 +203,8 @@ export default function ScannerPage() {
               <Scan className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Esc\u00e1ner de C\u00f3digos de Barras</h1>
-              <p className="text-slate-500 text-sm">Escanea productos para consultar informaci\u00f3n y ubicaci\u00f3n</p>
+              <h1 className="text-2xl font-bold text-slate-900">Escáner de Códigos de Barras</h1>
+              <p className="text-slate-500 text-sm">Escanea productos para consultar información y ubicación</p>
             </div>
           </div>
         </div>
@@ -217,7 +217,7 @@ export default function ScannerPage() {
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Camera className="w-4 h-4 text-blue-500" />
-                  Esc\u00e1ner de C\u00e1mara
+                  Escáner de Cámara
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -230,7 +230,7 @@ export default function ScannerPage() {
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-400 p-4">
                       <Camera className="w-12 h-12" />
                       <p className="text-sm text-center">
-                        Presiona "Iniciar Esc\u00e1ner" para activar la c\u00e1mara
+                        Presiona "Iniciar Escáner" para activar la cámara
                       </p>
                     </div>
                   )}
@@ -245,12 +245,12 @@ export default function ScannerPage() {
                   {!scannerActive ? (
                     <Button onClick={startScanner} className="gap-2 w-full" size="sm">
                       <Camera className="w-4 h-4" />
-                      Iniciar Esc\u00e1ner
+                      Iniciar Escáner
                     </Button>
                   ) : (
                     <Button onClick={stopScanner} variant="outline" className="gap-2 w-full" size="sm">
                       <CameraOff className="w-4 h-4" />
-                      Detener Esc\u00e1ner
+                      Detener Escáner
                     </Button>
                   )}
                 </div>
@@ -272,7 +272,7 @@ export default function ScannerPage() {
                     value={manualBarcode}
                     onChange={(e) => setManualBarcode(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleManualLookup()}
-                    placeholder="Ingresa c\u00f3digo de barras..."
+                    placeholder="Ingresa código de barras..."
                     className="flex-1 h-9 px-3 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
                   />
                   <Button onClick={handleManualLookup} size="sm" className="gap-1.5">
@@ -293,7 +293,7 @@ export default function ScannerPage() {
                     ) : (
                       <Barcode className="w-4 h-4" />
                     )}
-                    Generar C\u00f3digo de Barras
+                    Generar Código de Barras
                   </Button>
                 </CardContent>
               </Card>
@@ -311,7 +311,7 @@ export default function ScannerPage() {
                       <p className="font-medium text-red-700 text-sm">Producto no encontrado</p>
                       <p className="text-sm text-red-600 mt-1">{scanError}</p>
                       <p className="text-xs text-red-500 mt-2">
-                        C\u00f3digo escaneado: <strong>{scannedCode}</strong>
+                        Código escaneado: <strong>{scannedCode}</strong>
                       </p>
                       {canWrite && (
                         <Button
@@ -326,7 +326,7 @@ export default function ScannerPage() {
                           ) : (
                             <Barcode className="w-3.5 h-3.5" />
                           )}
-                          Generar c\u00f3digo de barras
+                          Generar código de barras
                         </Button>
                       )}
                     </div>
@@ -342,13 +342,13 @@ export default function ScannerPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Package className="w-4 h-4 text-emerald-500" />
-                      Informaci\u00f3n del Producto
+                      Información del Producto
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-500">C\u00f3digo</span>
+                        <span className="text-sm text-slate-500">Código</span>
                         <span className="font-mono text-sm font-medium text-slate-900">
                           {scanResult.product.code}
                         </span>
@@ -360,7 +360,7 @@ export default function ScannerPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-500">Categor\u00eda</span>
+                        <span className="text-sm text-slate-500">Categoría</span>
                         <Badge variant="outline" className="text-xs">
                           {scanResult.product.category}
                         </Badge>
@@ -372,7 +372,7 @@ export default function ScannerPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-500">C\u00f3digo Barras</span>
+                        <span className="text-sm text-slate-500">Código Barras</span>
                         <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">
                           {scanResult.product.barcode}
                         </span>
@@ -395,7 +395,7 @@ export default function ScannerPage() {
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base flex items-center gap-2">
                         <MapPin className="w-4 h-4 text-amber-500" />
-                        Ubicaci\u00f3n en Almac\u00e9n
+                        Ubicación en Almacén
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
@@ -403,7 +403,7 @@ export default function ScannerPage() {
                         <div className="bg-slate-50 rounded-lg p-3">
                           <p className="text-xs text-slate-500 mb-1">
                             <Warehouse className="w-3 h-3 inline mr-1" />
-                            Almac\u00e9n
+                            Almacén
                           </p>
                           <p className="text-sm font-semibold text-slate-800">
                             {scanResult.location.warehouse}
@@ -428,7 +428,7 @@ export default function ScannerPage() {
                           </p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-3 col-span-2">
-                          <p className="text-xs text-slate-500 mb-1">Posici\u00f3n</p>
+                          <p className="text-xs text-slate-500 mb-1">Posición</p>
                           <p className="text-sm font-semibold text-slate-800">
                             {scanResult.location.position}
                           </p>
@@ -445,9 +445,9 @@ export default function ScannerPage() {
                 <CardContent className="py-12">
                   <div className="flex flex-col items-center justify-center gap-3 text-slate-400">
                     <Barcode className="w-16 h-16" />
-                    <p className="text-sm font-medium">Escanea o ingresa un c\u00f3digo de barras</p>
+                    <p className="text-sm font-medium">Escanea o ingresa un código de barras</p>
                     <p className="text-xs text-slate-400 text-center max-w-sm">
-                      Los resultados del producto y su ubicaci\u00f3n se mostrar\u00e1n aqu\u00ed
+                      Los resultados del producto y su ubicación se mostrarán aquí
                     </p>
                   </div>
                 </CardContent>

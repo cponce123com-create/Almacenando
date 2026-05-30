@@ -176,14 +176,14 @@ export default function GestionDeUbicacionesPage() {
               <MapPin className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Gesti\u00f3n de Ubicaciones</h1>
-              <p className="text-slate-500 text-sm">Administraci\u00f3n de ubicaciones del almac\u00e9n</p>
+              <h1 className="text-2xl font-bold text-slate-900">Gestión de Ubicaciones</h1>
+              <p className="text-slate-500 text-sm">Administración de ubicaciones del almacén</p>
             </div>
           </div>
           {canWrite && (
             <Button onClick={() => setShowForm(true)} className="gap-2" size="sm">
               <Plus className="w-4 h-4" />
-              Nueva Ubicaci\u00f3n
+              Nueva Ubicación
             </Button>
           )}
         </div>
@@ -194,7 +194,7 @@ export default function GestionDeUbicacionesPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input
-                placeholder="Buscar por almac\u00e9n, zona, rack, estante..."
+                placeholder="Buscar por almacén, zona, rack, estante..."
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
@@ -223,12 +223,12 @@ export default function GestionDeUbicacionesPage() {
               <MapPin className="w-10 h-10" />
               <p className="text-sm font-medium">
                 {search
-                  ? "No hay ubicaciones que coincidan con la b\u00fasqueda"
-                  : "No hay ubicaciones registradas a\u00fan"}
+                  ? "No hay ubicaciones que coincidan con la búsqueda"
+                  : "No hay ubicaciones registradas aún"}
               </p>
               {canWrite && !search && (
                 <Button variant="outline" size="sm" onClick={() => setShowForm(true)} className="gap-2 mt-1">
-                  <Plus className="w-4 h-4" /> Crear primera ubicaci\u00f3n
+                  <Plus className="w-4 h-4" /> Crear primera ubicación
                 </Button>
               )}
             </div>
@@ -237,11 +237,11 @@ export default function GestionDeUbicacionesPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
-                    <TableHead className="font-semibold text-slate-600 w-20">Almac\u00e9n</TableHead>
+                    <TableHead className="font-semibold text-slate-600 w-20">Almacén</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-20">Zona</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-24">Rack</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-20">Estante</TableHead>
-                    <TableHead className="font-semibold text-slate-600 w-20">Posici\u00f3n</TableHead>
+                    <TableHead className="font-semibold text-slate-600 w-20">Posición</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-24">Tipo</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-24">Cerca Balanza</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-20 text-center">Activo</TableHead>
@@ -275,7 +275,7 @@ export default function GestionDeUbicacionesPage() {
                         {loc.isActive ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
                             <CheckCircle2 className="w-3 h-3" />
-                            S\u00ed
+                            Sí
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-medium">
@@ -295,7 +295,7 @@ export default function GestionDeUbicacionesPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
               <p className="text-xs text-slate-500">
-                Mostrando {(page - 1) * perPage + 1}\u2013{Math.min(page * perPage, filtered.length)} de{" "}
+                Mostrando {(page - 1) * perPage + 1}–{Math.min(page * perPage, filtered.length)} de{" "}
                 {filtered.length} ubicaciones
               </p>
               <div className="flex items-center gap-1">
@@ -328,7 +328,7 @@ export default function GestionDeUbicacionesPage() {
       <Dialog open={showForm} onOpenChange={setShowForm}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Nueva Ubicaci\u00f3n</DialogTitle>
+            <DialogTitle>Nueva Ubicación</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             {formError && (
@@ -338,7 +338,7 @@ export default function GestionDeUbicacionesPage() {
             )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="loc-warehouse">Almac\u00e9n *</Label>
+                <Label htmlFor="loc-warehouse">Almacén *</Label>
                 <Select
                   value={form.warehouse}
                   onValueChange={(v) => setForm((f) => ({ ...f, warehouse: v }))}
@@ -387,7 +387,7 @@ export default function GestionDeUbicacionesPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="loc-position">Posici\u00f3n *</Label>
+                <Label htmlFor="loc-position">Posición *</Label>
                 <Input
                   id="loc-position"
                   value={form.position}
@@ -436,7 +436,7 @@ export default function GestionDeUbicacionesPage() {
                   Guardando...
                 </>
               ) : (
-                "Crear Ubicaci\u00f3n"
+                "Crear Ubicación"
               )}
             </Button>
           </DialogFooter>

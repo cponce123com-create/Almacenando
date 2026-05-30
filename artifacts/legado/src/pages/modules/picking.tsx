@@ -294,8 +294,8 @@ export default function PreparacionDePedidosPage() {
       );
     } catch (err: unknown) {
       toast({
-        title: "Error de c\u00e1mara",
-        description: (err as Error).message || "No se pudo iniciar la c\u00e1mara",
+        title: "Error de cámara",
+        description: (err as Error).message || "No se pudo iniciar la cámara",
         variant: "destructive",
       });
     }
@@ -344,8 +344,8 @@ export default function PreparacionDePedidosPage() {
               <PackageCheck className="w-6 h-6 text-teal-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Preparaci\u00f3n de Pedidos</h1>
-              <p className="text-slate-500 text-sm">Gesti\u00f3n de \u00f3rdenes de picking</p>
+              <h1 className="text-2xl font-bold text-slate-900">Preparación de Pedidos</h1>
+              <p className="text-slate-500 text-sm">Gestión de órdenes de picking</p>
             </div>
           </div>
         </div>
@@ -354,7 +354,7 @@ export default function PreparacionDePedidosPage() {
         <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
           {[
             { id: "create" as const, label: "Crear Orden", icon: Plus },
-            { id: "orders" as const, label: "\u00d3rdenes Activas", icon: ListTodo },
+            { id: "orders" as const, label: "Órdenes Activas", icon: ListTodo },
             { id: "detail" as const, label: "Detalle de Orden", icon: Eye },
           ].map((t) => {
             const Icon = t.icon;
@@ -413,7 +413,7 @@ export default function PreparacionDePedidosPage() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-slate-50">
-                        <TableHead className="font-semibold text-slate-600 w-24">C\u00f3digo</TableHead>
+                        <TableHead className="font-semibold text-slate-600 w-24">Código</TableHead>
                         <TableHead className="font-semibold text-slate-600">Producto</TableHead>
                         <TableHead className="font-semibold text-slate-600 w-24 text-right">Stock Disp.</TableHead>
                         <TableHead className="font-semibold text-slate-600 w-24 text-right">Cantidad</TableHead>
@@ -483,7 +483,7 @@ export default function PreparacionDePedidosPage() {
                 <div className="relative mb-3">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <Input
-                    placeholder="Buscar por c\u00f3digo o nombre..."
+                    placeholder="Buscar por código o nombre..."
                     value={productSearch}
                     onChange={(e) => setProductSearch(e.target.value)}
                     className="pl-9"
@@ -544,12 +544,12 @@ export default function PreparacionDePedidosPage() {
             {ordersLoading ? (
               <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Cargando \u00f3rdenes...
+                Cargando órdenes...
               </div>
             ) : orders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
                 <PackageCheck className="w-10 h-10" />
-                <p className="text-sm font-medium">No hay \u00f3rdenes de picking</p>
+                <p className="text-sm font-medium">No hay órdenes de picking</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -638,10 +638,10 @@ export default function PreparacionDePedidosPage() {
               <div className="bg-white rounded-xl border border-slate-100 p-8 text-center">
                 <div className="flex flex-col items-center gap-3 text-slate-400">
                   <Eye className="w-10 h-10" />
-                  <p className="text-sm font-medium">Selecciona una orden de la lista de \u00f3rdenes activas</p>
+                  <p className="text-sm font-medium">Selecciona una orden de la lista de órdenes activas</p>
                   <Button variant="outline" size="sm" onClick={() => setTab("orders")} className="gap-1.5">
                     <ListTodo className="w-3.5 h-3.5" />
-                    Ver \u00f3rdenes
+                    Ver órdenes
                   </Button>
                 </div>
               </div>
@@ -678,7 +678,7 @@ export default function PreparacionDePedidosPage() {
                       className="gap-1.5"
                     >
                       <ListTodo className="w-3.5 h-3.5" />
-                      Volver a \u00f3rdenes
+                      Volver a órdenes
                     </Button>
                   </div>
 
@@ -803,7 +803,7 @@ export default function PreparacionDePedidosPage() {
                                     value={manualBarcode}
                                     onChange={(e) => setManualBarcode(e.target.value)}
                                     onKeyDown={(e) => e.key === "Enter" && handleManualScan(item.id)}
-                                    placeholder="O ingresa c\u00f3digo manualmente..."
+                                    placeholder="O ingresa código manualmente..."
                                     className="flex-1 h-8 px-2.5 rounded-md border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-teal-500/40"
                                   />
                                   <Button

@@ -132,8 +132,8 @@ export default function MapaDelAlmacenPage() {
               <Map className="w-6 h-6 text-amber-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Mapa del Almac\u00e9n</h1>
-              <p className="text-slate-500 text-sm">Visualizaci\u00f3n de racks y ubicaciones</p>
+              <h1 className="text-2xl font-bold text-slate-900">Mapa del Almacén</h1>
+              <p className="text-slate-500 text-sm">Visualización de racks y ubicaciones</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -143,7 +143,7 @@ export default function MapaDelAlmacenPage() {
               onValueChange={(v) => setFilterWarehouse(v)}
             >
               <SelectTrigger className="h-8 w-32 text-xs">
-                <SelectValue placeholder="Almac\u00e9n" />
+                <SelectValue placeholder="Almacén" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
@@ -190,7 +190,7 @@ export default function MapaDelAlmacenPage() {
         {isLoading ? (
           <div className="flex items-center justify-center py-20 gap-3 text-slate-500">
             <Loader2 className="w-6 h-6 animate-spin" />
-            Cargando mapa del almac\u00e9n...
+            Cargando mapa del almacén...
           </div>
         ) : racks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
@@ -225,7 +225,7 @@ export default function MapaDelAlmacenPage() {
                       <button
                         key={rack.id}
                         onClick={() => setSelectedRack(rack)}
-                        aria-label={`Rack ${rack.rack} en zona ${rack.zone}, almac\u00e9n ${rack.warehouse}`}
+                        aria-label={`Rack ${rack.rack} en zona ${rack.zone}, almacén ${rack.warehouse}`}
                         className="text-left group"
                         style={{
                           backgroundColor: color.bg,
