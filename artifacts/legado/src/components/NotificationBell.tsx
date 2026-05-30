@@ -54,7 +54,7 @@ export function NotificationBell() {
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
       }).then(r => { if (!r.ok) throw new Error("Error"); return r.json(); }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/notifications/unread"] });
+      qc.setQueryData(["/api/notifications/unread"], []);
       toast({ title: "Notificaciones leídas", description: "Todas las notificaciones fueron marcadas como leídas." });
     },
     onError: (err: Error) => {

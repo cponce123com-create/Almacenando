@@ -381,13 +381,18 @@ router.post(
  */
 router.post("/mark-all-read", requireAuth, asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
+  const isAdmin = authedReq.userRole === "admin";
+
+  const conditions: ReturnType<typeof eq>[] = [eq(notificationsTable.isRead, false)];
+  // Admin marks all notifications as read; non-admin marks only their own
+  if (!isAdmin) conditions.push(eq(notificationsTable.userId, authedReq.userId));
 
   await db
     .update(notificationsTable)
     .set({ isRead: true })
-    .where(and(eq(notificationsTable.userId, authedReq.userId), eq(notificationsTable.isRead, false)));
+    .where(and(...conditions));
 
-  res.json({ message: "Notificaciones marcadas como leidas" });
+  res.json({ message: "Notificaciones marcadas como leídas" });
 }));
 
 export default router;
