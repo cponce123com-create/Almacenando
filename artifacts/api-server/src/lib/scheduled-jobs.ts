@@ -133,7 +133,7 @@ async function checkExpiringLots(): Promise<number> {
     .select({
       id: dyeLotsTable.id,
       productId: dyeLotsTable.productId,
-      batchCode: dyeLotsTable.batchCode,
+      batchCode: dyeLotsTable.lotNumber,
       expirationDate: dyeLotsTable.expirationDate,
       productName: productsTable.name,
       productCode: productsTable.code,
@@ -177,8 +177,8 @@ async function checkExpiringLots(): Promise<number> {
       (new Date(lot.expirationDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
     );
 
-    const title = `Lote próximo a vencer: ${lot.batchCode}`;
-    const message = `El lote ${lot.batchCode} de ${lot.productName} (${lot.productCode}) vence en ${daysLeft} días (${lot.expirationDate}).`;
+    const title = `Lote próximo a vencer: ${lot.lotNumber}`;
+    const message = `El lote ${lot.lotNumber} de ${lot.productName} (${lot.productCode}) vence en ${daysLeft} días (${lot.expirationDate}).`;
 
     for (const user of qualityUsers) {
       const key = `${user.id}::${title}`;

@@ -6,6 +6,9 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 // Envuelve cualquier handler async de Express para capturar errores
 // automáticamente y pasarlos al error handler global (app.ts).
 //
+// Generic R extends Request lets route handlers use typed request objects
+// like AuthenticatedRequest without triggering overload mismatches.
+//
 // Sin esto, si la base de datos lanza un error inesperado en una ruta async,
 // Express no lo captura y el servidor puede quedar colgado o responder sin
 // el formato de error correcto.
@@ -16,10 +19,10 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 //     res.json(data);
 //   }));
 // ---------------------------------------------------------------------------
-export function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
+export function asyncHandler<R extends Request>(
+  fn: (req: R, res: Response, next: NextFunction) => Promise<unknown>,
 ): RequestHandler {
   return (req, res, next) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
+    Promise.resolve(fn(req as R, res, next)).catch(next);
   };
 }

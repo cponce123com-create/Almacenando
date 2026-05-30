@@ -15,7 +15,7 @@ export const locationsTable = pgTable("locations", {
   position: text("position"),
   barcode: text("barcode").unique(),
   type: locationTypeEnum("type").notNull().default("rack"),
-  parentLocationId: text("parent_location_id").references(() => locationsTable.id),
+  parentLocationId: text("parent_location_id"),
   isActive: boolean("is_active").notNull().default(true),
   isNearScale: boolean("is_near_scale").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),

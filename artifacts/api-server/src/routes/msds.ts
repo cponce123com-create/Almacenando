@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, productsTable, balanceRecordsTable } from "@workspace/db";
 import type { Product } from "@workspace/db";
 import { eq, and, sql, asc, max } from "drizzle-orm";
+import type { JsonValue } from "drizzle-orm/pg-core";
 import ExcelJS from "exceljs";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -980,7 +981,7 @@ router.post("/:productId/extract", aiLimiter, requireAuth, requireRole("admin", 
 
   await db.update(productsTable)
     .set({
-      msdsExtractedData: extracted as unknown as import("drizzle-orm/pg-core").JsonValue,
+      msdsExtractedData: extracted as JsonValue,
       msdsExtractedAt: new Date(),
       updatedAt: new Date(),
     })

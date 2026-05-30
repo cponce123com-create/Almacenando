@@ -75,7 +75,10 @@ async function callGemini(prompt: string): Promise<string> {
   }
 
   const data = await res.json() as Record<string, unknown>;
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+  const candidates = data?.candidates as Array<Record<string, unknown>> | undefined;
+  const content = candidates?.[0]?.content as Record<string, unknown> | undefined;
+  const parts = content?.parts as Array<Record<string, unknown>> | undefined;
+  return (parts?.[0]?.text as string) ?? "{}";
 }
 
 // ── Sustancias a evaluar ──────────────────────────────────────────────────────
