@@ -10,6 +10,15 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { passwordSchema } from "../lib/password-schema.js";
 
+const userProjection = {
+  id: usersTable.id, email: usersTable.email,
+  name: usersTable.name, passwordHash: usersTable.passwordHash,
+  passwordResetToken: usersTable.passwordResetToken,
+  passwordResetExpiresAt: usersTable.passwordResetExpiresAt,
+  role: usersTable.role, status: usersTable.status,
+  createdAt: usersTable.createdAt, updatedAt: usersTable.updatedAt,
+};
+
 const router = Router();
 
 const loginSchema = z.object({
@@ -25,7 +34,7 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
   }
 
   const { email, password } = parsed.data;
-  const users = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+  const users = await db.select(userProjection).from(usersTable).where(eq(usersTable.email, email)).limit(1);
   if (users.length === 0) {
     res.status(401).json({ error: "Correo o contraseña incorrectos" });
     return;
@@ -70,7 +79,7 @@ router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
 
 router.get("/me", requireAuth, asyncHandler(async (req, res) => {
   const { userId } = req as AuthenticatedRequest;
-  const users = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  const users = await db.select(userProjection).from(usersTable).where(eq(usersTable.id, userId)).limit(1);
   if (users.length === 0) {
     res.status(401).json({ error: "Usuario no encontrado" });
     return;
@@ -107,7 +116,7 @@ router.put("/me", requireAuth, asyncHandler(async (req, res) => {
     return;
   }
 
-  const users = await db.select().from(usersTable).where(eq(usersTable.id, authedReq.userId)).limit(1);
+  const users = await db.select(userProjection).from(usersTable).where(eq(usersTable.id, authedReq.userId)).limit(1);
   if (users.length === 0) { res.status(404).json({ error: "Usuario no encontrado" }); return; }
   const user = users[0]!;
 
@@ -162,7 +171,7 @@ router.post("/reset-password", passwordResetLimiter, asyncHandler(async (req, re
   const { token, newPassword } = parsed.data;
   const tokenHash = createHash("sha256").update(token).digest("hex");
 
-  const users = await db.select().from(usersTable)
+  const users = await db.select(userProjection).from(usersTable)
     .where(eq(usersTable.passwordResetToken, tokenHash))
     .limit(1);
 

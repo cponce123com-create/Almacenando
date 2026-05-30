@@ -51,7 +51,8 @@ export async function writeAuditLog({
 export async function cleanupOldAuditLogs(): Promise<void> {
   try {
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 180);
+    const retentionDays = parseInt(process.env.AUDIT_RETENTION_DAYS ?? "365", 10);
+    cutoff.setDate(cutoff.getDate() - retentionDays);
     await db.delete(auditLogsTable).where(lt(auditLogsTable.createdAt, cutoff));
   } catch { logger.warn("Audit log cleanup failed"); }
 }

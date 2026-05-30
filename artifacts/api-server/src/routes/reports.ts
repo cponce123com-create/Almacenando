@@ -25,7 +25,7 @@ function buildDateFilter(col: unknown, from?: string, to?: string) {
   return filters.length > 0 ? and(...filters) : undefined;
 }
 
-router.get("/summary", requireAuth, asyncHandler(async (_req, res) => {
+router.get("/summary", requireAuth, requireRole("admin", "supervisor", "quality", "operator"), asyncHandler(async (_req, res) => {
   const [productCount] = await db.select({ total: count() }).from(productsTable);
   const [inventoryCount] = await db.select({ total: count() }).from(inventoryRecordsTable);
   const [immobilizedCount] = await db.select({ total: count() }).from(immobilizedProductsTable);

@@ -56,6 +56,11 @@ function getAllowedOrigins(): string[] {
   return origins;
 }
 
+// Warn if APP_URL is not configured in production
+if (process.env.NODE_ENV === "production" && !process.env.APP_URL) {
+  logger.warn("APP_URL not configured — CORS will reject all requests with an Origin header. Set APP_URL in your environment.");
+}
+
 app.use(
   pinoHttp({
     logger,
