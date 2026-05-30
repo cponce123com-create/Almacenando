@@ -88,7 +88,7 @@ export default function MapaDelAlmacenPage() {
   const [selectedRack, setSelectedRack] = useState<Rack | null>(null);
   const [filterWarehouse, setFilterWarehouse] = useState<string>(warehouse);
 
-  const { data: racks = [], isLoading } = useQuery<Rack[]>({
+  const { data: racks = [], isLoading, error: racksError } = useQuery<Rack[]>({
     queryKey: ["/api/locations/racks", filterWarehouse],
     queryFn: () => {
       const params = filterWarehouse && filterWarehouse !== "all" ? `?warehouse=${filterWarehouse}` : "";
@@ -189,9 +189,14 @@ export default function MapaDelAlmacenPage() {
           <div className="flex items-center justify-center py-20 gap-3 text-slate-500">
             <Loader2 className="w-6 h-6 animate-spin" />
             Cargando mapa del almacén...
-          </div>
-        ) : racks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+            </div>
+            ) : racksError ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+            <Map className="w-12 h-12 opacity-40" />
+            <p className="text-sm font-medium text-amber-600">No se pudieron cargar los racks</p>
+            <p className="text-xs text-slate-400">Primero debes crear ubicaciones en la sección Ubicaciones</p>
+            </div>
+            ) : racks.length === 0 ? (          <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
             <Map className="w-12 h-12" />
             <p className="text-sm font-medium">No hay racks registrados</p>
           </div>
