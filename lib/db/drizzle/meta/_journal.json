@@ -64,20 +64,6 @@
       "when": 1775200000000,
       "tag": "0008_numeric_to_double_precision",
       "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1775300000000,
-      "tag": "0009_fk_performance_indexes",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1775400000000,
-      "tag": "0010_locations_picking_notifications",
-      "breakpoints": true
     }
   ]
 }
