@@ -6,6 +6,15 @@ on:
     - cron: "0 6 * * 0"
   # También se puede ejecutar manualmente desde GitHub Actions
   workflow_dispatch:
+    inputs:
+      restore:
+        description: '¿Restaurar desde el último backup? (escribe "true" para confirmar)'
+        required: false
+        default: "false"
+      backup_filename:
+        description: "Nombre del archivo de backup a restaurar (ej: backup_2026-05-25.dump). Déjalo vacío para usar el más reciente."
+        required: false
+        default: ""
 
 jobs:
   backup:
@@ -18,18 +27,52 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
 
       - name: Dump database
-        run: pg_dump "${{ secrets.DATABASE_URL }}" --no-owner --no-acl --format=custom -f backup_$(date +%Y-%m-%d).dump
+        if: github.event.inputs.restore != 'true'
+        run: pg_dump "$DATABASE_URL" --no-owner --no-acl --format=custom -f backup_$(date +%Y-%m-%d).dump
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Upload artifact
+        if: github.event.inputs.restore != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: backup-db
+          name: backup-db-${{ github.run_id }}
           path: backup_*.dump
           retention-days: 90
 
-      - name: Restore from backup (manual trigger only)
+      # -----------------------------------------------------------------------
+      # RESTORE — solo se ejecuta cuando el usuario activa el workflow manualmente
+      # y escribe "true" en el input "restore".
+      # ADVERTENCIA: Esto sobreescribe la base de datos actual. Úsalo con cuidado.
+      # -----------------------------------------------------------------------
+      - name: Download latest backup artifact (for restore)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.restore == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: backup-db-${{ github.run_id }}
+          path: ./restore
+
+      - name: Restore from backup
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.restore == 'true'
         run: |
-          echo "Para restaurar: pg_restore --no-owner --dbname=\$DATABASE_URL backup_*.dump"
+          echo "⚠️  RESTAURANDO BASE DE DATOS — esto sobreescribirá todos los datos actuales."
+          BACKUP_FILE="${{ github.event.inputs.backup_filename }}"
+          if [ -z "$BACKUP_FILE" ]; then
+            BACKUP_FILE=$(ls -t restore/*.dump 2>/dev/null | head -1)
+          fi
+          if [ -z "$BACKUP_FILE" ]; then
+            echo "❌ No se encontró ningún archivo de backup para restaurar."
+            exit 1
+          fi
+          echo "Restaurando desde: $BACKUP_FILE"
+          pg_restore --no-owner --no-acl --clean --if-exists 
+            --dbname="$DATABASE_URL" 
+            "$BACKUP_FILE"
+          echo "✅ Restauración completada."
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::El job de backup/restore falló. Revisa los logs para más detalles."

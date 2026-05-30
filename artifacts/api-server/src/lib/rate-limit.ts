@@ -50,6 +50,20 @@ export const passwordResetLimiter = rateLimit({
   skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
 });
 
+/**
+ * 20 AI/LLM requests per 15 minutes per IP.
+ * Applies to /api/compatibility, /api/msds/:productId/extract and any other Gemini-backed route.
+ * This prevents cost spikes from abusive or accidental looping clients.
+ */
+export const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Demasiadas consultas de IA. Espera 15 minutos antes de intentar de nuevo." },
+  skip: () => process.env.NODE_ENV !== "production" && process.env.DISABLE_RATE_LIMIT === "true",
+});
+
 /** 500 requests per 15 minutes per IP — general API catch-all */
 export const generalApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

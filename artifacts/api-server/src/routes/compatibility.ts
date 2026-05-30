@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../lib/auth.js";
 import { logger } from "../lib/logger.js";
+import { aiLimiter } from "../lib/rate-limit.js";
 import { createHash } from "crypto";
 
 const router = Router();
@@ -94,7 +95,7 @@ const SUBSTANCES = [
 ];
 
 // ── Ruta POST /api/compatibility/ai-analyze ───────────────────────────────────
-router.post("/ai-analyze", requireAuth, async (req, res) => {
+router.post("/ai-analyze", aiLimiter, requireAuth, async (req, res) => {
   try {
     const { name, code, category } = req.body as {
       name?: string; code?: string; category?: string;
@@ -195,4 +196,3 @@ Reglas de incompatibilidad críticas individuales (prevalecen sobre la clase ONU
 });
 
 export default router;
- router;

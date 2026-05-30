@@ -6,7 +6,7 @@ import pinoHttp from "pino-http";
 import path from "path";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { generalApiLimiter } from "./lib/rate-limit.js";
+import { generalApiLimiter, aiLimiter } from "./lib/rate-limit.js";
 
 const app: Express = express();
 
@@ -28,8 +28,14 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "https://res.cloudinary.com", "https://drive.google.com"],
-      connectSrc: ["'self'"],
+      imgSrc: ["'self'", "https://res.cloudinary.com", "https://drive.google.com", "data:"],
+      connectSrc: [
+        "'self'",
+        "https://res.cloudinary.com",
+        "https://api.cloudinary.com",
+        "https://drive.google.com",
+        "https://www.googleapis.com",
+      ],
     },
   },
 }));
@@ -91,9 +97,18 @@ app.use(cors({
   },
   credentials: true,
 }));
+app.use(compression());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
+// ---------------------------------------------------------------------------
+// Route-level rate limiting
+// AI routes get a tighter limit to protect against Gemini cost spikes.
+// General API routes use the catch-all limiter.
+// ---------------------------------------------------------------------------
+app.use("/api/compatibility", aiLimiter);
+app.use("/api/ai", aiLimiter);
+app.use("/api/msds", aiLimiter);
 app.use("/api", generalApiLimiter, router);
 
 // ---------------------------------------------------------------------------

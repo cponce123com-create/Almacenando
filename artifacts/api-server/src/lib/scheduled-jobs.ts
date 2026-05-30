@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { eq, lt, and, lte, gte, sql } from "drizzle-orm";
+import { eq, lt, and, lte, gte, sql, inArray } from "drizzle-orm";
 import { db, productsTable, dyeLotsTable, notificationsTable, usersTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { generateId } from "./id.js";
@@ -22,9 +22,33 @@ async function getUsersByRoles(roles: string[]): Promise<Array<{ id: string }>> 
     .from(usersTable)
     .where(
       roles.length === 1
-        ? eq(usersTable.role, roles[0])
+        ? eq(usersTable.role, roles[0]!)
         : sql`${usersTable.role} IN (${sql.join(roles.map((r) => sql`${r}`), sql`, `)})`,
     );
+}
+
+/**
+ * Fetches all recent (< 24h), unread notification titles for a list of users
+ * in a SINGLE query. Returns a Set of "userId::title" strings for O(1) lookup.
+ */
+async function getRecentNotificationKeys(
+  userIds: string[],
+  since: Date,
+): Promise<Set<string>> {
+  if (userIds.length === 0) return new Set();
+
+  const rows = await db
+    .select({ userId: notificationsTable.userId, title: notificationsTable.title })
+    .from(notificationsTable)
+    .where(
+      and(
+        inArray(notificationsTable.userId, userIds),
+        eq(notificationsTable.isRead, false),
+        gte(notificationsTable.createdAt, since),
+      ),
+    );
+
+  return new Set(rows.map((r) => `${r.userId}::${r.title}`));
 }
 
 async function checkLowStock(): Promise<number> {
@@ -51,42 +75,48 @@ async function checkLowStock(): Promise<number> {
   }
 
   const supervisors = await getUsersByRoles(SUPERVISOR_ROLES);
+  if (supervisors.length === 0) return 0;
+
+  const supervisorIds = supervisors.map((u) => u.id);
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  // ONE query to get all recent notifications — no more N+1
+  const recentKeys = await getRecentNotificationKeys(supervisorIds, twentyFourHoursAgo);
 
   let created = 0;
+  const inserts: Array<{
+    id: string;
+    userId: string;
+    title: string;
+    message: string;
+    type: string;
+    link: string;
+  }> = [];
+
   for (const product of lowStockProducts) {
     const title = `Stock bajo: ${product.name}`;
     const message = `${product.name} (${product.code}) tiene ${product.stock} unidades, por debajo del mínimo de ${product.minimumStock}.`;
 
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
     for (const user of supervisors) {
-      // Evitar duplicados: saltar si ya existe una notificación no leída y reciente (< 24h)
-      const [existing] = await db
-        .select({ id: notificationsTable.id })
-        .from(notificationsTable)
-        .where(
-          and(
-            eq(notificationsTable.userId, user.id),
-            eq(notificationsTable.title, title),
-            eq(notificationsTable.isRead, false),
-            gte(notificationsTable.createdAt, twentyFourHoursAgo),
-          ),
-        )
-        .limit(1);
+      const key = `${user.id}::${title}`;
+      if (recentKeys.has(key)) continue; // already notified recently
 
-      if (existing) continue;
-
-      const id = generateId();
-      await db.insert(notificationsTable).values({
-        id,
+      inserts.push({
+        id: generateId(),
         userId: user.id,
         title,
         message,
         type: "low_stock",
         link: `/products`,
       });
+      recentKeys.add(key); // prevent duplicates within this batch
       created++;
     }
+  }
+
+  // Bulk insert all new notifications in one shot
+  if (inserts.length > 0) {
+    await db.insert(notificationsTable).values(inserts);
   }
 
   logger.info({ count: lowStockProducts.length, notificationsCreated: created }, "Low-stock job completed");
@@ -124,8 +154,24 @@ async function checkExpiringLots(): Promise<number> {
   }
 
   const qualityUsers = await getUsersByRoles(QUALITY_ROLES);
+  if (qualityUsers.length === 0) return 0;
+
+  const qualityIds = qualityUsers.map((u) => u.id);
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  // ONE query for all recent notifications — no more N+1
+  const recentKeys = await getRecentNotificationKeys(qualityIds, twentyFourHoursAgo);
 
   let created = 0;
+  const inserts: Array<{
+    id: string;
+    userId: string;
+    title: string;
+    message: string;
+    type: string;
+    link: string;
+  }> = [];
+
   for (const lot of expiringLots) {
     const daysLeft = Math.ceil(
       (new Date(lot.expirationDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
@@ -135,34 +181,25 @@ async function checkExpiringLots(): Promise<number> {
     const message = `El lote ${lot.batchCode} de ${lot.productName} (${lot.productCode}) vence en ${daysLeft} días (${lot.expirationDate}).`;
 
     for (const user of qualityUsers) {
-      // Evitar duplicados: saltar si ya existe una notificación no leída y reciente (< 24h)
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const [existing] = await db
-        .select({ id: notificationsTable.id })
-        .from(notificationsTable)
-        .where(
-          and(
-            eq(notificationsTable.userId, user.id),
-            eq(notificationsTable.title, title),
-            eq(notificationsTable.isRead, false),
-            gte(notificationsTable.createdAt, twentyFourHoursAgo),
-          ),
-        )
-        .limit(1);
+      const key = `${user.id}::${title}`;
+      if (recentKeys.has(key)) continue;
 
-      if (existing) continue;
-
-      const id = generateId();
-      await db.insert(notificationsTable).values({
-        id,
+      inserts.push({
+        id: generateId(),
         userId: user.id,
         title,
         message,
         type: "expiring_lot",
         link: `/dye-lots`,
       });
+      recentKeys.add(key);
       created++;
     }
+  }
+
+  // Bulk insert in one shot
+  if (inserts.length > 0) {
+    await db.insert(notificationsTable).values(inserts);
   }
 
   logger.info({ count: expiringLots.length, notificationsCreated: created }, "Expiring lots job completed");

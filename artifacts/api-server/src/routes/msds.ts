@@ -5,6 +5,7 @@ import { eq, and, sql, asc, max } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
+import { aiLimiter } from "../lib/rate-limit.js";
 import { getDriveMsdsFiles, isMsdsDriveConfigured } from "../lib/google-drive.js";
 import { extractMsdsDataFromDrive } from "../lib/extract-msds-data.js";
 import { logger } from "../lib/logger.js";
@@ -952,7 +953,7 @@ router.post("/reset-all", requireAuth, requireRole("admin", "supervisor"), async
 // Downloads the linked MSDS PDF from Drive, extracts text, and uses AI to
 // parse the 7 key safety fields. Saves the result to the product record.
 
-router.post("/:productId/extract", requireAuth, requireRole("admin", "supervisor", "quality"), asyncHandler(async (req, res) => {
+router.post("/:productId/extract", aiLimiter, requireAuth, requireRole("admin", "supervisor", "quality"), asyncHandler(async (req, res) => {
   if (!guardDriveConfig(res as any)) return;
 
   const { productId } = req.params;
@@ -1008,4 +1009,3 @@ router.delete("/:productId/extract", requireAuth, requireRole("admin", "supervis
 }));
 
 export default router;
- router;
