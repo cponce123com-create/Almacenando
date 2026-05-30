@@ -34,6 +34,10 @@ const EmailNotificationsPage      = lazy(() => import("@/pages/modules/email-not
 const SuppliesPage                = lazy(() => import("@/pages/modules/supplies"));
 const SobrantesPage               = lazy(() => import("@/pages/modules/sobrantes"));
 const ProfilePage                 = lazy(() => import("@/pages/profile"));
+const LocationsPage               = lazy(() => import("@/pages/modules/locations"));
+const ScannerPage                 = lazy(() => import("@/pages/modules/scanner"));
+const PickingPage                 = lazy(() => import("@/pages/modules/picking"));
+const WarehouseMapPage            = lazy(() => import("@/pages/modules/warehouse-map"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -118,6 +122,10 @@ function Router() {
       <Route path="/supplies"><ProtectedRoute component={SuppliesPage} /></Route>
       <Route path="/sobrantes"><ProtectedRoute component={SobrantesPage} /></Route>
       <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
+      <Route path="/locations"><ProtectedRoute component={LocationsPage} /></Route>
+      <Route path="/scanner"><ProtectedRoute component={ScannerPage} /></Route>
+      <Route path="/picking"><ProtectedRoute component={PickingPage} /></Route>
+      <Route path="/warehouse-map"><ProtectedRoute component={WarehouseMapPage} /></Route>
 
       <Route component={NotFound} />
     </Switch>

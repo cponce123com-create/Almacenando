@@ -42,7 +42,7 @@ services:
         value: info
 
       # Email corporativo Gmail (SMTP)
-      - key: EMAIL_USER
+      - key: SMTP_EMAIL
         sync: false          # Ej: almacen@tuempresa.com
       - key: SMTP_APP_PASSWORD
         sync: false          # App Password de Google

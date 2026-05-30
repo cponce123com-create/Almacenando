@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { productsTable, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { productsTable, usersTable, notificationsTable } from "@workspace/db";
+import { eq, and, desc } from "drizzle-orm";
+import { generateId } from "../lib/id.js";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
@@ -286,6 +287,107 @@ router.get("/recipients", requireAuth, asyncHandler(async (_req, res) => {
     orderApproval: getOrderApprovalRecipient(),
     plasticBag: { to: bagTo, cc: bagCc },
   });
+}));
+
+// ── Notification CRUD ────────────────────────────────────────────────────────
+
+const createNotificationSchema = z.object({
+  userId: z.string().optional(),
+  title: z.string().min(1, "El titulo es requerido"),
+  message: z.string().min(1, "El mensaje es requerido"),
+  type: z.enum(["low_stock", "expiring_lot", "info", "warning"]).default("info"),
+  link: z.string().optional(),
+});
+
+/**
+ * @route GET /api/notifications/unread
+ * @description Obtiene notificaciones no leidas para el usuario actual. Si es admin, ve todas.
+ */
+router.get("/unread", requireAuth, asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
+  const isAdmin = authedReq.userRole === "admin";
+  const conditions = [eq(notificationsTable.isRead, false)];
+  if (!isAdmin) conditions.push(eq(notificationsTable.userId, authedReq.userId));
+
+  const notifications = await db
+    .select()
+    .from(notificationsTable)
+    .where(and(...conditions))
+    .orderBy(desc(notificationsTable.createdAt));
+
+  res.json(notifications);
+}));
+
+/**
+ * @route PUT /api/notifications/:id/read
+ * @description Marca una notificacion como leida.
+ */
+router.put("/:id/read", requireAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const authedReq = req as AuthenticatedRequest;
+
+  const [notification] = await db
+    .select()
+    .from(notificationsTable)
+    .where(eq(notificationsTable.id, id as string))
+    .limit(1);
+
+  if (!notification) { res.status(404).json({ error: "Notificacion no encontrada" }); return; }
+
+  if (notification.userId && notification.userId !== authedReq.userId && authedReq.userRole !== "admin") {
+    res.status(403).json({ error: "No tienes permiso para modificar esta notificacion" }); return;
+  }
+
+  const [updated] = await db
+    .update(notificationsTable)
+    .set({ isRead: true })
+    .where(eq(notificationsTable.id, id as string))
+    .returning();
+
+  res.json(updated);
+}));
+
+/**
+ * @route POST /api/notifications
+ * @description Crea una nueva notificacion (admin only).
+ */
+router.post(
+  "/",
+  requireAuth,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const authedReq = req as AuthenticatedRequest;
+    const parsed = createNotificationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos invalidos" });
+      return;
+    }
+
+    const id = generateId();
+    const [created] = await db
+      .insert(notificationsTable)
+      .values({ id, ...parsed.data, userId: parsed.data.userId ?? null, link: parsed.data.link ?? null })
+      .returning();
+
+    void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "notifications", resourceId: id, details: { title: parsed.data.title, type: parsed.data.type }, ipAddress: req.ip });
+    logger.info({ notificationId: id, title: parsed.data.title }, "Notification created");
+    res.status(201).json(created);
+  }),
+);
+
+/**
+ * @route POST /api/notifications/mark-all-read
+ * @description Marca todas las notificaciones como leidas para el usuario actual.
+ */
+router.post("/mark-all-read", requireAuth, asyncHandler(async (req, res) => {
+  const authedReq = req as AuthenticatedRequest;
+
+  await db
+    .update(notificationsTable)
+    .set({ isRead: true })
+    .where(and(eq(notificationsTable.userId, authedReq.userId), eq(notificationsTable.isRead, false)));
+
+  res.json({ message: "Notificaciones marcadas como leidas" });
 }));
 
 export default router;

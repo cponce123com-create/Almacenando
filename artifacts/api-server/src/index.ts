@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { seedWarehouseData, purgeDemoData } from "./lib/seed.js";
 import { cleanupExpiredTokens, hashPassword } from "./lib/auth.js";
 import { passwordSchema } from "./lib/password-schema.js";
+import { startScheduledJobs } from "./lib/scheduled-jobs.js";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { count } from "drizzle-orm";
@@ -106,6 +107,9 @@ const server = app.listen(port, async () => {
       logger.warn({ err }, "Error eliminando datos demo — el servidor continuará.");
     }
   }
+
+  // Iniciar jobs programados (alertas de stock bajo y lotes por vencer)
+  startScheduledJobs();
 });
 
 // ---------------------------------------------------------------------------

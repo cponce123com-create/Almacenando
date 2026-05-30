@@ -3,6 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
 import { usersTable } from "./users";
+import { locationsTable } from "./locations";
 
 export const inventoryRecordsTable = pgTable(
   "inventory_records",
@@ -19,6 +20,7 @@ export const inventoryRecordsTable = pgTable(
     photoUrl: text("photo_url"),
     responsible: text("responsible"),
     location: text("location"),
+    locationId: text("location_id").references(() => locationsTable.id),
     notes: text("notes"),
     registeredBy: text("registered_by").notNull().references(() => usersTable.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),

@@ -1,0 +1,167 @@
+import cron from "node-cron";
+import { eq, lt, and, lte, gte, sql } from "drizzle-orm";
+import { db, productsTable, dyeLotsTable, notificationsTable, usersTable } from "@workspace/db";
+import { logger } from "./logger.js";
+import { generateId } from "./id.js";
+
+/**
+ * Scheduled Jobs — Almacenando
+ *
+ * Se ejecutan diariamente a las 07:00 AM (hora local del servidor).
+ * - Verifica stock bajo en productos (stock < minimum_stock)
+ * - Verifica lotes próximos a vencer (dentro de 30 días)
+ * - Crea notificaciones en la BD para los usuarios correspondientes
+ */
+
+const SUPERVISOR_ROLES = ["admin", "supervisor"];
+const QUALITY_ROLES = ["admin", "quality"];
+
+async function getUsersByRoles(roles: string[]): Promise<Array<{ id: string }>> {
+  return db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(
+      roles.length === 1
+        ? eq(usersTable.role, roles[0])
+        : sql`${usersTable.role} IN (${sql.join(roles.map((r) => sql`${r}`), sql`, `)})`,
+    );
+}
+
+async function checkLowStock(): Promise<number> {
+  const lowStockProducts = await db
+    .select({
+      id: productsTable.id,
+      code: productsTable.code,
+      name: productsTable.name,
+      stock: productsTable.stock,
+      minimumStock: productsTable.minimumStock,
+    })
+    .from(productsTable)
+    .where(
+      and(
+        eq(productsTable.status, "active"),
+        lt(productsTable.stock, productsTable.minimumStock),
+      ),
+    )
+    .limit(100);
+
+  if (lowStockProducts.length === 0) {
+    logger.info("Scheduled job: no low-stock products found");
+    return 0;
+  }
+
+  const supervisors = await getUsersByRoles(SUPERVISOR_ROLES);
+
+  let created = 0;
+  for (const product of lowStockProducts) {
+    const title = `Stock bajo: ${product.name}`;
+    const message = `${product.name} (${product.code}) tiene ${product.stock} unidades, por debajo del mínimo de ${product.minimumStock}.`;
+
+    for (const user of supervisors) {
+      const id = generateId();
+      await db.insert(notificationsTable).values({
+        id,
+        userId: user.id,
+        title,
+        message,
+        type: "low_stock",
+        link: `/products`,
+      });
+      created++;
+    }
+  }
+
+  logger.info({ count: lowStockProducts.length, notificationsCreated: created }, "Low-stock job completed");
+  return created;
+}
+
+async function checkExpiringLots(): Promise<number> {
+  const thirtyDaysFromNow = new Date();
+  thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+  const now = new Date();
+
+  const expiringLots = await db
+    .select({
+      id: dyeLotsTable.id,
+      productId: dyeLotsTable.productId,
+      batchCode: dyeLotsTable.batchCode,
+      expirationDate: dyeLotsTable.expirationDate,
+      productName: productsTable.name,
+      productCode: productsTable.code,
+    })
+    .from(dyeLotsTable)
+    .innerJoin(productsTable, eq(dyeLotsTable.productId, productsTable.id))
+    .where(
+      and(
+        lte(dyeLotsTable.expirationDate, thirtyDaysFromNow.toISOString().slice(0, 10)),
+        gte(dyeLotsTable.expirationDate, now.toISOString().slice(0, 10)),
+      ),
+    )
+    .limit(100);
+
+  if (expiringLots.length === 0) {
+    logger.info("Scheduled job: no expiring lots found");
+    return 0;
+  }
+
+  const qualityUsers = await getUsersByRoles(QUALITY_ROLES);
+
+  let created = 0;
+  for (const lot of expiringLots) {
+    const daysLeft = Math.ceil(
+      (new Date(lot.expirationDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+    );
+
+    const title = `Lote próximo a vencer: ${lot.batchCode}`;
+    const message = `El lote ${lot.batchCode} de ${lot.productName} (${lot.productCode}) vence en ${daysLeft} días (${lot.expirationDate}).`;
+
+    for (const user of qualityUsers) {
+      const id = generateId();
+      await db.insert(notificationsTable).values({
+        id,
+        userId: user.id,
+        title,
+        message,
+        type: "expiring_lot",
+        link: `/dye-lots`,
+      });
+      created++;
+    }
+  }
+
+  logger.info({ count: expiringLots.length, notificationsCreated: created }, "Expiring lots job completed");
+  return created;
+}
+
+/**
+ * Inicializa los jobs programados.
+ * Se llama durante el arranque del servidor.
+ */
+export function startScheduledJobs(): void {
+  // Ejecutar diariamente a las 07:00 AM
+  cron.schedule("0 7 * * *", async () => {
+    logger.info("Starting scheduled jobs: low stock + expiring lots");
+
+    try {
+      const lowStockCount = await checkLowStock();
+      const expiringCount = await checkExpiringLots();
+      logger.info({ lowStockCount, expiringCount }, "Scheduled jobs completed");
+    } catch (err) {
+      logger.error({ err }, "Scheduled jobs failed");
+    }
+  });
+
+  logger.info("Scheduled jobs registered (daily at 07:00)");
+
+  // También ejecutar una verificación inicial al arrancar (con un pequeño retraso)
+  setTimeout(async () => {
+    logger.info("Running initial scheduled job check on startup");
+    try {
+      await checkLowStock();
+      await checkExpiringLots();
+    } catch (err) {
+      logger.error({ err }, "Initial scheduled job check failed");
+    }
+  }, 10_000);
+}

@@ -24,14 +24,19 @@ import {
   Warehouse,
   UserCog,
   ShieldCheck,
-  Bell,
+  Bell as BellIcon,
   PackageX,
   PackageSearch,
   Mail,
   ArchiveX,
+  MapPin,
+  Scan,
+  PackageCheck,
+  Map,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
+import { NotificationBell } from "@/components/NotificationBell";
 import {
   Select,
   SelectContent,
@@ -78,11 +83,15 @@ export const modules: Array<{
   { name: "Saldo Actualizado",    href: "/balances",     icon: Scale },
   { name: "Inventarios",          href: "/inventory",    icon: ClipboardList },
   { name: "Cuadre",               href: "/cuadre",       icon: Warehouse },
+  { name: "Ubicaciones",          href: "/locations",    icon: MapPin },
+  { name: "Escáner",              href: "/scanner",      icon: Scan },
+  { name: "Picking",              href: "/picking",      icon: PackageCheck },
+  { name: "Mapa Almacén",        href: "/warehouse-map", icon: Map },
   { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },
   { name: "Productos Sobrantes",  href: "/sobrantes",    icon: ArchiveX },
   { name: "Muestras",             href: "/samples",      icon: TestTube },
   { name: "Lotes / Tinturas",     href: "/dye-lots",     icon: Layers },
-  { name: "Cambio de Lote",       href: "/lot-change-notification",  icon: Bell,         roles: ["operator", "supervisor", "admin"] },
+  { name: "Cambio de Lote",       href: "/lot-change-notification",  icon: BellIcon,         roles: ["operator", "supervisor", "admin"] },
   { name: "Envío de Correos",     href: "/email-notifications",      icon: Mail,         roles: ["operator", "supervisor", "admin"] },
   { name: "Suministros",          href: "/supplies",                 icon: PackageSearch, roles: ["operator", "supervisor", "admin"] },
   { name: "Control de Lotes",     href: "/lot-evaluations", icon: Microscope },
@@ -418,7 +427,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </div>
 
             {/* Right side */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+
+              {/* Notification Bell */}
+              <NotificationBell />
 
               {/* Warehouse selector */}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

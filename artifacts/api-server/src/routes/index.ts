@@ -21,6 +21,10 @@ import surplusRouter from "./surplus";
 import permissionsRouter from "./permissions";
 import msdsRouter from "./msds";
 import compatibilityRouter from "./compatibility";
+import locationsRouter from "./locations.js";
+import barcodeRouter from "./barcode.js";
+import pickingRouter from "./picking.js";
+import reorganizationRouter from "./reorganization.js";
 
 const router: IRouter = Router();
 
@@ -46,5 +50,9 @@ router.use("/surplus", surplusRouter);
 router.use("/admin/permissions", permissionsRouter);
 router.use("/msds", msdsRouter);
 router.use("/compatibility", compatibilityRouter);
+router.use("/locations", locationsRouter);
+router.use("/barcode", barcodeRouter);
+router.use("/picking", pickingRouter);
+router.use("/reorganization", reorganizationRouter);
 
 export default router;

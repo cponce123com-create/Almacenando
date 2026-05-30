@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, doublePrecision, boolean, uniqueIndex, integer, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { locationsTable } from "./locations";
 
 export const productsTable = pgTable("products", {
   id: text("id").primaryKey(),
@@ -36,6 +37,10 @@ export const productsTable = pgTable("products", {
   // ── MSDS AI-extracted safety data ──────────────────────────────────────
   msdsExtractedData: jsonb("msds_extracted_data"),
   msdsExtractedAt: timestamp("msds_extracted_at"),
+  // ── Barcode y ubicación estructurada ───────────────────────────────────
+  barcode: text("barcode").unique(),
+  locationId: text("location_id").references(() => locationsTable.id),
+  stock: doublePrecision("stock").notNull().default(0),
   // ───────────────────────────────────────────────────────────────────────
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -17,3 +17,7 @@ export * from "./revoked-tokens";
 export * from "./supplies";
 export * from "./surplus-products";
 export * from "./user-permissions";
+export * from "./locations";
+export * from "./pick-orders";
+export * from "./pick-items";
+export * from "./pick-notifications";
