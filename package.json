@@ -17,6 +17,7 @@
     "prettier": "^3.8.1"
   },
   "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "core-js"],
     "overrides": {
       "path-to-regexp@8.3.0": "8.4.0",
       "picomatch@2.3.1": "2.3.2",
