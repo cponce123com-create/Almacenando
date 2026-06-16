@@ -229,6 +229,133 @@ function GroupSection({ group }: { group: typeof GROUPS[0] }) {
   );
 }
 
+// ── Analytics Section ──────────────────────────────────────────────────────────
+
+interface AnalyticsDashboard {
+  totals: { products: number; movements: number; immobilized: number; samples: number; lowStock: number; supplies: number; activeUsers: number };
+  alerts: { lowStock: number; immobilized: number };
+  warehouseDistribution: Array<{ warehouse: string; count: number }>;
+  recentMovements: Array<{ id: string; type: string; quantity: number; date: string; product: string | null }>;
+}
+
+function AnalyticsSection() {
+  const { data } = useQuery<AnalyticsDashboard>({
+    queryKey: ["/api/v1/analytics/dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/v1/analytics/dashboard", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    refetchInterval: 5 * 60 * 1000, // cada 5 min
+  });
+
+  if (!data) return null;
+
+  const totalInWarehouses = data.warehouseDistribution.reduce((s, w) => s + w.count, 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Alerts row */}
+      {(data.alerts.lowStock > 0 || data.alerts.immobilized > 0) && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {data.alerts.lowStock > 0 && (
+            <div style={{
+              background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10,
+              padding: "10px 14px", display: "flex", alignItems: "center", gap: 8, fontSize: 13,
+            }}>
+              <AlertTriangle style={{ width: 16, height: 16, color: "#dc2626", flexShrink: 0 }} />
+              <span style={{ color: "#991b1b", fontWeight: 600 }}>
+                {data.alerts.lowStock} producto{data.alerts.lowStock !== 1 ? "s" : ""} con stock bajo
+              </span>
+            </div>
+          )}
+          {data.alerts.immobilized > 0 && (
+            <div style={{
+              background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10,
+              padding: "10px 14px", display: "flex", alignItems: "center", gap: 8, fontSize: 13,
+            }}>
+              <AlertTriangle style={{ width: 16, height: 16, color: "#c2410c", flexShrink: 0 }} />
+              <span style={{ color: "#7c2d12", fontWeight: 600 }}>
+                {data.alerts.immobilized} producto{data.alerts.immobilized !== 1 ? "s" : ""} inmovilizado{data.alerts.immobilized !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Charts grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }} className="!grid-cols-1 sm:!grid-cols-2">
+
+        {/* Warehouse distribution bar chart */}
+        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16 }}>
+          <h3 style={{ fontSize: 12, fontWeight: 700, color: "#64748b", margin: "0 0 12px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            🏭 Productos por Almacén
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {data.warehouseDistribution.map((w) => {
+              const pct = totalInWarehouses > 0 ? (w.count / totalInWarehouses) * 100 : 0;
+              return (
+                <div key={w.warehouse}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
+                    <span style={{ fontWeight: 600, color: "#1e293b" }}>{w.warehouse}</span>
+                    <span style={{ color: "#64748b" }}>{w.count} ({Math.round(pct)}%)</span>
+                  </div>
+                  <div style={{ height: 8, background: "#f1f5f9", borderRadius: 4 }}>
+                    <div style={{
+                      height: 8, borderRadius: 4,
+                      width: `${pct}%`,
+                      background: "linear-gradient(90deg, #0d9488, #0891b2)",
+                      transition: "width 0.5s",
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Recent movements */}
+        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16 }}>
+          <h3 style={{ fontSize: 12, fontWeight: 700, color: "#64748b", margin: "0 0 12px 0", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            📋 Últimos Movimientos
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {data.recentMovements.slice(0, 6).map((m) => (
+              <div key={m.id} style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "6px 0",
+                borderBottom: "1px solid #f8fafc", fontSize: 12,
+              }}>
+                <div style={{
+                  width: 24, height: 24, borderRadius: 6, display: "flex",
+                  alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  fontSize: 10, fontWeight: 700,
+                  background: m.type === "entrada" ? "#dcfce7" : "#fee2e2",
+                  color: m.type === "entrada" ? "#16a34a" : "#dc2626",
+                }}>
+                  {m.type === "entrada" ? "E" : "S"}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, color: "#1e293b", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {m.product ?? "—"}
+                  </p>
+                  <p style={{ margin: 0, color: "#94a3b8", fontSize: 10 }}>
+                    {String(m.quantity)} · {m.date ? new Date(m.date).toLocaleDateString("es-SV") : ""}
+                  </p>
+                </div>
+              </div>
+            ))}
+            {data.recentMovements.length === 0 && (
+              <p style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 12 }}>
+                Sin movimientos recientes
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useAuth();
@@ -327,6 +454,9 @@ export default function Dashboard() {
             ))}
           </div>
         </div>
+
+        {/* ── ANALYTICS ──────────────────────────────────────────────── */}
+        <AnalyticsSection />
 
         {/* ── MODULE GROUPS ──────────────────────────────────────────── */}
         <div>
