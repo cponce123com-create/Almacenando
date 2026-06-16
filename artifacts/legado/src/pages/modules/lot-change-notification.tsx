@@ -44,7 +44,6 @@ const CONFIG = {
 
 // Destinatarios configurados en backend vía NOTIFY_LOT_CHANGE env var.
 // El frontend muestra la cantidad; los emails reales están en el servidor.
-const LOT_CHANGE_RECIPIENTS = [] as readonly string[];
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 interface Product {
@@ -196,6 +195,14 @@ export default function LotChangeNotificationPage() {
     gcTime: 30 * 60 * 1000,   // 30 minutos
   });
 
+  // ── Query: Destinatarios ──────────────────────────────────────────────────
+  const { data: recipientsData } = useQuery<{ lotChange: string[] }>({
+    queryKey: ["recipients"],
+    queryFn: () => api("/api/notifications/recipients"),
+    staleTime: 5 * 60 * 1000,
+  });
+  const lotChangeRecipients = recipientsData?.lotChange ?? [];
+
   // ── Filtro de productos con búsqueda ───────────────────────────────────────
   const filteredProducts = useMemo(() => {
     const baseFilter = allProducts.filter(
@@ -228,7 +235,7 @@ export default function LotChangeNotificationPage() {
     onSuccess: () => {
       toast({
         title: "✅ Notificación enviada",
-        description: `Se notificó el cambio de lote a ${LOT_CHANGE_RECIPIENTS.length} destinatarios.`,
+        description: `Se notificó el cambio de lote a ${lotChangeRecipients.length} destinatarios.`,
         duration: 5000,
       });
       reset();
@@ -538,12 +545,12 @@ export default function LotChangeNotificationPage() {
           <div className="flex items-center gap-2 mb-3">
             <Mail className="w-4 h-4 text-slate-500" aria-hidden="true" />
             <h2 id="recipients-heading" className="text-sm font-semibold text-slate-700">
-              Destinatarios del correo ({LOT_CHANGE_RECIPIENTS.length})
+              Destinatarios del correo ({lotChangeRecipients.length})
             </h2>
           </div>
           
           <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-2" role="list">
-            {LOT_CHANGE_RECIPIENTS.map((email) => (
+            {lotChangeRecipients.map((email) => (
               <li key={email} className="flex items-center gap-2 text-sm text-slate-600">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" aria-hidden="true" />
                 <span className="font-mono text-xs break-all">{email}</span>
