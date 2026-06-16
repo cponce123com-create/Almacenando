@@ -22,12 +22,16 @@ export async function sendLotChangeNotificationEmail({
   newLot,
   productionOrder,
   senderName,
+  to: explicitTo,
+  cc: explicitCc,
 }: {
   productName: string;
   oldLot: string;
   newLot: string;
   productionOrder: string;
   senderName: string;
+  to?: string[];
+  cc?: string[];
 }): Promise<void> {
   const subject = `Notificación de Cambio de Lote - ${productName}`;
 
@@ -56,12 +60,19 @@ Supervisor de Cocina Colores`;
 
   const resend = getResend();
   if (resend) {
-    const { getLotChangeRecipients } = await import("../email-recipients.js");
-    const to = getLotChangeRecipients();
+    let to: string[];
+    if (explicitTo && explicitTo.length > 0) {
+      to = explicitTo;
+    } else {
+      const { getLotChangeRecipients } = await import("../email-recipients.js");
+      to = getLotChangeRecipients();
+    }
+    const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
     if (to.length > 0) {
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
         to,
+        cc,
         subject,
         text,
       });

@@ -59,6 +59,8 @@ interface LotChangeForm {
   oldLot: string;
   newLot: string;
   productionOrder: string;
+  to: string;
+  cc: string;
 }
 
 type FormErrors = Partial<Record<keyof LotChangeForm, string>>;
@@ -102,6 +104,8 @@ const EMPTY_FORM: LotChangeForm = {
   oldLot: "",
   newLot: "",
   productionOrder: "",
+  to: "",
+  cc: "",
 };
 
 // ── Hook personalizado para validación del formulario ─────────────────────────
@@ -141,6 +145,26 @@ const useLotChangeForm = () => {
       newErrors.productionOrder = "La orden de producción es requerida";
     } else if (!/^[\w\-\.]+$/i.test(form.productionOrder.trim())) {
       newErrors.productionOrder = "Formato de orden inválido";
+    }
+
+    if (!form.to.trim()) {
+      newErrors.to = "Al menos un destinatario Para es requerido";
+    } else {
+      const toEmails = form.to.split(",").map((s) => s.trim()).filter(Boolean);
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const invalidTo = toEmails.find((e) => !emailRegex.test(e));
+      if (invalidTo) {
+        newErrors.to = `Email inválido: "${invalidTo}"`;
+      }
+    }
+
+    if (form.cc.trim()) {
+      const ccEmails = form.cc.split(",").map((s) => s.trim()).filter(Boolean);
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const invalidCc = ccEmails.find((e) => !emailRegex.test(e));
+      if (invalidCc) {
+        newErrors.cc = `Email CC inválido: "${invalidCc}"`;
+      }
     }
 
     setErrors(newErrors);
@@ -195,14 +219,6 @@ export default function LotChangeNotificationPage() {
     gcTime: 30 * 60 * 1000,   // 30 minutos
   });
 
-  // ── Query: Destinatarios ──────────────────────────────────────────────────
-  const { data: recipientsData } = useQuery<{ lotChange: string[] }>({
-    queryKey: ["recipients"],
-    queryFn: () => api("/api/notifications/recipients"),
-    staleTime: 5 * 60 * 1000,
-  });
-  const lotChangeRecipients = recipientsData?.lotChange ?? [];
-
   // ── Filtro de productos con búsqueda ───────────────────────────────────────
   const filteredProducts = useMemo(() => {
     const baseFilter = allProducts.filter(
@@ -227,15 +243,24 @@ export default function LotChangeNotificationPage() {
 
   // ── Mutación: Enviar notificación ──────────────────────────────────────────
   const sendMutation = useMutation({
-    mutationFn: () =>
-      api(CONFIG.API_ENDPOINTS.LOT_CHANGE, {
+    mutationFn: () => {
+      const { to, cc, ...rest } = form;
+      return api(CONFIG.API_ENDPOINTS.LOT_CHANGE, {
         method: "POST",
-        body: JSON.stringify(form),
-      }),
+        body: JSON.stringify({
+          ...rest,
+          to: to || undefined,
+          cc: cc || undefined,
+        }),
+      });
+    },
     onSuccess: () => {
+      const toList = form.to.split(",").map((s) => s.trim()).filter(Boolean);
+      const ccList = form.cc.split(",").map((s) => s.trim()).filter(Boolean);
+      const totalRecipients = toList.length + ccList.length;
       toast({
         title: "✅ Notificación enviada",
-        description: `Se notificó el cambio de lote a ${lotChangeRecipients.length} destinatarios.`,
+        description: `Se notificó el cambio de lote a ${totalRecipients} destinatario${totalRecipients !== 1 ? "s" : ""}.`,
         duration: 5000,
       });
       reset();
@@ -426,12 +451,73 @@ export default function LotChangeNotificationPage() {
             )}
           </div>
 
-          {/* Campos de Lotes (Grid) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Lote Antiguo */}
-            <div className="space-y-1.5">
-              <Label htmlFor="oldLot">
-                Lote Antiguo <span className="text-red-500" aria-hidden="true">*</span>
+          {/* Campos de destinatarios */}\
+          <div className="space-y-4">\
+            {/* Para */}\
+            <div className="space-y-1.5">\
+              <Label htmlFor="to">\
+                Para <span className="text-red-500" aria-hidden="true">*</span>\
+              </Label>\
+              <Input\
+                id="to"\
+                placeholder="email1@dominio.com, email2@dominio.com"\
+                value={form.to}\
+                onChange={(e) => setField("to", e.target.value)}\
+                onBlur={() => markTouched("to")}\
+                className={`h-10 ${\
+                  errors.to && touched.to\
+                    ? "border-red-400 focus-visible:ring-red-400"\
+                    : ""\
+                }`}\
+                aria-invalid={!!(errors.to && touched.to)}\
+                aria-describedby={errors.to && touched.to ? "to-error" : undefined}\
+                inputMode="email"\
+              />\
+              <p className="text-xs text-slate-400">Emails separados por coma</p>\
+              {errors.to && touched.to && (\
+                <p className="text-xs text-red-500 flex items-center gap-1" role="alert" id="to-error">\
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />\
+                  {errors.to}\
+                </p>\
+              )}\
+            </div>\
+\
+            {/* CC */}\
+            <div className="space-y-1.5">\
+              <Label htmlFor="cc">\
+                CC <span className="text-slate-400 font-normal">(opcional)</span>\
+              </Label>\
+              <Input\
+                id="cc"\
+                placeholder="email1@dominio.com, email2@dominio.com"\
+                value={form.cc}\
+                onChange={(e) => setField("cc", e.target.value)}\
+                onBlur={() => markTouched("cc")}\
+                className={`h-10 ${\
+                  errors.cc && touched.cc\
+                    ? "border-red-400 focus-visible:ring-red-400"\
+                    : ""\
+                }`}\
+                aria-invalid={!!(errors.cc && touched.cc)}\
+                aria-describedby={errors.cc && touched.cc ? "cc-error" : undefined}\
+                inputMode="email"\
+              />\
+              <p className="text-xs text-slate-400">Emails separados por coma</p>\
+              {errors.cc && touched.cc && (\
+                <p className="text-xs text-red-500 flex items-center gap-1" role="alert" id="cc-error">\
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />\
+                  {errors.cc}\
+                </p>\
+              )}\
+            </div>\
+          </div>\
+\
+          {/* Campos de Lotes (Grid) */}\
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">\
+            {/* Lote Antiguo */}\
+            <div className="space-y-1.5">\
+              <Label htmlFor="oldLot">\
+                Lote Antiguo <span className="text-red-500" aria-hidden="true">*</span>\
               </Label>
               <Input
                 id="oldLot"
@@ -545,17 +631,34 @@ export default function LotChangeNotificationPage() {
           <div className="flex items-center gap-2 mb-3">
             <Mail className="w-4 h-4 text-slate-500" aria-hidden="true" />
             <h2 id="recipients-heading" className="text-sm font-semibold text-slate-700">
-              Destinatarios del correo ({lotChangeRecipients.length})
+              Destinatarios del correo (
+                {(() => {
+                  const toList = form.to.split(",").map(s => s.trim()).filter(Boolean);
+                  const ccList = form.cc.split(",").map(s => s.trim()).filter(Boolean);
+                  return toList.length + ccList.length;
+                })()}
+              )
             </h2>
           </div>
           
           <ul className="space-y-1.5 max-h-48 overflow-y-auto pr-2" role="list">
-            {lotChangeRecipients.map((email) => (
-              <li key={email} className="flex items-center gap-2 text-sm text-slate-600">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" aria-hidden="true" />
-                <span className="font-mono text-xs break-all">{email}</span>
-              </li>
-            ))}
+            {(() => {
+              const toList = form.to.split(",").map(s => s.trim()).filter(Boolean);
+              const ccList = form.cc.split(",").map(s => s.trim()).filter(Boolean);
+              const all = [
+                ...toList.map(e => ({ email: e, type: "Para" })),
+                ...ccList.map(e => ({ email: e, type: "CC" })),
+              ];
+              return all.map(({ email, type }) => (
+                <li key={email} className="flex items-center gap-2 text-sm text-slate-600">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    type === "Para" ? "bg-amber-400" : "bg-slate-300"
+                  }`} aria-hidden="true" />
+                  <span className="font-mono text-xs break-all">{email}</span>
+                  <span className="text-[10px] text-slate-400 font-medium uppercase">{type}</span>
+                </li>
+              ));
+            })()}
           </ul>
           
           <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">

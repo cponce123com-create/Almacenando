@@ -26,6 +26,8 @@ const lotChangeSchema = z.object({
   oldLot: z.string().min(1, "El lote antiguo es requerido"),
   newLot: z.string().min(1, "El nuevo lote es requerido"),
   productionOrder: z.string().min(1, "La orden de producción es requerida"),
+  to: z.string().optional(),
+  cc: z.string().optional(),
 });
 
 /**
@@ -49,7 +51,15 @@ router.post(
       return;
     }
 
-    const { productId, oldLot, newLot, productionOrder } = parsed.data;
+    const { productId, oldLot, newLot, productionOrder, to: bodyTo, cc: bodyCc } = parsed.data;
+
+    // Computar destinatarios: priorizar los del body, fallback a env vars
+    const recipientsTo = bodyTo
+      ? bodyTo.split(",").map((s: string) => s.trim()).filter(Boolean)
+      : getLotChangeRecipients();
+    const recipientsCc = bodyCc
+      ? bodyCc.split(",").map((s: string) => s.trim()).filter(Boolean)
+      : [];
 
     const [product] = await db
       .select({ id: productsTable.id, name: productsTable.name })
@@ -74,14 +84,14 @@ router.post(
       action: "lot_change_notification",
       resource: "products",
       resourceId: productId,
-      details: { productName: product.name, oldLot, newLot, productionOrder, recipients: getLotChangeRecipients() },
+      details: { productName: product.name, oldLot, newLot, productionOrder, to: recipientsTo, cc: recipientsCc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: getLotChangeRecipients().length });
+    res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: recipientsTo.length, ccCount: recipientsCc.length });
 
     // Enviar email en background, sin bloquear la respuesta
-    sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName })
+    sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName, to: recipientsTo, cc: recipientsCc })
       .catch((err) => logger.error({ err }, "Error enviando email de lote"));
   })
 );
