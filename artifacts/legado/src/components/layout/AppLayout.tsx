@@ -407,21 +407,24 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <div style={{
             position: "relative",
             display: "flex", flexDirection: "column",
-            width: 280,
+            width: 300, maxWidth: "85vw",
             backgroundColor: SB.bg,
             boxShadow: "4px 0 24px rgba(0,0,0,0.4)",
             zIndex: 1,
+            overscrollBehavior: "contain",
           }}>
             <button
               onClick={() => setMobileOpen(false)}
+              aria-label="Cerrar menú"
               style={{
-                position: "absolute", top: 12, right: 12,
-                width: 32, height: 32, border: "none", cursor: "pointer",
+                position: "absolute", top: 8, right: 8,
+                width: 40, height: 40, border: "none", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                borderRadius: 8, backgroundColor: SB.hoverBg, color: SB.text,
+                borderRadius: 10, backgroundColor: SB.hoverBg, color: SB.text,
+                zIndex: 1, WebkitTapHighlightColor: "transparent",
               }}
             >
-              <X style={{ width: 16, height: 16 }} />
+              <X style={{ width: 18, height: 18 }} />
             </button>
             <SidebarContent onNavClick={() => setMobileOpen(false)} />
           </div>
@@ -446,13 +449,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <button
                 className="lg:hidden"
                 onClick={() => setMobileOpen(true)}
+                aria-label="Abrir menú"
                 style={{
-                  width: 36, height: 36, border: "none", cursor: "pointer",
+                  width: 44, height: 44, border: "none", cursor: "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  borderRadius: 8, backgroundColor: "transparent", color: "#64748b",
+                  borderRadius: 10, backgroundColor: "transparent", color: "#64748b",
+                  WebkitTapHighlightColor: "transparent", marginLeft: -6,
                 }}
               >
-                <Menu style={{ width: 20, height: 20 }} />
+                <Menu style={{ width: 22, height: 22 }} />
               </button>
               <div className="hidden sm:flex" style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#64748b" }}>
                 <CalendarDays style={{ width: 15, height: 15, color: "#0d9488" }} />
@@ -513,7 +518,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main style={{ flex: 1 }} className="p-4 sm:p-6 lg:p-8">
+        <main style={{ flex: 1, overflowX: "auto", minWidth: 0 }} className="p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>
