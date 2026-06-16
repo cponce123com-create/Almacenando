@@ -11,6 +11,11 @@ import { sendLotChangeNotificationEmail, sendProductOutEmail, sendStockColorante
 import { getLotChangeRecipients, getProductOutRecipients, getStockColorRecipients, getStockAuxRecipients, getOrderApprovalRecipient, getPlasticBagRecipients } from "../lib/email-recipients.js";
 import { z } from "zod/v4";
 
+/**
+ * Notificaciones
+ * Notificaciones push internas, mark-read, mark-all-read
+ */
+
 const router = Router();
 
 // ── Lot Change ────────────────────────────────────────────────────────────────

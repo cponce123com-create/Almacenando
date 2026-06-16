@@ -12,6 +12,11 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 
+/**
+ * Reorganización / Reubicación
+ * Reorganización y reubicación de productos
+ */
+
 const router = Router();
 
 /**

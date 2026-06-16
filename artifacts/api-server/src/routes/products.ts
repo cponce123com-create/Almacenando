@@ -13,6 +13,10 @@ import { writeAuditLog } from "../lib/audit.js";
 import { destructiveActionLimiter } from "../lib/rate-limit.js";
 import { parsePagination } from "../lib/pagination.js";
 
+/**
+ * Productos
+ * GET /products, GET /products/:id, POST /products, PATCH /products/:id, DELETE /products/:id, POST /products/import
+ */
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });

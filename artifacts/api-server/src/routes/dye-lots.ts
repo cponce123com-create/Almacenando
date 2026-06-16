@@ -9,6 +9,11 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { sendDyeLotNotificationEmail } from "../lib/email/index.js";
 import { logger } from "../lib/logger.js";
 
+/**
+ * Lotes de Tinte (Dye Lots)
+ * GET /dye-lots, POST /dye-lots, PUT /dye-lots/:id, DELETE /dye-lots/:id, GET /dye-lots/check-lot
+ */
+
 const router = Router();
 
 const dyeLotSchema = z.object({

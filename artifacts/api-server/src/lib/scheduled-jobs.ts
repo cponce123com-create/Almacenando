@@ -4,6 +4,11 @@ import { db, productsTable, dyeLotsTable, notificationsTable, usersTable } from 
 import { logger } from "./logger.js";
 import { generateId } from "./id.js";
 
+const DAILY_CRON_SCHEDULE = "0 7 * * *";
+const LOW_STOCK_BATCH_SIZE = 100;
+const EXPIRING_LOTS_BATCH_SIZE = 100;
+const EXPIRING_LOTS_DAYS_THRESHOLD = 30;
+
 /**
  * Scheduled Jobs — Almacenando
  *
@@ -67,7 +72,7 @@ async function checkLowStock(): Promise<number> {
         lt(productsTable.stock, productsTable.minimumStock),
       ),
     )
-    .limit(100);
+    .limit(LOW_STOCK_BATCH_SIZE);
 
   if (lowStockProducts.length === 0) {
     logger.info("Scheduled job: no low-stock products found");
@@ -146,7 +151,7 @@ async function checkExpiringLots(): Promise<number> {
         gte(dyeLotsTable.expirationDate, now.toISOString().slice(0, 10)),
       ),
     )
-    .limit(100);
+    .limit(EXPIRING_LOTS_BATCH_SIZE);
 
   if (expiringLots.length === 0) {
     logger.info("Scheduled job: no expiring lots found");
@@ -212,7 +217,7 @@ async function checkExpiringLots(): Promise<number> {
  */
 export function startScheduledJobs(): void {
   // Ejecutar diariamente a las 07:00 AM
-  cron.schedule("0 7 * * *", async () => {
+  cron.schedule(DAILY_CRON_SCHEDULE, async () => {
     logger.info("Starting scheduled jobs: low stock + expiring lots");
 
     try {
@@ -235,5 +240,8 @@ export function startScheduledJobs(): void {
     } catch (err) {
       logger.error({ err }, "Initial scheduled job check failed");
     }
+  }, 10_000);
+}
+}
   }, 10_000);
 }

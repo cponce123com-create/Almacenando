@@ -9,6 +9,11 @@ import { writeAuditLog } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 import { z } from "zod/v4";
 
+/**
+ * Código de Barras
+ * Búsqueda de productos por código de barras
+ */
+
 const router = Router();
 
 const generateSchema = z.object({

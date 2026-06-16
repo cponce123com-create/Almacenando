@@ -4,6 +4,11 @@ import { logger } from "../lib/logger.js";
 import { aiLimiter } from "../lib/rate-limit.js";
 import { createHash } from "crypto";
 
+/**
+ * Matriz de Compatibilidad Química
+ * Matriz de compatibilidad química (Gemini AI)
+ */
+
 const router = Router();
 
 // ── Gemini REST helper ────────────────────────────────────────────────────────

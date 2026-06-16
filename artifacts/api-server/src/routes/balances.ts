@@ -11,6 +11,11 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { destructiveActionLimiter } from "../lib/rate-limit.js";
 import { parseExcelBuffer } from "../lib/excel-parser.js";
 
+/**
+ * Balances / Saldos
+ * GET /balances, POST /balances, GET /balances/:id, PUT /balances/:id, DELETE /balances/:id
+ */
+
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 

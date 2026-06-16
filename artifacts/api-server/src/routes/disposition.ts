@@ -9,6 +9,11 @@ import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import { uploadFileToDrive, deleteFileFromDrive, extractFileId } from "../lib/google-drive.js";
 
+/**
+ * Disposición Final
+ * GET /disposition, POST /disposition, PUT /disposition/:id, DELETE /disposition/:id, POST /disposition/:id/photos
+ */
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 5 },

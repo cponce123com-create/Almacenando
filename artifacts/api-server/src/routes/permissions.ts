@@ -8,6 +8,11 @@ import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import type { WarehouseRole } from "@workspace/db";
 
+/**
+ * Admin — Permisos
+ * Admin: permisos de usuarios
+ */
+
 const router = Router();
 
 const permissionUpdateSchema = z.array(z.object({

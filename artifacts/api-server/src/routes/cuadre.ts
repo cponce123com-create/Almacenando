@@ -7,6 +7,11 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 
+/**
+ * Cuadres / Arqueos
+ * GET /cuadre, POST /cuadre, GET /cuadre/:id, PUT /cuadre/:id, DELETE /cuadre/:id
+ */
+
 const router = Router();
 
 const cuadreItemSchema = z.object({

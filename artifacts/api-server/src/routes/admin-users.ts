@@ -14,6 +14,11 @@ import { passwordResetLimiter } from "../lib/rate-limit.js";
 import { sendPasswordResetEmail } from "../lib/email/index.js";
 import { parsePagination } from "../lib/pagination.js";
 
+/**
+ * Admin — Usuarios
+ * Admin: CRUD de usuarios del sistema
+ */
+
 const router = Router();
 
 const createUserSchema = z.object({

@@ -313,7 +313,16 @@ router.post("/setup", asyncHandler(async (req, res) => {
     status: "active",
   });
 
-  res.json({ message: `Admin creado correctamente: ${email}` });
+  // ── Invalidate setup key after first successful use ──────────────────────
+  // This prevents reuse even if env vars leak. The key is wiped from the
+  // running process so a second POST will fail. On next deploy/pod restart,
+  // the DB already has users, so the 409 guard kicks in.
+  delete process.env.ADMIN_SETUP_KEY;
+
+  res.json({
+    message: `Admin creado correctamente: ${email}`,
+    warning: "⚠️ Cambia la contraseña del admin inmediatamente después del primer inicio de sesión. Ve a Perfil → Cambiar contraseña.",
+  });
 }));
 
 export default router;

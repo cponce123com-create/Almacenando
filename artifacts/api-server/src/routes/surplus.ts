@@ -11,6 +11,11 @@ import { uploadFileToDrive, isDriveConfigured } from "../lib/google-drive.js";
 import { validateMimeType } from "../lib/validate-mime.js";
 import path from "path";
 
+/**
+ * Sobrantes / Excedentes
+ * CRUD de productos sobrantes / excedentes
+ */
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 5 },

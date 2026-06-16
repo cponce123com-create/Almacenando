@@ -9,6 +9,11 @@ import { writeAuditLog } from "../lib/audit.js";
 import { parsePagination } from "../lib/pagination.js";
 import { z } from "zod/v4";
 
+/**
+ * Ubicaciones Físicas del Almacén
+ * CRUD de ubicaciones físicas del almacén
+ */
+
 const router = Router();
 
 const locationSchema = z.object({

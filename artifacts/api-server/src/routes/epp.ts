@@ -10,6 +10,11 @@ import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import { parseExcelBuffer } from "../lib/excel-parser.js";
 
+/**
+ * Equipos de Protección Personal (EPP)
+ * CRUD de Equipos de Protección Personal (EPP) y entregas
+ */
+
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 

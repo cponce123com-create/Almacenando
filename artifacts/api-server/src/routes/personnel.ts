@@ -8,6 +8,10 @@ import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import { parsePagination } from "../lib/pagination.js";
 
+/**
+ * Personal
+ * CRUD de personal y asignación de EPP
+ */
 
 const router = Router();
 

@@ -16,6 +16,11 @@ import { logger } from "../lib/logger.js";
 import { parsePagination } from "../lib/pagination.js";
 import { z } from "zod/v4";
 
+/**
+ * Picking / Preparación de Pedidos
+ * Órdenes de picking y preparación de pedidos
+ */
+
 const router = Router();
 
 // ── Schemas ──────────────────────────────────────────────────────────────────

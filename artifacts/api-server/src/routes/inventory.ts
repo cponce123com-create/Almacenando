@@ -13,6 +13,10 @@ import { parsePagination } from "../lib/pagination.js";
 import { logger } from "../lib/logger.js";
 import { validateMimeType } from "../lib/validate-mime.js";
 
+/**
+ * Inventario
+ * GET /inventory, POST /inventory, POST /inventory/:id/photos, DELETE /inventory/:id/photos/:idx
+ */
 
 const router = Router();
 

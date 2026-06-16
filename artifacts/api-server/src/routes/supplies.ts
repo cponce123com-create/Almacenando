@@ -9,6 +9,11 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 
+/**
+ * Suministros / Insumos
+ * CRUD de suministros / insumos
+ */
+
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 

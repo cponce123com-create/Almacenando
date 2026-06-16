@@ -8,6 +8,11 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 
+/**
+ * Documentos
+ * GET /documents, POST /documents, GET /documents/:id, GET /documents/:id/download
+ */
+
 const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),

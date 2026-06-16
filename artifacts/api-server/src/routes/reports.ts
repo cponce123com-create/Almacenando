@@ -9,6 +9,11 @@ import { count, sql, and, gte, lte, eq, desc, ilike, or } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 
+/**
+ * Reportes
+ * Reportes y exportaciones
+ */
+
 const router = Router();
 
 function fmtDate(d: string | null | undefined): string {
