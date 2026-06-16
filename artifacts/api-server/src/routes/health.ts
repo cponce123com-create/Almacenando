@@ -5,6 +5,8 @@ import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
+const START_TIME = Date.now();
+
 /**
  * GET /healthz
  *
@@ -16,25 +18,34 @@ const router: IRouter = Router();
  * AFTER:  runs a lightweight "SELECT 1" to verify the DB connection.
  */
 router.get("/healthz", async (_req, res) => {
-  try {
-    // Lightweight DB ping — fails fast if PostgreSQL is unreachable
-    await db.execute(sql`SELECT 1`);
+  const checks: Record<string, string> = {};
 
-    res.json({
-      status: "ok",
-      db: "connected",
-      timestamp: new Date().toISOString(),
-    });
+  try {
+    await db.execute(sql`SELECT 1`);
+    checks.db = "connected";
   } catch (err) {
     logger.error({ err }, "[healthz] Database health check failed");
-
-    // 503 tells Render the service is unhealthy → triggers automatic restart
-    res.status(503).json({
-      status: "error",
-      db: "unreachable",
-      timestamp: new Date().toISOString(),
-    });
+    checks.db = "unreachable";
   }
+
+  const isHealthy = checks.db === "connected";
+
+  const mem = process.memoryUsage();
+  const uptime = Math.floor((Date.now() - START_TIME) / 1000);
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? "ok" : "error",
+    ...checks,
+    uptime,
+    uptimeHuman: `${Math.floor(uptime / 60)}m ${uptime % 60}s`,
+    memory: {
+      rss: Math.round(mem.rss / 1024 / 1024) + "MB",
+      heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + "MB",
+      heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + "MB",
+    },
+    node: process.version,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 export default router;

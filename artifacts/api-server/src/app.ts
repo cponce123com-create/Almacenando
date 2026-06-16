@@ -4,6 +4,7 @@ import cors from "cors";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
 import path from "path";
+import { randomUUID } from "crypto";
 import router from "./routes";
 import publicMsdsRouter from "./routes/public-msds.js";
 import { logger } from "./lib/logger";
@@ -88,6 +89,31 @@ app.use(
     },
   }),
 );
+
+// ---------------------------------------------------------------------------
+// Request ID — asigna un UUID único a cada request para trazabilidad.
+// Se usa como correlation ID en logs y se devuelve en el header X-Request-Id.
+// ---------------------------------------------------------------------------
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const requestId = (req.headers["x-request-id"] as string) ?? randomUUID();
+  res.setHeader("X-Request-Id", requestId);
+  (req as any).requestId = requestId;
+  next();
+});
+
+// ---------------------------------------------------------------------------
+// Cache-Control para endpoints GET de datos semi-estáticos.
+// Estos datos cambian con poca frecuencia (productos, ubicaciones, insumos).
+// El navegador/cliente puede cachear por 30s sin revalidar (max-age=30)
+// y hasta 60s con revalidación condicional (stale-while-revalidate=30).
+// ---------------------------------------------------------------------------
+const STATIC_CACHE_ROUTES = ["/api/products", "/api/locations", "/api/supplies"];
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.method === "GET" && STATIC_CACHE_ROUTES.some((r) => req.path?.startsWith(r))) {
+    res.setHeader("Cache-Control", "private, max-age=30, stale-while-revalidate=30");
+  }
+  next();
+});
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
