@@ -68,15 +68,15 @@
     {
       "idx": 9,
       "version": "7",
-      "when": 1775300000000,
-      "tag": "0009_fk_performance_indexes",
+      "when": 1775400000000,
+      "tag": "0010_locations_picking_notifications",
       "breakpoints": true
     },
     {
       "idx": 10,
       "version": "7",
-      "when": 1775400000000,
-      "tag": "0010_locations_picking_notifications",
+      "when": 1775300000000,
+      "tag": "0009_fk_performance_indexes",
       "breakpoints": true
     },
     {
