@@ -50,86 +50,35 @@ Saludos Cordiales.
 Carlos Ponce
 Supervisor de Cocina Colores`;
 
-  const tableRows: Array<[string, string]> = [
-    ["Producto", productName],
-    ["Lote Anterior", oldLot],
-    ["Nuevo Lote", newLot],
-    ["O.P.", productionOrder],
-    ["Enviado por", senderName],
-  ];
-
-  // ── Prioridad 1: SMTP Gmail (nodemailer) ────────────────────────────────────
-  const smtpPass = process.env.SMTP_APP_PASSWORD;
-  const smtpUser = getSmtpUserEmail();
-  logger.info({ hasPass: !!smtpPass, user: smtpUser?.slice(0,5) }, "[email] check SMTP config");
-  if (smtpPass && smtpUser) {
-    let to: string[];
-    if (explicitTo && explicitTo.length > 0) {
-      to = explicitTo;
-    } else {
-      const { getLotChangeRecipients } = await import("../email-recipients.js");
-      to = getLotChangeRecipients();
-    }
-    const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
-    if (to.length === 0) {
-      logger.warn("[email] Sin destinatarios");
-      return;
-    }
-
-    logger.info({ to, cc }, "[email] Intentando enviar por SMTP...");
-    try {
-      // Usar IP directa de smtp.gmail.com para evitar problemas de DNS IPv6 en Render
-      const transportConfig = {
-        host: "74.125.202.109",
-        port: 465,
-        secure: true,
-        auth: { user: smtpUser, pass: smtpPass },
-        tls: { rejectUnauthorized: false, servername: "smtp.gmail.com" },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 20000,
-      } as any;
-      const transporter = nodemailer.createTransport(transportConfig);
-      const info = await transporter.sendMail({
-        from: `"Almacén Químico" <${smtpUser}>`,
-        to: to.join(", "),
-        cc: cc ? cc.join(", ") : undefined,
-        subject,
-        text,
-      });
-      logger.info({ messageId: info.messageId }, "[email] ✅ CORREO ENVIADO EXITOSAMENTE");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const code = err instanceof Error && 'code' in err ? (err as any).code : null;
-      logger.error({ err: msg, code }, "[email] ❌ FALLO AL ENVIAR CORREO");
-    }
-    return;
-  }
-
-  // ── Prioridad 2: Resend (proveedor transactional) ─────────────────────────
   const resend = getResend();
-  if (resend) {
-    let to: string[];
-    if (explicitTo && explicitTo.length > 0) {
-      to = explicitTo;
-    } else {
-      const { getLotChangeRecipients } = await import("../email-recipients.js");
-      to = getLotChangeRecipients();
-    }
-    const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
-    if (to.length > 0) {
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
-        to,
-        cc,
-        subject,
-        text,
-      });
-    }
+  if (!resend) {
+    logger.warn("[email] RESEND_API_KEY no configurado — email no enviado");
     return;
   }
 
-  logger.warn("[email] Sin proveedor de email configurado — email no enviado. Configurá SMTP_APP_PASSWORD + SMTP_EMAIL o RESEND_API_KEY");
+  let to: string[];
+  if (explicitTo && explicitTo.length > 0) {
+    to = explicitTo;
+  } else {
+    const { getLotChangeRecipients } = await import("../email-recipients.js");
+    to = getLotChangeRecipients();
+  }
+  const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
+
+  if (to.length === 0) {
+    logger.warn("[email] Sin destinatarios");
+    return;
+  }
+
+  await resend.emails.send({
+    from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
+    to,
+    cc,
+    subject,
+    text,
+  });
+
+  logger.info({ to, cc }, "[email] Notificación de cambio de lote enviada por Resend");
 }
 
 // ── Dye Lot Notification ──────────────────────────────────────────────────────
