@@ -28,8 +28,8 @@ export function buildTransporter() {
   }
   return nodemailer.createTransport({
     host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
+    port: 465,
+    secure: true,
     auth: { user: getSmtpUserEmail(), pass: smtpPass },
     tls: { rejectUnauthorized: false },
     connectionTimeout: 15000,

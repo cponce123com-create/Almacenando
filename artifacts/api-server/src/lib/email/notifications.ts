@@ -81,8 +81,8 @@ Supervisor de Cocina Colores`;
       const dns = await import("dns");
       const transportConfig = {
         host: "smtp.gmail.com",
-        port: 587,
-        secure: false,
+        port: 465,
+        secure: true,
         auth: { user: smtpUser, pass: smtpPass },
         tls: { rejectUnauthorized: false },
         connectionTimeout: 15000,
