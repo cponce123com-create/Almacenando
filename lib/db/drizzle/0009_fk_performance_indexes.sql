@@ -52,9 +52,5 @@ CREATE INDEX IF NOT EXISTS idx_lot_evaluations_registered_by ON lot_evaluations(
 -- ── inventory_boxes ─────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_inventory_boxes_inventory_record_id ON inventory_boxes(inventory_record_id);
 
--- ── surplus_products ────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_surplus_products_product_id ON surplus_products(product_id);
-CREATE INDEX IF NOT EXISTS idx_surplus_products_registered_by ON surplus_products(registered_by);
-
 -- ── user_permissions ────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_user_permissions_updated_by ON user_permissions(updated_by);
