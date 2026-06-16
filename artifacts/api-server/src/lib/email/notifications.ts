@@ -10,9 +10,6 @@ import nodemailer from "nodemailer";
 import { logger } from "../logger.js";
 import { buildTransporter, getResend } from "./provider.js";
 import { smtpHeader, smtpFooter, smtpWrap, infoTable } from "./helpers.js";
-import { getSmtpUserEmail } from "../email-recipients.js";
-
-const smtpUser = getSmtpUserEmail();
 
 // ── Lot Change ────────────────────────────────────────────────────────────────
 
@@ -33,26 +30,11 @@ export async function sendLotChangeNotificationEmail({
   to?: string[];
   cc?: string[];
 }): Promise<void> {
-  const subject = `Notificación de Cambio de Lote - ${productName}`;
+  const smtpUser = process.env.SMTP_EMAIL;
+  const smtpPass = process.env.SMTP_APP_PASSWORD;
 
-  const text = `Estimada Judith,
-
-Le informo que se ha realizado un cambio de lote para el siguiente producto:
-
-  Producto:      ${productName}
-  Lote Anterior: ${oldLot}
-  Nuevo Lote:    ${newLot}
-  O.P.:          ${productionOrder}
-  Enviado por:   ${senderName}
-
-Saludos Cordiales.
-
-Carlos Ponce
-Supervisor de Cocina Colores`;
-
-  const resend = getResend();
-  if (!resend) {
-    logger.warn("[email] RESEND_API_KEY no configurado — email no enviado");
+  if (!smtpUser || !smtpPass) {
+    logger.warn("[email] SMTP_EMAIL o SMTP_APP_PASSWORD no configurados");
     return;
   }
 
@@ -70,15 +52,36 @@ Supervisor de Cocina Colores`;
     return;
   }
 
-  await resend.emails.send({
-    from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
-    to,
-    cc,
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+
+  const subject = `Notificación de Cambio de Lote - ${productName}`;
+  const text = `Estimada Judith,
+
+Le informo que se ha realizado un cambio de lote para el siguiente producto:
+
+  Producto:      ${productName}
+  Lote Anterior: ${oldLot}
+  Nuevo Lote:    ${newLot}
+  O.P.:          ${productionOrder}
+  Enviado por:   ${senderName}
+
+Saludos Cordiales.
+
+Carlos Ponce
+Supervisor de Cocina Colores`;
+
+  await transporter.sendMail({
+    from: smtpUser,
+    to: to.join(", "),
+    cc: cc ? cc.join(", ") : undefined,
     subject,
     text,
   });
 
-  logger.info({ to, cc }, "[email] Notificación de cambio de lote enviada por Resend");
+  logger.info({ to, cc }, "[email] Notificación de cambio de lote enviada");
 }
 
 // ── Dye Lot Notification ──────────────────────────────────────────────────────
@@ -127,8 +130,7 @@ Registrado por: ${senderName}`;
     });
     return;
   }
-
-  logger.warn("[email] RESEND_API_KEY no configurado — email no enviado");
+  logger.warn("[email-dye] RESEND_API_KEY no configurado");
 }
 
 // ── Product Out ───────────────────────────────────────────────────────────────
@@ -141,44 +143,33 @@ export async function sendProductOutEmail({
   productName: string;
 }): Promise<void> {
   const smtpPass = process.env.SMTP_APP_PASSWORD;
-  if (!smtpPass) {
-    logger.warn("[email-smtp] SMTP_APP_PASSWORD no configurado — notificación de fin de producto no enviada");
+  const smtpUser = process.env.SMTP_EMAIL;
+  if (!smtpPass || !smtpUser) {
+    logger.warn("[email] SMTP no configurado — fin de producto no enviado");
     return;
   }
-
-  const smtpUserFromEnv = getSmtpUserEmail();
-  const codeLabel = productCode.trim() ? ` (${productCode.trim()})` : "";
-  const subject = `⚠️ Término de Producto${codeLabel} — ${productName}`;
-
-  const text = `Estimada Judith,
-
-Le informo que el siguiente producto ha llegado a su término total en nuestro almacén:
-
-  Código:   ${productCode.trim() || "—"}
-  Producto: ${productName}
-
-Saludos Cordiales.
-
-Carlos Ponce
-Supervisor de Cocina Colores`;
-
-  const { getProductOutRecipients } = await import("../email-recipients.js");
-  const { to, cc } = getProductOutRecipients();
-
   const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: { user: smtpUserFromEnv, pass: smtpPass },
+    service: "gmail",
+    auth: { user: smtpUser, pass: smtpPass },
   });
 
-  await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${smtpUserFromEnv}>`,
-    to,
-    cc,
-    subject,
-    text,
-  });
+  const subject = `Notificación de Fin de Producto - ${productName}`;
+  const text = `Se ha terminado el producto:
+
+Código: ${productCode}
+Nombre: ${productName}`;
+
+  try {
+    await transporter.sendMail({
+      from: smtpUser,
+      to: process.env.NOTIFY_PRODUCT_OUT ?? "",
+      subject,
+      text,
+    });
+    logger.info("[email] Notificación de fin de producto enviada");
+  } catch (err) {
+    logger.error({ err }, "[email] Error enviando fin de producto");
+  }
 }
 
 // ── Stock Colorante ───────────────────────────────────────────────────────────
@@ -187,7 +178,8 @@ export async function sendStockColoranteEmail(items: Array<{ code: string; name:
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
-  ).join("\n");
+  ).join("
+");
   const text = `Buenas días,
 
 Se informa el siguiente stock físico de colorantes:
@@ -198,25 +190,11 @@ Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
+  const html = `${smtpHeader("Reporte de Stock de Colorantes")}${smtpWrap(`<p>Se informa el siguiente stock físico de colorantes:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}`)}${smtpFooter}`;
 
-  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
-  const html = smtpWrap(
-    smtpHeader("Stock de Colorantes", "🧪", "#2563eb"),
-    infoTable(tableRows),
-    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
-  );
-
-  const { getStockColorRecipients } = await import("../email-recipients.js");
-  const { to, cc } = getStockColorRecipients();
-
-  await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
-    to,
-    cc,
-    subject: "Reporte de Stock de Colorantes",
-    text,
-    html,
-  });
+  const { to, cc } = await getStockRecipients("color");
+  if (!to) { logger.warn("[email-color] NOTIFY_STOCK_COLOR no configurado"); return; }
+  await transporter.sendMail({ from: smtpUser(), to, cc: cc?.join(","), subject: "Reporte de Stock de Colorantes", text, html });
 }
 
 // ── Stock Auxiliar ────────────────────────────────────────────────────────────
@@ -225,7 +203,8 @@ export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: 
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
-  ).join("\n");
+  ).join("
+");
   const text = `Buenas días,
 
 Se informa el siguiente stock físico de auxiliares:
@@ -236,25 +215,11 @@ Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
+  const html = `${smtpHeader("Reporte de Stock de Auxiliares")}${smtpWrap(`<p>Se informa el siguiente stock físico de auxiliares:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}`)}${smtpFooter}`;
 
-  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
-  const html = smtpWrap(
-    smtpHeader("Stock de Auxiliares", "🧪", "#7c3aed"),
-    infoTable(tableRows),
-    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
-  );
-
-  const { getStockAuxRecipients } = await import("../email-recipients.js");
-  const { to, cc } = getStockAuxRecipients();
-
-  await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
-    to,
-    cc,
-    subject: "Reporte de Stock de Auxiliares",
-    text,
-    html,
-  });
+  const { to, cc } = await getStockRecipients("aux");
+  if (!to) { logger.warn("[email-aux] NOTIFY_STOCK_AUX no configurado"); return; }
+  await transporter.sendMail({ from: smtpUser(), to, cc: cc?.join(","), subject: "Reporte de Stock de Auxiliares", text, html });
 }
 
 // ── Order Approval ────────────────────────────────────────────────────────────
@@ -263,7 +228,8 @@ export async function sendOrderApprovalEmail(items: Array<{ code: string; name: 
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
-  ).join("\n");
+  ).join("
+");
   const notesLine = notes ? `
 Observaciones: ${notes}
 ` : "";
@@ -272,29 +238,16 @@ Observaciones: ${notes}
 Se solicita la aprobación de la siguiente orden:
 
 ${rows}${notesLine}
-
 Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
-
-  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
-  const body = infoTable(tableRows) + (notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : "");
-  const html = smtpWrap(
-    smtpHeader("Aprobación de Orden Interna", "📋", "#d97706"),
-    body,
-    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
-  );
+  const html = `${smtpHeader("Solicitud de Aprobación de Orden Interna")}${smtpWrap(`<p>Se solicita la aprobación de la siguiente orden:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}${notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : ""}`)}${smtpFooter}`;
 
   const { getOrderApprovalRecipient } = await import("../email-recipients.js");
-
-  await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
-    to: getOrderApprovalRecipient(),
-    subject: "Solicitud de Aprobación de Orden Interna",
-    text,
-    html,
-  });
+  const to = getOrderApprovalRecipient();
+  if (!to) { logger.warn("[email-order] NOTIFY_ORDER_APPROVAL no configurado"); return; }
+  await transporter.sendMail({ from: smtpUser(), to, subject: "Solicitud de Aprobación de Orden Interna", text, html });
 }
 
 // ── Plastic Bag ───────────────────────────────────────────────────────────────
@@ -303,7 +256,8 @@ export async function sendPlasticBagEmail(items: Array<{ code: string; name: str
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
-  ).join("\n");
+  ).join("
+");
   const notesLine = notes ? `
 Observaciones: ${notes}
 ` : "";
@@ -312,29 +266,25 @@ Observaciones: ${notes}
 Se solicita el peso de las siguientes bolsas plásticas:
 
 ${rows}${notesLine}
-
 Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
-
-  const tableRows: Array<[string, string]> = items.map(i => [`${i.code} — ${i.name}`, `${i.quantity} ${i.unit}`]);
-  const body = infoTable(tableRows) + (notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : "");
-  const html = smtpWrap(
-    smtpHeader("Solicitud de Peso — Bolsas Plásticas", "🛍️", "#059669"),
-    body,
-    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
-  );
+  const html = `${smtpHeader("Solicitud de Bolsas Plásticas")}${smtpWrap(`<p>Se solicita el peso de las siguientes bolsas plásticas:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}${notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : ""}`)}${smtpFooter}`;
 
   const { getPlasticBagRecipients } = await import("../email-recipients.js");
   const { to, cc } = getPlasticBagRecipients();
+  if (to.length === 0) { logger.warn("[email-bag] NOTIFY_PLASTIC_BAG no configurado"); return; }
+  await transporter.sendMail({ from: smtpUser(), to: to.join(","), cc: cc?.join(","), subject: "Solicitud de Bolsas Plásticas", text, html });
+}
 
-  await transporter.sendMail({
-    from: `"Carlos Ponce — Almacén Químico" <${smtpUser}>`,
-    to,
-    cc,
-    subject: "Solicitud de Peso de Bolsas Plásticas",
-    text,
-    html,
-  });
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function smtpUser() {
+  return process.env.SMTP_EMAIL ?? "";
+}
+
+async function getStockRecipients(type: "color" | "aux") {
+  const { getStockColorRecipients, getStockAuxRecipients } = await import("../email-recipients.js");
+  return type === "color" ? getStockColorRecipients() : getStockAuxRecipients();
 }
