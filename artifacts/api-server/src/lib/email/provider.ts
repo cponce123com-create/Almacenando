@@ -26,11 +26,11 @@ export function buildTransporter() {
     throw new Error("SMTP_APP_PASSWORD no configurado");
   }
   return nodemailer.createTransport({
-    host: "smtp.gmail.com",
+    host: "74.125.202.109",
     port: 465,
     secure: true,
     auth: { user: getSmtpUserEmail(), pass: smtpPass },
-    tls: { rejectUnauthorized: false },
+    tls: { rejectUnauthorized: false, servername: "smtp.gmail.com" },
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 20000,

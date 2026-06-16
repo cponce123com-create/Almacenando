@@ -78,12 +78,13 @@ Supervisor de Cocina Colores`;
 
     logger.info({ to, cc }, "[email] Intentando enviar por SMTP...");
     try {
+      // Usar IP directa de smtp.gmail.com para evitar problemas de DNS IPv6 en Render
       const transportConfig = {
-        host: "smtp.gmail.com",
+        host: "74.125.202.109",
         port: 465,
         secure: true,
         auth: { user: smtpUser, pass: smtpPass },
-        tls: { rejectUnauthorized: false },
+        tls: { rejectUnauthorized: false, servername: "smtp.gmail.com" },
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
