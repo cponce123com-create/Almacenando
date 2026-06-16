@@ -829,7 +829,8 @@ export default function MsdsPage() {
     const qrDataUrls: Record<string, string> = {};
     await Promise.all(withMsds.map(async (p) => {
       try {
-        qrDataUrls[p.id] = await QRCode.toDataURL(p.msdsUrl!, { width: 95, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
+        const publicUrl = `${window.location.origin}/api/public/msds/${p.id}`;
+        qrDataUrls[p.id] = await QRCode.toDataURL(publicUrl, { width: 95, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
       } catch { qrDataUrls[p.id] = ""; }
     }));
     const win = window.open("", "_blank", "width=800,height=600");
@@ -1404,7 +1405,7 @@ export default function MsdsPage() {
                       </div>
 
                       <div style={{ display: "none" }}>
-                        <QRCodeSVG id="msds-qr-svg" value={selected.msdsUrl} size={200} level="H" includeMargin />
+                        <QRCodeSVG id="msds-qr-svg" value={`${window.location.origin}/api/public/msds/${selected.id}`} size={200} level="H" includeMargin />
                       </div>
 
                       {canEdit && (
