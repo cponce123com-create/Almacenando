@@ -25,6 +25,7 @@ import locationsRouter from "./locations.js";
 import barcodeRouter from "./barcode.js";
 import pickingRouter from "./picking.js";
 import reorganizationRouter from "./reorganization.js";
+import searchRouter from "./search.js";
 
 // ---------------------------------------------------------------------------
 // v1 API — versión actual del API.
@@ -61,6 +62,7 @@ v1Router.use("/locations", locationsRouter);
 v1Router.use("/barcode", barcodeRouter);
 v1Router.use("/picking", pickingRouter);
 v1Router.use("/reorganization", reorganizationRouter);
+v1Router.use("/search", searchRouter);
 
 // Legacy alias — mismo router para compatibilidad hacia atrás
 const router: IRouter = v1Router;

@@ -37,6 +37,7 @@ import {
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
 import { NotificationBell } from "@/components/NotificationBell";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import {
   Select,
   SelectContent,
@@ -521,6 +522,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <CalendarDays style={{ width: 15, height: 15, color: "#0d9488" }} />
                 <span style={{ textTransform: "capitalize" }}>{today}</span>
               </div>
+            </div>
+
+            {/* Global Search — centro */}
+            <div className="hidden sm:block flex-1 max-w-lg mx-4">
+              <GlobalSearch />
             </div>
 
             {/* Right side */}
