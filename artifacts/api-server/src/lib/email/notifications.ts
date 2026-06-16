@@ -58,6 +58,7 @@ Supervisor de Cocina Colores`;
     ["Enviado por", senderName],
   ];
 
+  // ── Intentar con Resend (proveedor transactional) ─────────────────────────
   const resend = getResend();
   if (resend) {
     let to: string[];
@@ -80,7 +81,40 @@ Supervisor de Cocina Colores`;
     return;
   }
 
-  logger.warn("[email] RESEND_API_KEY no configurado — email no enviado");
+  // ── Fallback: SMTP Gmail (nodemailer) ────────────────────────────────────
+  const smtpPass = process.env.SMTP_APP_PASSWORD;
+  const smtpUser = getSmtpUserEmail();
+  if (smtpPass && smtpUser) {
+    let to: string[];
+    if (explicitTo && explicitTo.length > 0) {
+      to = explicitTo;
+    } else {
+      const { getLotChangeRecipients } = await import("../email-recipients.js");
+      to = getLotChangeRecipients();
+    }
+    const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
+    if (to.length === 0) {
+      logger.warn("[email-smtp] Sin destinatarios — notificación de cambio de lote no enviada");
+      return;
+    }
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+    await transporter.sendMail({
+      from: `"Almacén Químico" <${smtpUser}>`,
+      to: to.join(", "),
+      cc: cc ? cc.join(", ") : undefined,
+      subject,
+      text,
+    });
+    logger.info({ to, cc }, "[email-smtp] Notificación de cambio de lote enviada por SMTP");
+    return;
+  }
+
+  logger.warn("[email] Sin proveedor de email configurado — email no enviado. Configurá RESEND_API_KEY o SMTP_APP_PASSWORD + SMTP_EMAIL");
 }
 
 // ── Dye Lot Notification ──────────────────────────────────────────────────────
