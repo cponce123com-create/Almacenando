@@ -16,4 +16,4 @@ echo "=== [1/2] Running database migrations ==="
 pnpm --filter @workspace/db migrate
 
 echo "=== [2/2] Starting API server ==="
-exec node artifacts/api-server/dist/index.cjs
+exec node --dns-result-order=ipv4first artifacts/api-server/dist/index.cjs

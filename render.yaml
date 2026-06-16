@@ -15,7 +15,7 @@ services:
       pnpm --filter @workspace/api-server build &&
       pnpm --filter @workspace/db migrate
 
-    startCommand: node artifacts/api-server/dist/index.cjs
+    startCommand: node --dns-result-order=ipv4first artifacts/api-server/dist/index.cjs
 
     # Health check — Render pings /api/healthz every 30s.
     # If it fails 3 consecutive times, the service restarts.
@@ -99,10 +99,6 @@ services:
         sync: false
       - key: NOTIFY_PLASTIC_BAG_CC
         sync: false
-
-      # Forzar resolución DNS IPv4 (Render no tiene ruta IPv6 a Gmail SMTP)
-      - key: NODE_OPTIONS
-        value: "--dns-result-order=ipv4first"
 
       # OpenAI (extracción MSDS)
       - key: AI_INTEGRATIONS_OPENAI_BASE_URL
