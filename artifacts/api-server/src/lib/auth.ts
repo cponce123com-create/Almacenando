@@ -12,8 +12,8 @@ if (!jwtSecret) {
 }
 const JWT_SECRET = jwtSecret;
 
-const JWT_EXPIRES_IN = "8h";
-const JWT_EXPIRES_SECONDS = 8 * 60 * 60;
+const ACCESS_TOKEN_EXPIRES_IN = 15 * 60; // 15 minutes
+const REFRESH_TOKEN_EXPIRES_IN = 7 * 24 * 60 * 60; // 7 days
 
 export async function cleanupExpiredTokens(): Promise<void> {
   try {
@@ -38,12 +38,30 @@ export function comparePassword(password: string, hash: string): Promise<boolean
   return bcrypt.compare(password, hash);
 }
 
+/**
+ * Firma un access token de corta duración (15 min).
+ */
 export function signToken(payload: { userId: string; email: string; role: WarehouseRole }): string {
-  const jti = randomUUID();
-  return jwt.sign({ ...payload, jti }, JWT_SECRET, { expiresIn: JWT_EXPIRES_SECONDS });
+  return signAccessToken(payload);
 }
 
-type TokenPayload = { userId: string; email: string; role: WarehouseRole; jti: string; exp: number };
+/**
+ * Firma un access token de corta duración (15 min).
+ */
+export function signAccessToken(payload: { userId: string; email: string; role: WarehouseRole }): string {
+  const jti = randomUUID();
+  return jwt.sign({ ...payload, jti, tokenType: "access" }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRES_IN });
+}
+
+/**
+ * Firma un refresh token de larga duración (7 días).
+ */
+export function signRefreshToken(payload: { userId: string; email: string; role: WarehouseRole }): string {
+  const jti = randomUUID();
+  return jwt.sign({ ...payload, jti, tokenType: "refresh" }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
+}
+
+type TokenPayload = { userId: string; email: string; role: WarehouseRole; jti: string; tokenType: string; exp: number };
 
 export function verifyToken(token: string): TokenPayload | null {
   try {
@@ -51,6 +69,15 @@ export function verifyToken(token: string): TokenPayload | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Verifica que el token sea un refresh token válido.
+ */
+export function verifyRefreshToken(token: string): TokenPayload | null {
+  const payload = verifyToken(token);
+  if (!payload || payload.tokenType !== "refresh") return null;
+  return payload;
 }
 
 // ---------------------------------------------------------------------------

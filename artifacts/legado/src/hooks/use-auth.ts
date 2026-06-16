@@ -1,35 +1,26 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // ---------------------------------------------------------------------------
-// Token persistence: stored in localStorage so it survives page refreshes
-// and React re-renders. memoryToken acts as an in-memory cache to avoid
-// repeated localStorage reads on every render.
+// Token persistence
+// Access token is short-lived (15 min). Refresh token lasts 7 days.
+// Both are stored in localStorage to survive page refreshes.
 // ---------------------------------------------------------------------------
 const TOKEN_KEY = "auth_token";
+const REFRESH_TOKEN_KEY = "auth_refresh_token";
 
-function readTokenFromStorage(): string | null {
+function readToken(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function writeToken(key: string, value: string | null): void {
   try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch { /* localStorage may be blocked */ }
 }
 
-function writeTokenToStorage(token: string | null): void {
-  try {
-    if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(TOKEN_KEY);
-    }
-  } catch {
-    // localStorage may be blocked — fail silently.
-  }
-}
-
-// Seed the in-memory cache from localStorage on module load.
-let memoryToken: string | null = readTokenFromStorage();
+let memoryToken: string | null = readToken(TOKEN_KEY);
+let memoryRefreshToken: string | null = readToken(REFRESH_TOKEN_KEY);
 
 export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
 
@@ -51,6 +42,41 @@ export function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/**
+ * Intenta refrescar el access token usando el refresh token almacenado.
+ * Devuelve true si se pudo refrescar, false si no.
+ */
+async function tryRefreshToken(): Promise<boolean> {
+  const rt = memoryRefreshToken;
+  if (!rt) return false;
+
+  try {
+    const res = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+
+    if (!res.ok) {
+      // Refresh token inválido o expirado — limpiar todo
+      memoryToken = null;
+      memoryRefreshToken = null;
+      writeToken(TOKEN_KEY, null);
+      writeToken(REFRESH_TOKEN_KEY, null);
+      return false;
+    }
+
+    const data = await res.json();
+    memoryToken = data.token;
+    memoryRefreshToken = data.refreshToken;
+    writeToken(TOKEN_KEY, data.token);
+    writeToken(REFRESH_TOKEN_KEY, data.refreshToken);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
   const [token, setToken] = useState<string | null>(memoryToken);
@@ -61,14 +87,27 @@ export function useAuth() {
       const currentToken = getAuthToken();
       if (!currentToken) return null;
 
-      const res = await fetch("/api/auth/me", {
+      let res = await fetch("/api/auth/me", {
         headers: { Authorization: `Bearer ${currentToken}` }
       });
+
+      // Si es 401, intentar refresh automático
+      if (res.status === 401) {
+        const refreshed = await tryRefreshToken();
+        if (refreshed) {
+          setToken(memoryToken);
+          res = await fetch("/api/auth/me", {
+            headers: { Authorization: `Bearer ${getAuthToken()}` }
+          });
+        }
+      }
 
       if (!res.ok) {
         if (res.status === 401) {
           memoryToken = null;
-          writeTokenToStorage(null);
+          memoryRefreshToken = null;
+          writeToken(TOKEN_KEY, null);
+          writeToken(REFRESH_TOKEN_KEY, null);
           setToken(null);
         }
         return null;
@@ -93,28 +132,27 @@ export function useAuth() {
 
     const result = await res.json();
     memoryToken = result.token;
-    writeTokenToStorage(result.token);
+    memoryRefreshToken = result.refreshToken;
+    writeToken(TOKEN_KEY, result.token);
+    writeToken(REFRESH_TOKEN_KEY, result.refreshToken);
     setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
     return result.user;
   };
 
-  // ---------------------------------------------------------------------------
-  // FIX: logout now calls POST /api/auth/logout so the server revokes the JWT
-  // and adds it to the blocklist. Without this call, the token stays valid
-  // for up to 8 hours even after the user "logged out".
-  // ---------------------------------------------------------------------------
   const logout = async () => {
     const currentToken = memoryToken;
 
-    // Clear local state immediately so the UI responds instantly
+    // Clear local state immediately
     memoryToken = null;
-    writeTokenToStorage(null);
+    memoryRefreshToken = null;
+    writeToken(TOKEN_KEY, null);
+    writeToken(REFRESH_TOKEN_KEY, null);
     setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();
 
-    // Revoke the token on the server (fire-and-forget, non-blocking)
+    // Revoke the token on the server (fire-and-forget)
     if (currentToken) {
       try {
         await fetch("/api/auth/logout", {
@@ -122,8 +160,7 @@ export function useAuth() {
           headers: { Authorization: `Bearer ${currentToken}` },
         });
       } catch {
-        // Network error during logout — token will expire naturally after 8h.
-        // Local session is already cleared so the user is effectively logged out.
+        // Network error during logout — will expire naturally.
       }
     }
   };

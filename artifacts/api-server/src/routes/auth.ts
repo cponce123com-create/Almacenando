@@ -1,9 +1,8 @@
 import { Router } from "express";
 import { createHash, randomBytes } from "crypto";
-import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
+import { db, usersTable, revokedTokensTable } from "@workspace/db";
 import { eq, and, ne, count } from "drizzle-orm";
-import { hashPassword, comparePassword, signToken, requireAuth, revokeToken, cleanupExpiredTokens, type AuthenticatedRequest } from "../lib/auth.js";
+import { hashPassword, comparePassword, signAccessToken, signRefreshToken, requireAuth, revokeToken, verifyRefreshToken, cleanupExpiredTokens, type AuthenticatedRequest } from "../lib/auth.js";
 import { z } from "zod/v4";
 import { authLoginLimiter, passwordResetLimiter } from "../lib/rate-limit.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -52,7 +51,9 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
     return;
   }
 
-  const token = signToken({ userId: user.id, email: user.email, role: user.role as "supervisor" | "operator" | "quality" | "admin" | "readonly" });
+  const role = user.role as "supervisor" | "operator" | "quality" | "admin" | "readonly";
+  const token = signAccessToken({ userId: user.id, email: user.email, role });
+  const refreshToken = signRefreshToken({ userId: user.id, email: user.email, role });
   void writeAuditLog({ userId: user.id, action: "login", resource: "session", resourceId: user.id, ipAddress: req.ip as string });
   res.json({
     user: {
@@ -64,7 +65,67 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
       createdAt: user.createdAt.toISOString(),
     },
     token,
+    refreshToken,
   });
+}));
+
+/**
+ * POST /api/auth/refresh
+ *
+ * Recibe un refresh token válido y devuelve un nuevo access token + refresh token.
+ * El refresh token anterior se revoca (rotación de tokens).
+ */
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1),
+});
+
+router.post("/refresh", asyncHandler(async (req, res) => {
+  const parsed = refreshSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "refreshToken requerido" });
+    return;
+  }
+
+  const { refreshToken } = parsed.data;
+  const payload = verifyRefreshToken(refreshToken);
+  if (!payload) {
+    res.status(401).json({ error: "Refresh token inválido o expirado" });
+    return;
+  }
+
+  // Check if the refresh token has been revoked
+  const [revoked] = await db
+    .select({ jti: revokedTokensTable.jti })
+    .from(revokedTokensTable)
+    .where(eq(revokedTokensTable.jti, payload.jti))
+    .limit(1);
+
+  if (revoked) {
+    res.status(401).json({ error: "Refresh token revocado. Inicia sesión nuevamente." });
+    return;
+  }
+
+  // Check user is still active
+  const [userRow] = await db
+    .select({ status: usersTable.status, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, payload.userId))
+    .limit(1);
+
+  if (!userRow || userRow.status !== "active") {
+    res.status(401).json({ error: "Cuenta desactivada o no encontrada" });
+    return;
+  }
+
+  // Revoke old refresh token
+  await revokeToken(payload.jti, new Date(payload.exp * 1000));
+
+  // Issue new tokens
+  const role = userRow.role as "supervisor" | "operator" | "quality" | "admin" | "readonly";
+  const newToken = signAccessToken({ userId: payload.userId, email: payload.email, role });
+  const newRefreshToken = signRefreshToken({ userId: payload.userId, email: payload.email, role });
+
+  res.json({ token: newToken, refreshToken: newRefreshToken });
 }));
 
 router.post("/logout", requireAuth, asyncHandler(async (req, res) => {

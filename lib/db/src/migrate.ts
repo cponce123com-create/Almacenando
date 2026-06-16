@@ -10,7 +10,6 @@
  */
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { sql } from "drizzle-orm";
 import pg from "pg";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -42,26 +41,6 @@ async function runMigrations() {
   const migrationsFolder = path.join(__dirname, "../drizzle");
 
   await migrate(db, { migrationsFolder });
-
-  // ── Migración manual 0010: columnas nuevas en products ───────────────────
-  // Estas columnas se agregaron al schema TypeScript pero la migración SQL
-  // 0010 no está registrada en el journal de Drizzle. Las aplicamos manualmente
-  // para evitar errores de "column does not exist" al insertar productos.
-  const manualMigrations = [
-    sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode TEXT UNIQUE`,
-    sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS location_id TEXT REFERENCES locations(id)`,
-    sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS stock DOUBLE PRECISION NOT NULL DEFAULT 0`,
-    sql`ALTER TABLE inventory_records ADD COLUMN IF NOT EXISTS location_id TEXT REFERENCES locations(id)`,
-  ];
-
-  for (const stmt of manualMigrations) {
-    try {
-      await db.execute(stmt);
-      console.log("  ✓ Manual migration applied");
-    } catch (err) {
-      console.warn(`  ⚠ ${err}`);
-    }
-  }
 
   console.log("✅ Migrations applied successfully.");
   await pool.end();

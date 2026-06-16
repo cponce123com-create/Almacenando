@@ -36,7 +36,7 @@ jobs:
         if: github.event.inputs.restore != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: backup-db-${{ github.run_id }}
+          name: backup-db-latest
           path: backup_*.dump
           retention-days: 90
 
@@ -49,7 +49,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.restore == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: backup-db-${{ github.run_id }}
+          name: backup-db-latest
           path: ./restore
 
       - name: Restore from backup
