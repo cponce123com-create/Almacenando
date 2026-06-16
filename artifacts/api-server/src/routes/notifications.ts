@@ -10,6 +10,7 @@ import { logger } from "../lib/logger.js";
 import { sendLotChangeNotificationEmail, sendProductOutEmail, sendStockColoranteEmail, sendStockAuxiliarEmail, sendOrderApprovalEmail, sendPlasticBagEmail } from "../lib/email/index.js";
 import { getLotChangeRecipients, getProductOutRecipients, getStockColorRecipients, getStockAuxRecipients, getOrderApprovalRecipient, getPlasticBagRecipients } from "../lib/email-recipients.js";
 import { z } from "zod/v4";
+import { emitNotification, onNotification } from "../lib/notification-events.js";
 
 /**
  * Notificaciones
@@ -376,9 +377,88 @@ router.post(
 
     void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "notifications", resourceId: id, details: { title: parsed.data.title, type: parsed.data.type }, ipAddress: req.ip });
     logger.info({ notificationId: id, title: parsed.data.title }, "Notification created");
+
+    // Emitir evento SSE para notificaciones en tiempo real
+    emitNotification({
+      id,
+      title: parsed.data.title,
+      message: parsed.data.message,
+      type: parsed.data.type,
+      userId: parsed.data.userId ?? null,
+      createdAt: created.createdAt.toISOString(),
+    });
+
     res.status(201).json(created);
   }),
 );
+
+// ── GET /api/notifications/stream ─────────────────────────────────────────────
+// SSE endpoint: el cliente se conecta y recibe notificaciones en tiempo real.
+// Usa ?token=xxx en la query porque EventSource no soporta headers personalizados.
+
+router.get("/stream", asyncHandler(async (req, res) => {
+  // Autenticación via query param (EventSource no soporta Authorization header)
+  const queryToken = req.query.token as string | undefined;
+  const authHeader = req.headers.authorization;
+
+  // Verificar token desde query param o header
+  const token = queryToken
+    ? `Bearer ${queryToken}`
+    : authHeader;
+
+  if (!token || !token.startsWith("Bearer ")) {
+    res.status(401).json({ error: "No autorizado" });
+    return;
+  }
+
+  // Reconstruir request con el token en el header para requireAuth
+  req.headers.authorization = token;
+
+  let authed = false;
+  await new Promise<void>((resolve) => {
+    requireAuth(req, res, (err) => {
+      if (err) {
+        // Si requireAuth ya respondió (401), no continuar
+        resolve();
+      } else {
+        authed = true;
+        resolve();
+      }
+    });
+  });
+
+  if (!authed) return; // requireAuth ya respondió 401
+
+  const authedReq = req as AuthenticatedRequest;
+  const isAdmin = authedReq.userRole === "admin";
+
+  // Headers SSE
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+
+  // Enviar heartbeat cada 30s para mantener conexión viva
+  const heartbeat = setInterval(() => {
+    res.write(": heartbeat\n\n");
+  }, 30000);
+
+  // Suscribirse a eventos de notificaciones
+  const unsubscribe = onNotification((event) => {
+    // Si la notificación es para todos (userId null) o para este usuario, o el usuario es admin
+    if (!event.notification.userId || event.notification.userId === authedReq.userId || isAdmin) {
+      res.write(`event: notification\ndata: ${JSON.stringify(event.notification)}\n\n`);
+    }
+  });
+
+  // Limpieza al desconectarse
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+}));
 
 /**
  * @route POST /api/notifications/mark-all-read

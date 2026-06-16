@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getAuthHeaders } from "@/hooks/use-auth";
+import { getAuthHeaders, getAuthToken } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Bell, Loader2, CheckCheck, AlertTriangle, Info, Clock, X } from "lucide-react";
@@ -38,14 +38,40 @@ export function NotificationBell() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const { data: notifications = [], isLoading } = useQuery<Notification[]>({
     queryKey: ["/api/notifications/unread"],
     queryFn: () => fetch("/api/notifications/unread", { headers: { ...getAuthHeaders() } }).then(r => { if (!r.ok) throw new Error("Error"); return r.json(); }),
-    refetchInterval: 30000,
+    // Sin refetchInterval — usamos SSE para actualizaciones en tiempo real
   });
 
   const unreadCount = notifications.length;
+
+  // ── SSE: Conexión en tiempo real ─────────────────────────────────────────────
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) return;
+
+    // Crear conexión SSE
+    const es = new EventSource(`/api/notifications/stream?token=${encodeURIComponent(token)}`, { withCredentials: true });
+    eventSourceRef.current = es;
+
+    es.addEventListener("notification", () => {
+      // Llegó una nueva notificación → refrescar la lista
+      qc.invalidateQueries({ queryKey: ["/api/notifications/unread"] });
+    });
+
+    es.onerror = () => {
+      // Error de conexión — EventSource se reconecta automáticamente
+      es.close();
+    };
+
+    return () => {
+      es.close();
+      eventSourceRef.current = null;
+    };
+  }, [qc]);
 
   const markAllReadMutation = useMutation({
     mutationFn: () =>

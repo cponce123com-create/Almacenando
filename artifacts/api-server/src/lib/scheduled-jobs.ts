@@ -3,6 +3,7 @@ import { eq, lt, and, lte, gte, sql, inArray } from "drizzle-orm";
 import { db, productsTable, dyeLotsTable, notificationsTable, usersTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { generateId } from "./id.js";
+import { emitNotification } from "./notification-events.js";
 
 const DAILY_CRON_SCHEDULE = "0 7 * * *";
 const LOW_STOCK_BATCH_SIZE = 100;
@@ -121,7 +122,26 @@ async function checkLowStock(): Promise<number> {
 
   // Bulk insert all new notifications in one shot
   if (inserts.length > 0) {
-    await db.insert(notificationsTable).values(inserts);
+    const insertedRows = await db.insert(notificationsTable).values(inserts).returning({
+      id: notificationsTable.id,
+      title: notificationsTable.title,
+      message: notificationsTable.message,
+      type: notificationsTable.type,
+      userId: notificationsTable.userId,
+      createdAt: notificationsTable.createdAt,
+    });
+
+    // Emitir eventos SSE para cada notificación creada
+    for (const n of insertedRows) {
+      emitNotification({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        userId: n.userId,
+        createdAt: n.createdAt.toISOString(),
+      });
+    }
   }
 
   logger.info({ count: lowStockProducts.length, notificationsCreated: created }, "Low-stock job completed");
@@ -204,7 +224,26 @@ async function checkExpiringLots(): Promise<number> {
 
   // Bulk insert in one shot
   if (inserts.length > 0) {
-    await db.insert(notificationsTable).values(inserts);
+    const insertedRows = await db.insert(notificationsTable).values(inserts).returning({
+      id: notificationsTable.id,
+      title: notificationsTable.title,
+      message: notificationsTable.message,
+      type: notificationsTable.type,
+      userId: notificationsTable.userId,
+      createdAt: notificationsTable.createdAt,
+    });
+
+    // Emitir eventos SSE para cada notificación creada
+    for (const n of insertedRows) {
+      emitNotification({
+        id: n.id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        userId: n.userId,
+        createdAt: n.createdAt.toISOString(),
+      });
+    }
   }
 
   logger.info({ count: expiringLots.length, notificationsCreated: created }, "Expiring lots job completed");
@@ -240,8 +279,5 @@ export function startScheduledJobs(): void {
     } catch (err) {
       logger.error({ err }, "Initial scheduled job check failed");
     }
-  }, 10_000);
-}
-}
   }, 10_000);
 }
