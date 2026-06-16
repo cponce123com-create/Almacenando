@@ -222,72 +222,6 @@ function NavItem({ item, onClick, mobile = false }: { item: ModuleItem; onClick?
   );
 }
 
-// Bottom nav items shown on mobile (up to 4, filtered by role, + Más)
-const BOTTOM_NAV: Array<{ name: string; href: string; icon: React.ElementType; roles?: ModuleRole[] }> = [
-  { name: "Inicio",      href: "/dashboard",    icon: LayoutDashboard },
-  { name: "Escáner",     href: "/scanner",      icon: Scan },
-  { name: "Picking",     href: "/picking",      icon: PackageCheck },
-  { name: "Ubicaciones", href: "/locations",    icon: MapPin },
-];
-
-function MobileBottomNav({ onMenuOpen }: { onMenuOpen: () => void }) {
-  const [location] = useLocation();
-  const { user } = useAuth();
-
-  const visibleItems = BOTTOM_NAV
-    .filter(item => !item.roles || (user?.role && item.roles.includes(user.role as ModuleRole)))
-    .slice(0, 4);
-
-  return (
-    <div
-      className="lg:hidden"
-      style={{
-        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 40,
-        backgroundColor: "#ffffff",
-        borderTop: "1px solid #e2e8f0",
-        boxShadow: "0 -2px 12px rgba(0,0,0,0.08)",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        display: "flex",
-      }}
-    >
-      {visibleItems.map(item => {
-        const isActive = location === item.href || location.startsWith(item.href + "/");
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            style={{
-              flex: 1,
-              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-              height: 58, gap: 3, textDecoration: "none",
-              color: isActive ? "#0d9488" : "#94a3b8",
-              backgroundColor: isActive ? "rgba(13,148,136,0.06)" : "transparent",
-              transition: "color 0.12s, background-color 0.12s",
-            }}
-          >
-            <Icon style={{ width: 22, height: 22 }} />
-            <span style={{ fontSize: 10, fontWeight: isActive ? 600 : 400, lineHeight: 1 }}>
-              {item.name}
-            </span>
-          </Link>
-        );
-      })}
-      <button
-        onClick={onMenuOpen}
-        style={{
-          flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-          height: 58, gap: 3, border: "none", background: "transparent", cursor: "pointer",
-          color: "#94a3b8",
-        }}
-      >
-        <Menu style={{ width: 22, height: 22 }} />
-        <span style={{ fontSize: 10, lineHeight: 1 }}>Más</span>
-      </button>
-    </div>
-  );
-}
-
 const ROLE_AVATAR_COLORS: Record<string, string> = {
   admin:      "linear-gradient(135deg,#0d7f85,#065f6b)",
   supervisor: "linear-gradient(135deg,#0e7490,#155e75)",
@@ -579,12 +513,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main style={{ flex: 1 }} className="p-4 sm:p-6 lg:p-8 pb-24 lg:pb-8">
+        <main style={{ flex: 1 }} className="p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>
-
-      <MobileBottomNav onMenuOpen={() => setMobileOpen(true)} />
     </div>
   );
 }
