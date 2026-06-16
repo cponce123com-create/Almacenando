@@ -178,8 +178,7 @@ export async function sendStockColoranteEmail(items: Array<{ code: string; name:
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
-  ).join("\n")
-");
+  ).join("\n");
   const text = `Buenas días,
 
 Se informa el siguiente stock físico de colorantes:
@@ -203,8 +202,7 @@ export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: 
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
-  ).join("\n")
-");
+  ).join("\n");
   const text = `Buenas días,
 
 Se informa el siguiente stock físico de auxiliares:
@@ -229,7 +227,6 @@ export async function sendOrderApprovalEmail(items: Array<{ code: string; name: 
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
   ).join("\n")
-");
   const notesLine = notes ? `
 Observaciones: ${notes}
 ` : "";
@@ -257,7 +254,6 @@ export async function sendPlasticBagEmail(items: Array<{ code: string; name: str
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
   ).join("\n")
-");
   const notesLine = notes ? `
 Observaciones: ${notes}
 ` : "";
