@@ -4,7 +4,7 @@
  * insumos, muestras, personal y lotes.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { Search, Loader2 } from "lucide-react";
 import { getAuthHeaders } from "@/hooks/use-auth";
 
@@ -44,7 +44,7 @@ export function GlobalSearch() {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
+  const [, navigate] = useLocation();
 
   const doSearch = useCallback(async (q: string) => {
     if (q.length < 2) {
