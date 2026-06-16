@@ -61,6 +61,11 @@ Supervisor de Cocina Colores`;
   // ── Prioridad 1: SMTP Gmail (nodemailer) — el usuario lo tiene configurado ──
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   const smtpUser = getSmtpUserEmail();
+  logger.info({ 
+    hasSmtpPass: !!smtpPass,
+    smtpPassLength: smtpPass?.length,
+    smtpUser: smtpUser ? `${smtpUser.slice(0, 3)}...${smtpUser.split("@")[1]}` : null,
+  }, "[email-diagnostico] Estado configuracion SMTP antes del envio");
   if (smtpPass && smtpUser) {
     let to: string[];
     if (explicitTo && explicitTo.length > 0) {
