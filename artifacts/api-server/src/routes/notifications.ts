@@ -305,6 +305,46 @@ router.get("/recipients", requireAuth, asyncHandler(async (_req, res) => {
   });
 }));
 
+// ── GET /api/notifications/smtp-status ────────────────────────────────────────
+// Diagnóstico del estado de la configuración SMTP.
+
+router.get("/smtp-status", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
+  const smtpEmail = process.env.SMTP_EMAIL;
+  const smtpPass = process.env.SMTP_APP_PASSWORD;
+  const resendKey = process.env.RESEND_API_KEY;
+
+  const config = {
+    smtpEmail: smtpEmail ? `${smtpEmail.slice(0, 3)}...${smtpEmail.split("@")[1]}` : "(no configurado)",
+    smtpPassword: smtpPass ? `configurado (${smtpPass.length} caracteres)` : "(no configurado)",
+    resendApiKey: resendKey ? "configurado" : "(no configurado)",
+    willUse: smtpPass && smtpEmail ? "SMTP Gmail (prioridad 1)" : resendKey ? "Resend (prioridad 2)" : "NINGUNO — correos no se enviarán",
+  };
+
+  // Probar conexión SMTP si está configurado
+  let smtpTest = { status: "no probado" as string, error: null as string | null };
+  if (smtpPass && smtpEmail) {
+    try {
+      const nodemailer = (await import("nodemailer")).default;
+      const transporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: { user: smtpEmail, pass: smtpPass },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+      });
+      await transporter.verify();
+      smtpTest = { status: "✅ conexión SMTP exitosa", error: null };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      smtpTest = { status: "❌ falló conexión SMTP", error: msg };
+    }
+  }
+
+  res.json({ config, smtpTest });
+}));
+
 // ── Notification CRUD ────────────────────────────────────────────────────────
 
 const createNotificationSchema = z.object({
