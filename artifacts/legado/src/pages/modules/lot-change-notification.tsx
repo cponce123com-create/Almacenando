@@ -451,73 +451,73 @@ export default function LotChangeNotificationPage() {
             )}
           </div>
 
-          {/* Campos de destinatarios */}\
-          <div className="space-y-4">\
-            {/* Para */}\
-            <div className="space-y-1.5">\
-              <Label htmlFor="to">\
-                Para <span className="text-red-500" aria-hidden="true">*</span>\
-              </Label>\
-              <Input\
-                id="to"\
-                placeholder="email1@dominio.com, email2@dominio.com"\
-                value={form.to}\
-                onChange={(e) => setField("to", e.target.value)}\
-                onBlur={() => markTouched("to")}\
-                className={`h-10 ${\
-                  errors.to && touched.to\
-                    ? "border-red-400 focus-visible:ring-red-400"\
-                    : ""\
-                }`}\
-                aria-invalid={!!(errors.to && touched.to)}\
-                aria-describedby={errors.to && touched.to ? "to-error" : undefined}\
-                inputMode="email"\
-              />\
-              <p className="text-xs text-slate-400">Emails separados por coma</p>\
-              {errors.to && touched.to && (\
-                <p className="text-xs text-red-500 flex items-center gap-1" role="alert" id="to-error">\
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />\
-                  {errors.to}\
-                </p>\
-              )}\
-            </div>\
-\
-            {/* CC */}\
-            <div className="space-y-1.5">\
-              <Label htmlFor="cc">\
-                CC <span className="text-slate-400 font-normal">(opcional)</span>\
-              </Label>\
-              <Input\
-                id="cc"\
-                placeholder="email1@dominio.com, email2@dominio.com"\
-                value={form.cc}\
-                onChange={(e) => setField("cc", e.target.value)}\
-                onBlur={() => markTouched("cc")}\
-                className={`h-10 ${\
-                  errors.cc && touched.cc\
-                    ? "border-red-400 focus-visible:ring-red-400"\
-                    : ""\
-                }`}\
-                aria-invalid={!!(errors.cc && touched.cc)}\
-                aria-describedby={errors.cc && touched.cc ? "cc-error" : undefined}\
-                inputMode="email"\
-              />\
-              <p className="text-xs text-slate-400">Emails separados por coma</p>\
-              {errors.cc && touched.cc && (\
-                <p className="text-xs text-red-500 flex items-center gap-1" role="alert" id="cc-error">\
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />\
-                  {errors.cc}\
-                </p>\
-              )}\
-            </div>\
-          </div>\
-\
-          {/* Campos de Lotes (Grid) */}\
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">\
-            {/* Lote Antiguo */}\
-            <div className="space-y-1.5">\
-              <Label htmlFor="oldLot">\
-                Lote Antiguo <span className="text-red-500" aria-hidden="true">*</span>\
+          {/* Campos de destinatarios */}
+          <div className="space-y-4">
+            {/* Para */}
+            <div className="space-y-1.5">
+              <Label htmlFor="to">
+                Para <span className="text-red-500" aria-hidden="true">*</span>
+              </Label>
+              <Input
+                id="to"
+                placeholder="email1@dominio.com, email2@dominio.com"
+                value={form.to}
+                onChange={(e) => setField("to", e.target.value)}
+                onBlur={() => markTouched("to")}
+                className={`h-10 ${
+                  errors.to && touched.to
+                    ? "border-red-400 focus-visible:ring-red-400"
+                    : ""
+                }`}
+                aria-invalid={!!(errors.to && touched.to)}
+                aria-describedby={errors.to && touched.to ? "to-error" : undefined}
+                inputMode="email"
+              />
+              <p className="text-xs text-slate-400">Emails separados por coma</p>
+              {errors.to && touched.to && (
+                <p className="text-xs text-red-500 flex items-center gap-1" role="alert" id="to-error">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  {errors.to}
+                </p>
+              )}
+            </div>
+
+            {/* CC */}
+            <div className="space-y-1.5">
+              <Label htmlFor="cc">
+                CC <span className="text-slate-400 font-normal">(opcional)</span>
+              </Label>
+              <Input
+                id="cc"
+                placeholder="email1@dominio.com, email2@dominio.com"
+                value={form.cc}
+                onChange={(e) => setField("cc", e.target.value)}
+                onBlur={() => markTouched("cc")}
+                className={`h-10 ${
+                  errors.cc && touched.cc
+                    ? "border-red-400 focus-visible:ring-red-400"
+                    : ""
+                }`}
+                aria-invalid={!!(errors.cc && touched.cc)}
+                aria-describedby={errors.cc && touched.cc ? "cc-error" : undefined}
+                inputMode="email"
+              />
+              <p className="text-xs text-slate-400">Emails separados por coma</p>
+              {errors.cc && touched.cc && (
+                <p className="text-xs text-red-500 flex items-center gap-1" role="alert" id="cc-error">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                  {errors.cc}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Campos de Lotes (Grid) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Lote Antiguo */}
+            <div className="space-y-1.5">
+              <Label htmlFor="oldLot">
+                Lote Antiguo <span className="text-red-500" aria-hidden="true">*</span>
               </Label>
               <Input
                 id="oldLot"
