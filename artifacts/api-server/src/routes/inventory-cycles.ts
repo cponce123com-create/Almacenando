@@ -201,27 +201,26 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
     const ultimoConsumo = balance?.ultimoConsumo ?? null;
 
     // Priority calculation:
-    // - Products never inventoried: highest priority (base 100)
-    // - Products with older last inventory: higher priority
-    // - Products with very old ultimoConsumo: medium priority
+    // Primary: days since last consumption (ultimo_consumo).
+    //   More days sin movimiento = higher priority.
+    //   Products without consumption data get moderate priority.
+    // Secondary: never inventoried gets a boost.
     let priority = 0;
 
-    if (!lastInvDate) {
-      // Never inventoried — highest priority
-      priority = 100;
-    } else {
-      const daysSinceInv = Math.floor(
-        (new Date(today).getTime() - new Date(lastInvDate).getTime()) / 86400000
+    if (ultimoConsumo && ultimoConsumo > "2013-01-01") {
+      const daysSinceConsumo = Math.floor(
+        (new Date(today).getTime() - new Date(ultimoConsumo).getTime()) / 86400000
       );
-      priority = Math.min(Math.floor(daysSinceInv / 7), 50); // 1 point per week, max 50
+      // ~1 point per week, max 80 for very old consumption
+      priority = Math.min(Math.floor(daysSinceConsumo / 7), 80);
+    } else {
+      // No consumption date or default date → sin dato de movimiento
+      priority = 50;
     }
 
-    if (ultimoConsumo && ultimoConsumo > "2013-01-01") {
-      const monthsSinceConsumo = Math.floor(
-        (new Date(today).getTime() - new Date(ultimoConsumo).getTime()) / (86400000 * 30.44)
-      );
-      if (monthsSinceConsumo > 12) priority += 30; // > 1 year without consumption
-      else if (monthsSinceConsumo > 6) priority += 15; // > 6 months
+    // Boost for products never inventoried (secondary factor)
+    if (!lastInvDate) {
+      priority = Math.max(priority, 70);
     }
 
     return {
