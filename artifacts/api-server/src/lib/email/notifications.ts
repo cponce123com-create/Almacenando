@@ -58,30 +58,7 @@ Supervisor de Cocina Colores`;
     ["Enviado por", senderName],
   ];
 
-  // ── Intentar con Resend (proveedor transactional) ─────────────────────────
-  const resend = getResend();
-  if (resend) {
-    let to: string[];
-    if (explicitTo && explicitTo.length > 0) {
-      to = explicitTo;
-    } else {
-      const { getLotChangeRecipients } = await import("../email-recipients.js");
-      to = getLotChangeRecipients();
-    }
-    const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
-    if (to.length > 0) {
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
-        to,
-        cc,
-        subject,
-        text,
-      });
-    }
-    return;
-  }
-
-  // ── Fallback: SMTP Gmail (nodemailer) ────────────────────────────────────
+  // ── Prioridad 1: SMTP Gmail (nodemailer) — el usuario lo tiene configurado ──
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   const smtpUser = getSmtpUserEmail();
   if (smtpPass && smtpUser) {
@@ -114,7 +91,30 @@ Supervisor de Cocina Colores`;
     return;
   }
 
-  logger.warn("[email] Sin proveedor de email configurado — email no enviado. Configurá RESEND_API_KEY o SMTP_APP_PASSWORD + SMTP_EMAIL");
+  // ── Prioridad 2: Resend (proveedor transactional) ─────────────────────────
+  const resend = getResend();
+  if (resend) {
+    let to: string[];
+    if (explicitTo && explicitTo.length > 0) {
+      to = explicitTo;
+    } else {
+      const { getLotChangeRecipients } = await import("../email-recipients.js");
+      to = getLotChangeRecipients();
+    }
+    const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
+    if (to.length > 0) {
+      await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
+        to,
+        cc,
+        subject,
+        text,
+      });
+    }
+    return;
+  }
+
+  logger.warn("[email] Sin proveedor de email configurado — email no enviado. Configurá SMTP_APP_PASSWORD + SMTP_EMAIL o RESEND_API_KEY");
 }
 
 // ── Dye Lot Notification ──────────────────────────────────────────────────────
