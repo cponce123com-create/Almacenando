@@ -58,14 +58,10 @@ Supervisor de Cocina Colores`;
     ["Enviado por", senderName],
   ];
 
-  // ── Prioridad 1: SMTP Gmail (nodemailer) — el usuario lo tiene configurado ──
+  // ── Prioridad 1: SMTP Gmail (nodemailer) ────────────────────────────────────
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   const smtpUser = getSmtpUserEmail();
-  logger.info({ 
-    hasSmtpPass: !!smtpPass,
-    smtpPassLength: smtpPass?.length,
-    smtpUser: smtpUser ? `${smtpUser.slice(0, 3)}...${smtpUser.split("@")[1]}` : null,
-  }, "[email-diagnostico] Estado configuracion SMTP antes del envio");
+  logger.info({ hasPass: !!smtpPass, user: smtpUser?.slice(0,5) }, "[email] check SMTP config");
   if (smtpPass && smtpUser) {
     let to: string[];
     if (explicitTo && explicitTo.length > 0) {
@@ -76,23 +72,19 @@ Supervisor de Cocina Colores`;
     }
     const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
     if (to.length === 0) {
-      logger.warn("[email-smtp] Sin destinatarios — notificación de cambio de lote no enviada");
+      logger.warn("[email] Sin destinatarios");
       return;
     }
+
+    logger.info({ to, cc }, "[email] Intentando enviar por SMTP...");
     try {
-      let transporter;
-      try {
-        transporter = buildTransporter();
-      } catch {
-        // Fallback a puerto 587 si 465 falla
-        transporter = nodemailer.createTransport({
-          host: "smtp.gmail.com",
-          port: 587,
-          secure: false,
-          auth: { user: smtpUser, pass: smtpPass },
-          tls: { rejectUnauthorized: false },
-        });
-      }
+      const transporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: { user: smtpUser, pass: smtpPass },
+        tls: { rejectUnauthorized: false },
+      });
       await transporter.sendMail({
         from: `"Almacén Químico" <${smtpUser}>`,
         to: to.join(", "),
@@ -100,12 +92,12 @@ Supervisor de Cocina Colores`;
         subject,
         text,
       });
-      logger.info({ to, cc }, "[email-smtp] Notificación de cambio de lote enviada por SMTP");
-      return;
-    } catch (err) {
-      logger.error({ err }, "[email-smtp] Error enviando correo de cambio de lote");
-      return;
+      logger.info("[email] ✅ CORREO ENVIADO EXITOSAMENTE");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, "[email] ❌ FALLO AL ENVIAR CORREO");
     }
+    return;
   }
 
   // ── Prioridad 2: Resend (proveedor transactional) ─────────────────────────
