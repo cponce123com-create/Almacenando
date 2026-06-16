@@ -74,37 +74,33 @@ Supervisor de Cocina Colores`;
       logger.warn("[email-smtp] Sin destinatarios — notificación de cambio de lote no enviada");
       return;
     }
-    // Intentar con puerto 465 (SSL) primero, fallback a 587 (STARTTLS)
-    for (const attempt of [
-      { host: "smtp.gmail.com", port: 465, secure: true },
-      { host: "smtp.gmail.com", port: 587, secure: false },
-    ]) {
+    try {
+      let transporter;
       try {
-        const transporter = nodemailer.createTransport({
-          host: attempt.host,
-          port: attempt.port,
-          secure: attempt.secure,
+        transporter = buildTransporter();
+      } catch {
+        // Fallback a puerto 587 si 465 falla
+        transporter = nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 587,
+          secure: false,
           auth: { user: smtpUser, pass: smtpPass },
           tls: { rejectUnauthorized: false },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
         });
-        await transporter.sendMail({
-          from: `"Almacén Químico" <${smtpUser}>`,
-          to: to.join(", "),
-          cc: cc ? cc.join(", ") : undefined,
-          subject,
-          text,
-        });
-        logger.info({ to, cc, port: attempt.port }, "[email-smtp] Notificación de cambio de lote enviada por SMTP");
-        return;
-      } catch (err) {
-        logger.warn({ err, port: attempt.port }, `[email-smtp] Falló intento con puerto ${attempt.port}, probando siguiente...`);
       }
+      await transporter.sendMail({
+        from: `"Almacén Químico" <${smtpUser}>`,
+        to: to.join(", "),
+        cc: cc ? cc.join(", ") : undefined,
+        subject,
+        text,
+      });
+      logger.info({ to, cc }, "[email-smtp] Notificación de cambio de lote enviada por SMTP");
+      return;
+    } catch (err) {
+      logger.error({ err }, "[email-smtp] Error enviando correo de cambio de lote");
+      return;
     }
-    logger.error("[email-smtp] Todos los intentos SMTP fallaron — email no enviado");
-    return;
   }
 
   // ── Prioridad 2: Resend (proveedor transactional) ─────────────────────────
