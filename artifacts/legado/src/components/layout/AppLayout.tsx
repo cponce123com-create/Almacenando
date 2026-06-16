@@ -33,6 +33,7 @@ import {
   Scan,
   PackageCheck,
   Map,
+  Target,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
@@ -110,6 +111,7 @@ export const navGroups: NavGroup[] = [
       { name: "Saldo Actualizado", href: "/balances", icon: Scale },
       { name: "Inventarios", href: "/inventory", icon: ClipboardList },
       { name: "Cuadre", href: "/cuadre", icon: Warehouse },
+      { name: "Progreso de Inventario", href: "/inventory-progress", icon: Target },
       { name: "Ubicaciones", href: "/locations", icon: MapPin },
       { name: "Mapa del Almacén", href: "/warehouse-map", icon: Map },
       { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },

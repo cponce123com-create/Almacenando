@@ -85,6 +85,13 @@
       "when": 1775500000000,
       "tag": "0011_add_notifications_index",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775600000000,
+      "tag": "0012_inventory_cycles",
+      "breakpoints": true
     }
   ]
 }

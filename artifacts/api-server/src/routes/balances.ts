@@ -240,6 +240,25 @@ router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   res.json(records[0]);
 }));
 
+// ── Get available balance batch dates (for detect-no-movement flow) ────────
+router.get("/dates", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+  const condition = warehouse && warehouse !== "all"
+    ? eq(balanceRecordsTable.warehouse, warehouse)
+    : undefined;
+
+  const dates = await db.select({
+    balanceDate: balanceRecordsTable.balanceDate,
+    batchId: balanceRecordsTable.batchId,
+  })
+    .from(balanceRecordsTable)
+    .where(condition)
+    .groupBy(balanceRecordsTable.batchId, balanceRecordsTable.balanceDate)
+    .orderBy(desc(balanceRecordsTable.balanceDate));
+
+  res.json(dates);
+}));
+
 router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req: AuthenticatedRequest, res) => {
   const parsed = balanceSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
