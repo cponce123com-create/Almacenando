@@ -96,10 +96,11 @@ export default function MapaDelAlmacenPage() {
     },
   });
 
-  const { data: allProducts = [] } = useQuery<Product[]>({
+  const { data: productsResult } = useQuery<{ data: Product[] }>({
     queryKey: ["/api/products"],
     queryFn: () => api("/api/products"),
   });
+  const allProducts = productsResult?.data ?? [];
 
   const rackProducts = useMemo(() => {
     if (!selectedRack) return [];

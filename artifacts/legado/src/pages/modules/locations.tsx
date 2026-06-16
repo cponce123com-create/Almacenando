@@ -118,13 +118,14 @@ export default function GestionDeUbicacionesPage() {
 
   const canWrite = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
 
-  const { data: locations = [], isLoading, isError } = useQuery<Location[]>({
+  const { data: locationsResult, isLoading, isError } = useQuery<{ data: Location[] }>({
     queryKey: ["/api/locations", warehouse],
     queryFn: () => {
       const params = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
       return api(`/api/locations${params}`);
     },
   });
+  const locations = locationsResult?.data ?? [];
 
   const createMutation = useMutation({
     mutationFn: (data: LocationFormData) =>
