@@ -100,6 +100,10 @@ services:
       - key: NOTIFY_PLASTIC_BAG_CC
         sync: false
 
+      # Forzar resolución DNS IPv4 (Render no tiene ruta IPv6 a Gmail SMTP)
+      - key: NODE_OPTIONS
+        value: "--dns-result-order=ipv4first"
+
       # OpenAI (extracción MSDS)
       - key: AI_INTEGRATIONS_OPENAI_BASE_URL
         sync: false

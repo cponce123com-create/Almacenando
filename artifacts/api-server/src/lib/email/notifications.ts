@@ -78,7 +78,6 @@ Supervisor de Cocina Colores`;
 
     logger.info({ to, cc }, "[email] Intentando enviar por SMTP...");
     try {
-      const dns = await import("dns");
       const transportConfig = {
         host: "smtp.gmail.com",
         port: 465,
@@ -88,9 +87,6 @@ Supervisor de Cocina Colores`;
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        lookup: (host: any, options: any, cb: any) => {
-          dns.lookup(host, { ...options, family: 4 }, cb);
-        },
       } as any;
       const transporter = nodemailer.createTransport(transportConfig);
       const info = await transporter.sendMail({
