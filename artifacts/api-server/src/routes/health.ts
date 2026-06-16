@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { getAllJobStatuses } from "../lib/background-jobs.js";
 
 const router: IRouter = Router();
 
@@ -103,6 +104,20 @@ router.get("/metrics", async (_req, res) => {
 
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.status(200).end(metrics);
+});
+
+/**
+ * GET /jobs
+ *
+ * Monitoreo de background jobs: estado actual, última ejecución,
+ * total de ejecuciones, historial reciente.
+ */
+router.get("/jobs", (_req, res) => {
+  const jobs = getAllJobStatuses();
+  res.json({
+    count: jobs.length,
+    jobs,
+  });
 });
 
 export default router;

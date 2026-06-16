@@ -1,11 +1,10 @@
-import cron from "node-cron";
 import { eq, lt, and, lte, gte, sql, inArray } from "drizzle-orm";
 import { db, productsTable, dyeLotsTable, notificationsTable, usersTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { generateId } from "./id.js";
 import { emitNotification } from "./notification-events.js";
+import { registerJob, runStartupJobs } from "./background-jobs.js";
 
-const DAILY_CRON_SCHEDULE = "0 7 * * *";
 const LOW_STOCK_BATCH_SIZE = 100;
 const EXPIRING_LOTS_BATCH_SIZE = 100;
 const EXPIRING_LOTS_DAYS_THRESHOLD = 30;
@@ -255,29 +254,8 @@ async function checkExpiringLots(): Promise<number> {
  * Se llama durante el arranque del servidor.
  */
 export function startScheduledJobs(): void {
-  // Ejecutar diariamente a las 07:00 AM
-  cron.schedule(DAILY_CRON_SCHEDULE, async () => {
-    logger.info("Starting scheduled jobs: low stock + expiring lots");
-
-    try {
-      const lowStockCount = await checkLowStock();
-      const expiringCount = await checkExpiringLots();
-      logger.info({ lowStockCount, expiringCount }, "Scheduled jobs completed");
-    } catch (err) {
-      logger.error({ err }, "Scheduled jobs failed");
-    }
-  });
-
-  logger.info("Scheduled jobs registered (daily at 07:00)");
-
-  // También ejecutar una verificación inicial al arrancar (con un pequeño retraso)
-  setTimeout(async () => {
-    logger.info("Running initial scheduled job check on startup");
-    try {
-      await checkLowStock();
-      await checkExpiringLots();
-    } catch (err) {
-      logger.error({ err }, "Initial scheduled job check failed");
-    }
-  }, 10_000);
+  registerJob("check-low-stock", "daily_7am", checkLowStock);
+  registerJob("check-expiring-lots", "daily_7am", checkExpiringLots);
+  runStartupJobs(10_000);
+  logger.info("Background jobs registered (daily at 07:00 + startup run)");
 }
