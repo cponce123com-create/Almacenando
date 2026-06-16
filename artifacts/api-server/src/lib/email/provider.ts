@@ -6,6 +6,7 @@
 
 import { Resend } from "resend";
 import nodemailer from "nodemailer";
+import dns from "dns";
 import { logger } from "../logger.js";
 import { getSmtpUserEmail } from "../email-recipients.js";
 
@@ -34,6 +35,13 @@ export function buildTransporter() {
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 20000,
+  });
+}
+
+export { getResend, type Resend };
+ror | null, address: string, family: number) => void) => {
+      dns.lookup(host, { ...options, family: 4 }, cb);
+    },
   });
 }
 

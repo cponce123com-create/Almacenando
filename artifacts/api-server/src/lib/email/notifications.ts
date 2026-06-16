@@ -78,6 +78,7 @@ Supervisor de Cocina Colores`;
 
     logger.info({ to, cc }, "[email] Intentando enviar por SMTP...");
     try {
+      const dns = await import("dns");
       const transporter = nodemailer.createTransport({
         host: "smtp.gmail.com",
         port: 587,
@@ -87,7 +88,10 @@ Supervisor de Cocina Colores`;
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-      });
+        lookup: (host: string, options: dns.LookupOptions, cb: (err: Error | null, address: string, family: number) => void) => {
+          dns.lookup(host, { ...options, family: 4 }, cb);
+        },
+      } as any);
       const info = await transporter.sendMail({
         from: `"Almacén Químico" <${smtpUser}>`,
         to: to.join(", "),
