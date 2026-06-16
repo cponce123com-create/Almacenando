@@ -308,7 +308,7 @@ router.get("/recipients", requireAuth, asyncHandler(async (_req, res) => {
 // ── GET /api/notifications/smtp-status ────────────────────────────────────────
 // Diagnóstico del estado de la configuración SMTP.
 
-router.get("/smtp-status", requireAuth, requireRole("admin"), asyncHandler(async (_req, res) => {
+router.get("/smtp-status", requireAuth, asyncHandler(async (_req, res) => {
   const smtpEmail = process.env.SMTP_EMAIL;
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   const resendKey = process.env.RESEND_API_KEY;
