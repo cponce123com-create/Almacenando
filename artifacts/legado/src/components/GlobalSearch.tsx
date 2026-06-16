@@ -173,9 +173,14 @@ export function GlobalSearch() {
 /** Resalta el término de búsqueda en el texto */
 function highlightMatch(text: string, query: string): string {
   if (!query || query.length < 2) return escapeHtml(text);
-  const escaped = query.replace(/[.*+?^${}()|[\]\]/g, "\$&");
+  // Escapar caracteres especiales de regex de forma segura
+  const specialChars = [".", "*", "+", "?", "^", "$", "{", "}", "(", ")", "|", "[", "]", "\\"];
+  let escaped = "";
+  for (const ch of query) {
+    escaped += specialChars.includes(ch) ? "\\" + ch : ch;
+  }
   const regex = new RegExp(`(${escaped})`, "gi");
-  return escapeHtml(text).replace(regex, "<mark class="bg-amber-200 rounded-sm px-0.5">$1</mark>");
+  return escapeHtml(text).replace(regex, '<mark class="bg-amber-200 rounded-sm px-0.5">$1</mark>');
 }
 
 function escapeHtml(text: string): string {
