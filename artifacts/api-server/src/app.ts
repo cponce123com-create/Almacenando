@@ -5,7 +5,7 @@ import helmet from "helmet";
 import pinoHttp from "pino-http";
 import path from "path";
 import { randomUUID } from "crypto";
-import router from "./routes";
+import router, { v1Router } from "./routes";
 import publicMsdsRouter from "./routes/public-msds.js";
 import { logger } from "./lib/logger";
 import { generalApiLimiter, aiLimiter } from "./lib/rate-limit.js";
@@ -142,6 +142,7 @@ app.use("/api/public/msds", publicMsdsRouter);
 app.use("/api/compatibility", aiLimiter);
 app.use("/api/ai", aiLimiter);
 app.use("/api/msds", aiLimiter);
+app.use("/api/v1", generalApiLimiter, v1Router);
 app.use("/api", generalApiLimiter, router);
 
 // ---------------------------------------------------------------------------

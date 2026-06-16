@@ -26,33 +26,44 @@ import barcodeRouter from "./barcode.js";
 import pickingRouter from "./picking.js";
 import reorganizationRouter from "./reorganization.js";
 
-const router: IRouter = Router();
+// ---------------------------------------------------------------------------
+// v1 API — versión actual del API.
+//   - Se monta en /api/v1 (versión explícita)
+//   - También se monta en /api (legacy, para compatibilidad)
+//   - Cuando se introduzca v2, se crea un nuevo router v2 con las rutas
+//     actualizadas y la app monta ambos.
+// ---------------------------------------------------------------------------
+const v1Router: IRouter = Router();
 
-router.use(healthRouter);
-router.use("/auth", authRouter);
-router.use("/products", productsRouter);
-router.use("/inventory", inventoryRouter);
-router.use("/balances", balancesRouter);
-router.use("/cuadre", cuadreRouter);
-router.use("/immobilized", immobilizedRouter);
-router.use("/samples", samplesRouter);
-router.use("/dye-lots", dyeLotsRouter);
-router.use("/disposition", dispositionRouter);
-router.use("/documents", documentsRouter);
-router.use("/epp", eppRouter);
-router.use("/personnel", personnelRouter);
-router.use("/reports", reportsRouter);
-router.use("/admin/users", adminUsersRouter);
-router.use("/lot-evaluations", lotEvaluationsRouter);
-router.use("/notifications", notificationsRouter);
-router.use("/supplies", suppliesRouter);
-router.use("/surplus", surplusRouter);
-router.use("/admin/permissions", permissionsRouter);
-router.use("/msds", msdsRouter);
-router.use("/compatibility", compatibilityRouter);
-router.use("/locations", locationsRouter);
-router.use("/barcode", barcodeRouter);
-router.use("/picking", pickingRouter);
-router.use("/reorganization", reorganizationRouter);
+v1Router.use(healthRouter);
+v1Router.use("/auth", authRouter);
+v1Router.use("/products", productsRouter);
+v1Router.use("/inventory", inventoryRouter);
+v1Router.use("/balances", balancesRouter);
+v1Router.use("/cuadre", cuadreRouter);
+v1Router.use("/immobilized", immobilizedRouter);
+v1Router.use("/samples", samplesRouter);
+v1Router.use("/dye-lots", dyeLotsRouter);
+v1Router.use("/disposition", dispositionRouter);
+v1Router.use("/documents", documentsRouter);
+v1Router.use("/epp", eppRouter);
+v1Router.use("/personnel", personnelRouter);
+v1Router.use("/reports", reportsRouter);
+v1Router.use("/admin/users", adminUsersRouter);
+v1Router.use("/lot-evaluations", lotEvaluationsRouter);
+v1Router.use("/notifications", notificationsRouter);
+v1Router.use("/supplies", suppliesRouter);
+v1Router.use("/surplus", surplusRouter);
+v1Router.use("/admin/permissions", permissionsRouter);
+v1Router.use("/msds", msdsRouter);
+v1Router.use("/compatibility", compatibilityRouter);
+v1Router.use("/locations", locationsRouter);
+v1Router.use("/barcode", barcodeRouter);
+v1Router.use("/picking", pickingRouter);
+v1Router.use("/reorganization", reorganizationRouter);
+
+// Legacy alias — mismo router para compatibilidad hacia atrás
+const router: IRouter = v1Router;
 
 export default router;
+export { v1Router };
