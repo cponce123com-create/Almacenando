@@ -88,9 +88,9 @@ Supervisor de Cocina Colores`;
         connectionTimeout: 15000,
         greetingTimeout: 15000,
         socketTimeout: 20000,
-        lookup: (host: string, options: dns.LookupOptions, cb: (err: Error | null, address: string, family: number) => void) => {
+        lookup: (host, options, cb) => {
           dns.lookup(host, { ...options, family: 4 }, cb);
-        },
+        } as any,
       } as any);
       const info = await transporter.sendMail({
         from: `"Almacén Químico" <${smtpUser}>`,

@@ -35,14 +35,10 @@ export function buildTransporter() {
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 20000,
-  });
-}
-
-export { getResend, type Resend };
-ror | null, address: string, family: number) => void) => {
+    lookup: (host: any, options: any, cb: any) => {
       dns.lookup(host, { ...options, family: 4 }, cb);
     },
-  });
+  } as any);
 }
 
 export { getResend, type Resend };
