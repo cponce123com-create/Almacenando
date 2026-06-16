@@ -80,22 +80,26 @@ Supervisor de Cocina Colores`;
     try {
       const transporter = nodemailer.createTransport({
         host: "smtp.gmail.com",
-        port: 465,
-        secure: true,
+        port: 587,
+        secure: false,
         auth: { user: smtpUser, pass: smtpPass },
         tls: { rejectUnauthorized: false },
+        connectionTimeout: 15000,
+        greetingTimeout: 15000,
+        socketTimeout: 20000,
       });
-      await transporter.sendMail({
+      const info = await transporter.sendMail({
         from: `"Almacén Químico" <${smtpUser}>`,
         to: to.join(", "),
         cc: cc ? cc.join(", ") : undefined,
         subject,
         text,
       });
-      logger.info("[email] ✅ CORREO ENVIADO EXITOSAMENTE");
+      logger.info({ messageId: info.messageId }, "[email] ✅ CORREO ENVIADO EXITOSAMENTE");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ err: msg }, "[email] ❌ FALLO AL ENVIAR CORREO");
+      const code = err instanceof Error && 'code' in err ? (err as any).code : null;
+      logger.error({ err: msg, code }, "[email] ❌ FALLO AL ENVIAR CORREO");
     }
     return;
   }
