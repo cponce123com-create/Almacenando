@@ -7,7 +7,7 @@ import {
   balanceRecordsTable,
   inventoryRecordsTable,
 } from "@workspace/db";
-import { eq, and, desc, count, sql, inArray, not, isNull, lte } from "drizzle-orm";
+import { eq, and, desc, asc, count, sql, inArray, not, isNull, lte } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
@@ -280,10 +280,8 @@ router.get("/:id/progress", requireAuth, asyncHandler(async (req, res) => {
     .innerJoin(productsTable, eq(inventoryCycleProductsTable.productId, productsTable.id))
     .where(and(...conditions))
     .orderBy(
-      desc(inventoryCycleProductsTable.priority),
-      productsTable.code
+      asc(productsTable.code),
     );
-
   let results = await query;
 
   // Client-side search filter (code/name)

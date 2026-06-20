@@ -14,6 +14,8 @@ export type AuditAction =
   | "login"
   | "logout"
   | "view"
+  | "close"
+  | "sync"
   | "lot_change_notification"
   | "product_out_notification"
   | "email_notification";
