@@ -334,7 +334,7 @@ router.post(
         location: parsed.data.location ?? null,
         notes: parsed.data.notes,
         registeredBy: authedReq.userId,
-      }).returning();
+      } as any).returning();
       created = newRecord;
 
       for (let i = 0; i < boxEntries.length; i++) {
@@ -425,7 +425,7 @@ router.post(
       logger.warn({ err }, "Failed to auto-update cycle progress from inventory record");
     }
 
-    void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
+    void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "inventory_record", resourceId: id, ipAddress: req.ip as string });
     const responseBody: Record<string, unknown> = { ...created, boxes };
     if (photoWarnings > 0) responseBody.photoWarnings = photoWarnings;
     res.status(201).json(responseBody);
@@ -457,6 +457,7 @@ router.put(
         photoUrl = url;
       } catch { logger.warn({ fileId: id }, "Failed to upload inventory photo"); }
     }
+    const updateData: Record<string, unknown> = { ...parsed.data };
     delete updateData.boxesData;
     if (photoUrl) updateData.photoUrl = photoUrl;
 
@@ -466,7 +467,7 @@ router.put(
       .where(eq(inventoryRecordsTable.id, id as string)).returning();
 
     if (!updated) { res.status(404).json({ error: "Registro no encontrado" }); return; }
-    void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "inventory_record", resourceId: id, ipAddress: req.ip as string });
+    void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "inventory_record", resourceId: id as string, ipAddress: req.ip as string });
     res.json(updated);
   })
 );
@@ -483,7 +484,7 @@ router.delete(
     const [deleted] = await db.delete(inventoryRecordsTable)
       .where(eq(inventoryRecordsTable.id, id as string)).returning();
     if (!deleted) { res.status(404).json({ error: "Registro no encontrado" }); return; }
-    void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
+    void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "inventory_record", resourceId: id as string, ipAddress: req.ip as string });
     res.json({ message: "Registro eliminado" });
   })
 );

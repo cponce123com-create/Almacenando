@@ -275,8 +275,8 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
       if (row.last_consumption_date) lcMapRep.set(row.product_id, row.last_consumption_date);
     }
     data = records.map(r => {
-      const saldoSistema = parseFloat(r.previousBalance ?? "0") || 0;
-      const saldoFisico = r.physicalCount != null ? (parseFloat(r.physicalCount) || 0) : null;
+      const saldoSistema = Number(r.previousBalance ?? 0) || 0;
+      const saldoFisico = r.physicalCount != null ? (Number(r.physicalCount) || 0) : null;
       const diferencia = saldoFisico != null ? saldoFisico - saldoSistema : null;
       const operario = r.registeredByName ?? r.registeredByEmail ?? r.registeredBy ?? "";
       let estado = "";
