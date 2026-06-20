@@ -275,6 +275,18 @@ export default function InventoryProgressPage() {
           <div className="flex items-center gap-2 flex-wrap">
             {activeCycle ? (
               <>
+                <Button variant="outline" size="sm" onClick={() => {
+                  const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+                  const url = `${baseUrl}/api/reports/export/inventory-cycle-progress?cycleId=${activeCycle.id}`;
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.setAttribute("download", `progreso_${activeCycle.name.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`);
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}>
+                  <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Exportar Excel
+                </Button>
                 <Button variant="outline" size="sm" onClick={() => setShowDetectNoMovement(true)}>
                   <Radio className="w-4 h-4 mr-1.5" /> Detectar Sin Movimiento
                 </Button>

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
-import { inventoryRecordsTable, productsTable, inventoryBoxesTable } from "@workspace/db";
+import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable } from "@workspace/db";
 import { eq, desc, sql, and, inArray, count, max } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
@@ -145,9 +145,14 @@ router.get("/stats", requireAuth, asyncHandler(async (req, res) => {
 router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
   const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
-  const condition = warehouse && warehouse !== "all"
-    ? eq(inventoryRecordsTable.warehouse, warehouse)
-    : undefined;
+  const conditions: ReturnType<typeof and>[] = [];
+  if (warehouse && warehouse !== "all") {
+    conditions.push(eq(inventoryRecordsTable.warehouse, warehouse) as any);
+  }
+  if (req.query.productId) {
+    conditions.push(eq(inventoryRecordsTable.productId, req.query.productId as string) as any);
+  }
+  const condition = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [countResult, records] = await Promise.all([
     db.select({ total: count() }).from(inventoryRecordsTable).where(condition),
@@ -312,6 +317,76 @@ router.post(
         .where(eq(inventoryBoxesTable.inventoryRecordId, id))
         .orderBy(inventoryBoxesTable.boxNumber);
     });
+
+    // ── Auto-update cycle progress if an active cycle exists ───────────
+    try {
+      const [activeCycle] = await db.select({ id: inventoryCyclesTable.id })
+        .from(inventoryCyclesTable)
+        .where(and(
+          eq(inventoryCyclesTable.warehouse, parsed.data.warehouse),
+          eq(inventoryCyclesTable.status, "active")
+        ))
+        .orderBy(desc(inventoryCyclesTable.createdAt))
+        .limit(1);
+
+      if (activeCycle && created) {
+        const [existingCp] = await db.select({ id: inventoryCycleProductsTable.id })
+          .from(inventoryCycleProductsTable)
+          .where(and(
+            eq(inventoryCycleProductsTable.cycleId, activeCycle.id),
+            eq(inventoryCycleProductsTable.productId, created.productId)
+          ))
+          .limit(1);
+
+        if (existingCp) {
+          const updateData: Partial<typeof inventoryCycleProductsTable.$inferSelect> = {
+            status: "counted" as const,
+            countedDate: created.recordDate,
+            countedBy: authedReq.userId,
+            updatedAt: new Date(),
+            inventoryRecordId: id,
+          };
+          if (physicalCount) {
+            const pCount = parseFloat(physicalCount);
+            updateData.physicalCount = pCount;
+            updateData.finalQuantity = pCount;
+            const initQty = created.previousBalance ?? null;
+            if (initQty !== null) {
+              updateData.difference = pCount - initQty;
+            }
+          }
+          await db.update(inventoryCycleProductsTable)
+            .set(updateData as any)
+            .where(eq(inventoryCycleProductsTable.id, existingCp.id));
+
+          // Update cycle counters
+          const statusCounts = await db.select({
+            status: inventoryCycleProductsTable.status,
+            count: count(),
+          })
+            .from(inventoryCycleProductsTable)
+            .where(eq(inventoryCycleProductsTable.cycleId, activeCycle.id))
+            .groupBy(inventoryCycleProductsTable.status);
+
+          let counted = 0;
+          let withoutMovement = 0;
+          for (const s of statusCounts) {
+            if (s.status === "counted" || s.status === "verified") counted += Number(s.count);
+            if (s.status === "without_movement") withoutMovement += Number(s.count);
+          }
+
+          await db.update(inventoryCyclesTable)
+            .set({
+              countedProducts: counted,
+              withoutMovement,
+              updatedAt: new Date(),
+            })
+            .where(eq(inventoryCyclesTable.id, activeCycle.id));
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Failed to auto-update cycle progress from inventory record");
+    }
 
     void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
     const responseBody: Record<string, unknown> = { ...created, boxes };

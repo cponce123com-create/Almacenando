@@ -6,7 +6,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
-import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
+import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, ClipboardList } from "lucide-react";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -311,5 +311,103 @@ export function BoxesDialog({ record, productName, unit, onClose, onViewPhoto }:
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── InventarioPrevioBanner ─────────────────────────────────────────────────────
+
+export function InventarioPrevioBanner({
+  productId,
+  warehouse,
+  previousBalance,
+  unit,
+}: {
+  productId: string;
+  warehouse: string;
+  previousBalance: string;
+  unit: string;
+}) {
+  const [prevRecords, setPrevRecords] = useState<InventoryRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!productId) { setPrevRecords([]); return; }
+    setLoading(true);
+    apiJson(`/api/inventory?productId=${productId}&warehouse=${warehouse}&limit=50`)
+      .then((r: any) => {
+        const records = (r.data ?? r ?? []) as InventoryRecord[];
+        const withCount = records.filter(rec => rec.physicalCount != null && parseFloat(rec.physicalCount) > 0);
+        setPrevRecords(withCount);
+      })
+      .catch(() => setPrevRecords([]))
+      .finally(() => setLoading(false));
+  }, [productId, warehouse]);
+
+  if (loading) {
+    return (
+      <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 animate-pulse">
+        <div className="h-4 bg-slate-200 rounded w-3/4 mb-2" />
+        <div className="h-3 bg-slate-200 rounded w-1/2" />
+      </div>
+    );
+  }
+
+  if (prevRecords.length === 0) return null;
+
+  const totalYaInventariado = prevRecords.reduce(
+    (sum, r) => sum + (r.physicalCount ? parseFloat(r.physicalCount) : 0), 0
+  );
+  const saldoSistema = parseFloat(previousBalance) || 0;
+  const saldoPendiente = Math.max(0, saldoSistema - totalYaInventariado);
+  const latestDate = prevRecords.reduce(
+    (latest, r) => r.recordDate > latest ? r.recordDate : latest,
+    prevRecords[0]?.recordDate ?? ""
+  );
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 overflow-hidden">
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2 mb-2">
+          <ClipboardList className="w-4 h-4 text-amber-600" />
+          <span className="text-xs font-bold text-amber-800 uppercase tracking-wider">
+            Ya inventariado anteriormente
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <p className="text-[10px] text-amber-600 font-semibold uppercase">Registros</p>
+            <p className="text-lg font-bold text-slate-800">{prevRecords.length}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-amber-600 font-semibold uppercase">Total ya contado</p>
+            <p className="text-lg font-bold text-emerald-700">
+              {totalYaInventariado.toFixed(3)} <span className="text-xs font-normal text-slate-500">{unit}</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-amber-600 font-semibold uppercase">Saldo pendiente</p>
+            <p className={`text-lg font-bold ${saldoPendiente > 0.001 ? "text-blue-700" : "text-slate-400"}`}>
+              {saldoPendiente.toFixed(3)} <span className="text-xs font-normal text-slate-500">{unit}</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-[10px] text-amber-600 font-semibold uppercase">Últ. conteo</p>
+            <p className="text-sm font-semibold text-slate-700">{latestDate}</p>
+          </div>
+        </div>
+        {saldoPendiente < 0.001 && saldoSistema > 0.001 && (
+          <div className="mt-2 flex items-center gap-2 text-xs font-medium text-emerald-700 bg-emerald-100 rounded-lg px-3 py-1.5">
+            <CheckCircle2 className="w-4 h-4" />
+            Ya has inventariado todo el saldo del sistema para este producto.
+          </div>
+        )}
+        {saldoPendiente > 0.001 && (
+          <div className="mt-2 flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-100 rounded-lg px-3 py-1.5">
+            <AlertTriangle className="w-4 h-4" />
+            Aún faltan {saldoPendiente.toFixed(3)} {unit} por inventariar de este producto.
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

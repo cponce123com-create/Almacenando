@@ -28,7 +28,7 @@ const LOCATION_SUGGESTIONS = [
 ];
 import {
   WAREHOUSES, NUM_BOXES, EMPTY_PRODUCTS, EMPTY_BALANCES, today, emptyBoxes, sinMovimiento, apiJson, apiForm,
-  ProductCombobox, PhotoViewer, CoverageStats, BoxesDialog,
+  ProductCombobox, PhotoViewer, CoverageStats, BoxesDialog, InventarioPrevioBanner,
   type Product, type InventoryBox, type InventoryRecord, type InventoryStats, type BalanceRecord, type BoxEntry,
 } from './inventory-partials';
 export default function TomaDeInventarioPage() {
@@ -459,6 +459,16 @@ export default function TomaDeInventarioPage() {
                   </div>
                 );
               })()}
+
+              {/* Ya inventariado previamente */}
+              {form.productId && (
+                <InventarioPrevioBanner
+                  productId={form.productId}
+                  warehouse={selectedWarehouse}
+                  previousBalance={form.previousBalance}
+                  unit={productMap[form.productId]?.unit ?? ""}
+                />
+              )}
 
               {/* Ubicación */}
               <div className="space-y-1.5">

@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import {
   productsTable, inventoryRecordsTable, immobilizedProductsTable,
   samplesTable, finalDispositionTable, eppMasterTable, eppDeliveriesTable, personnelTable, usersTable,
+  inventoryCyclesTable, inventoryCycleProductsTable,
 } from "@workspace/db";
 import { count, sql, and, gte, lte, eq, desc, ilike, or } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
@@ -379,6 +380,40 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
       };
     });
     sheetName = "Entregas EPP";
+  } else if (type === "inventory-cycle-progress") {
+    const cycleId = req.query.cycleId as string;
+    if (!cycleId) { res.status(400).json({ error: "cycleId es requerido" }); return; }
+
+    const [cycleInfo] = await db.select({ name: inventoryCyclesTable.name })
+      .from(inventoryCyclesTable)
+      .where(eq(inventoryCyclesTable.id, cycleId))
+      .limit(1);
+
+    const products = await db.select({
+      cp: inventoryCycleProductsTable,
+      product: productsTable,
+    })
+      .from(inventoryCycleProductsTable)
+      .innerJoin(productsTable, eq(inventoryCycleProductsTable.productId, productsTable.id))
+      .where(eq(inventoryCycleProductsTable.cycleId, cycleId))
+      .orderBy(desc(inventoryCycleProductsTable.priority), productsTable.code);
+
+    data = products.map(r => {
+      const diff = r.cp.difference;
+      return {
+        "Código": r.product.code,
+        "Producto": r.product.name,
+        "UM": r.product.unit,
+        "Saldo Inicial": r.cp.initialQuantity ?? "",
+        "Conteo Físico": r.cp.physicalCount ?? "",
+        "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+        "Últ. Consumo": r.cp.initialUltimoConsumo ?? "",
+        "Estado": r.cp.status,
+        "Prioridad": r.cp.priority,
+        "Notas": r.cp.notes ?? "",
+      };
+    });
+    sheetName = cycleInfo ? `Progreso - ${cycleInfo.name}` : "Progreso Ciclo";
   } else {
     res.status(400).json({ error: "Tipo de reporte no válido" });
     return;
