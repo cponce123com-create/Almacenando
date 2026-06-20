@@ -593,6 +593,143 @@ router.post("/:id/detect-no-movement", requireAuth, requireRole("supervisor", "a
   });
 }));
 
+// ── Sync cycle with actual inventory records ─────────────────────────
+// Sincroniza manualmente el progreso del ciclo con todos los registros
+// de inventario reales del almacén. Útil cuando el auto-update no
+// alcanzó a registrar productos o cuando se importaron registros.
+
+router.post("/:id/sync", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const { id } = req.params;
+
+  const [cycle] = await db.select().from(inventoryCyclesTable)
+    .where(eq(inventoryCyclesTable.id, id as string))
+    .limit(1);
+
+  if (!cycle) { res.status(404).json({ error: "Ciclo no encontrado" }); return; }
+  if (cycle.status !== "active") { res.status(400).json({ error: "El ciclo ya está cerrado. No se puede sincronizar." }); return; }
+
+  // Obtener todos los registros de inventario del almacén, agrupados por producto
+  const inventoryRecords = await db.execute(sql`
+    SELECT
+      ir.product_id,
+      COUNT(*)::int AS total_records,
+      MAX(ir.record_date) AS latest_date,
+      SUM(COALESCE(ir.physical_count, 0)) AS total_physical,
+      AVG(COALESCE(ir.previous_balance, 0)) AS avg_balance
+    FROM inventory_records ir
+    JOIN products p ON p.id = ir.product_id
+    WHERE p.warehouse = ${cycle.warehouse}
+      AND p.status = 'active'
+    GROUP BY ir.product_id
+  `);
+
+  const rows = inventoryRecords.rows as {
+    product_id: string;
+    total_records: number;
+    latest_date: string;
+    total_physical: number;
+    avg_balance: number;
+  }[];
+
+  let synced = 0;
+  let added = 0;
+  let skipped = 0;
+
+  for (const row of rows) {
+    // Buscar si el producto ya está en el ciclo
+    const [existingCp] = await db.select({ id: inventoryCycleProductsTable.id })
+      .from(inventoryCycleProductsTable)
+      .where(and(
+        eq(inventoryCycleProductsTable.cycleId, id as string),
+        eq(inventoryCycleProductsTable.productId, row.product_id)
+      ))
+      .limit(1);
+
+    const physicalCount = row.total_physical;
+    const balance = row.avg_balance;
+    const diff = physicalCount - balance;
+
+    if (existingCp) {
+      // Actualizar el producto existente
+      await db.update(inventoryCycleProductsTable)
+        .set({
+          status: "counted",
+          physicalCount,
+          finalQuantity: physicalCount,
+          difference: diff,
+          countedDate: row.latest_date,
+          updatedAt: new Date(),
+        } as any)
+        .where(eq(inventoryCycleProductsTable.id, existingCp.id));
+      synced++;
+    } else if (row.total_records > 0) {
+      // Agregar el producto al ciclo (no estaba registrado)
+      const id_gen = generateId();
+      await db.insert(inventoryCycleProductsTable).values({
+        id: id_gen,
+        cycleId: id as string,
+        productId: row.product_id,
+        status: "counted",
+        physicalCount,
+        finalQuantity: physicalCount,
+        difference: diff,
+        countedDate: row.latest_date,
+        initialQuantity: balance,
+        updatedAt: new Date(),
+      } as any);
+      added++;
+    }
+  }
+
+  // Recalcular contadores del ciclo
+  const totalProducts = await db.select({ total: count() })
+    .from(inventoryCycleProductsTable)
+    .where(eq(inventoryCycleProductsTable.cycleId, id as string));
+
+  const statusCounts = await db.select({
+    status: inventoryCycleProductsTable.status,
+    count: count(),
+  })
+    .from(inventoryCycleProductsTable)
+    .where(eq(inventoryCycleProductsTable.cycleId, id as string))
+    .groupBy(inventoryCycleProductsTable.status);
+
+  let counted = 0;
+  let withoutMovement = 0;
+  for (const s of statusCounts) {
+    if (s.status === "counted" || s.status === "verified") counted += Number(s.count);
+    if (s.status === "without_movement") withoutMovement += Number(s.count);
+  }
+
+  await db.update(inventoryCyclesTable)
+    .set({
+      totalProducts: Number(totalProducts[0]?.total ?? 0),
+      countedProducts: counted,
+      withoutMovement,
+      updatedAt: new Date(),
+    })
+    .where(eq(inventoryCyclesTable.id, id as string));
+
+  void writeAuditLog({
+    userId: req.userId,
+    action: "sync",
+    resource: "inventory_cycle",
+    resourceId: id as string,
+    details: { synced, added, skipped },
+    ipAddress: req.ip,
+  });
+
+  res.json({
+    message: `Sincronización completada: ${synced} actualizados, ${added} agregados, ${skipped} saltados`,
+    synced,
+    added,
+    skipped,
+    totalProducts: Number(totalProducts[0]?.total ?? 0),
+    countedProducts: counted,
+    withoutMovement,
+  });
+}));
+
 // ── Close cycle ─────────────────────────────────────────────────────────────
 
 router.post("/:id/close", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {

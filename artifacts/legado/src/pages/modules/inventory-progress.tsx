@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   ClipboardList, Plus, Trash2, Loader2, AlertCircle, Search, Target, CheckCircle2,
   Clock, Radio, CircleDotDashed, BarChart3, Lightbulb, PackageX, TrendingUp,
-  TrendingDown, Minus, FileSpreadsheet, Archive, XCircle,
+  TrendingDown, Minus, FileSpreadsheet, Archive, XCircle, RefreshCw,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -243,6 +243,22 @@ export default function InventoryProgressPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  // Sync cycle mutation
+  const syncCycleMutation = useMutation({
+    mutationFn: () => apiJson(`${BASE}/api/inventory-cycles/${activeCycle!.id}/sync`, { method: "POST" }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["active-cycle"] });
+      qc.invalidateQueries({ queryKey: ["cycle-progress"] });
+      qc.invalidateQueries({ queryKey: ["cycle-recommendations"] });
+      qc.invalidateQueries({ queryKey: ["inventory-live-progress"] });
+      toast({
+        title: "Ciclo sincronizado",
+        description: `${data.synced} actualizados, ${data.added} agregados — ${data.countedProducts} conteados`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Error al sincronizar", description: e.message, variant: "destructive" }),
+  });
+
   // Delete cycle mutation
   const deleteCycleMutation = useMutation({
     mutationFn: (id: string) => apiJson(`${BASE}/api/inventory-cycles/${id}`, { method: "DELETE" }),
@@ -309,6 +325,13 @@ export default function InventoryProgressPage() {
                   }
                 }}>
                   <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Exportar Excel
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => syncCycleMutation.mutate()}
+                  disabled={syncCycleMutation.isPending} className="border-blue-300 text-blue-700 hover:bg-blue-50">
+                  {syncCycleMutation.isPending
+                    ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                    : <RefreshCw className="w-4 h-4 mr-1.5" />}
+                  Sincronizar
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => setShowDetectNoMovement(true)}>
                   <Radio className="w-4 h-4 mr-1.5" /> Detectar Sin Movimiento
