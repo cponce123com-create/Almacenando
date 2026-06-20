@@ -284,15 +284,29 @@ export default function InventoryProgressPage() {
           <div className="flex items-center gap-2 flex-wrap">
             {activeCycle ? (
               <>
-                <Button variant="outline" size="sm" onClick={() => {
+                <Button variant="outline" size="sm" onClick={async () => {
                   const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
                   const url = `${baseUrl}/api/reports/export/inventory-cycle-progress?cycleId=${activeCycle.id}`;
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.setAttribute("download", `progreso_${activeCycle.name.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`);
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
+                  try {
+                    const res = await fetch(url, {
+                      headers: { ...getAuthHeaders() },
+                    });
+                    if (!res.ok) {
+                      const err = await res.json().catch(() => ({}));
+                      throw new Error(err.error ?? "Error al exportar");
+                    }
+                    const blob = await res.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = blobUrl;
+                    a.setAttribute("download", `inventario_${activeCycle.name.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`);
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+                  } catch (e) {
+                    toast({ title: "Error al exportar", description: String(e), variant: "destructive" });
+                  }
                 }}>
                   <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Exportar Excel
                 </Button>

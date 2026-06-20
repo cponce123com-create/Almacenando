@@ -6,7 +6,7 @@ import {
   samplesTable, finalDispositionTable, eppMasterTable, eppDeliveriesTable, personnelTable, usersTable,
   inventoryCyclesTable, inventoryCycleProductsTable,
 } from "@workspace/db";
-import { count, sql, and, gte, lte, eq, desc, ilike, or } from "drizzle-orm";
+import { count, sql, and, gte, lte, eq, desc, asc, ilike, or, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 
@@ -384,22 +384,54 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
     const cycleId = req.query.cycleId as string;
     if (!cycleId) { res.status(400).json({ error: "cycleId es requerido" }); return; }
 
-    const [cycleInfo] = await db.select({ name: inventoryCyclesTable.name })
+    const [cycleInfo] = await db.select({
+      name: inventoryCyclesTable.name,
+      warehouse: inventoryCyclesTable.warehouse,
+      startDate: inventoryCyclesTable.startDate,
+    })
       .from(inventoryCyclesTable)
       .where(eq(inventoryCyclesTable.id, cycleId))
       .limit(1);
 
-    const products = await db.select({
+    if (!cycleInfo) { res.status(404).json({ error: "Ciclo no encontrado" }); return; }
+
+    // ── Query 1: Productos del ciclo con diferencias ─────────────────────
+    const cycleProducts = await db.select({
       cp: inventoryCycleProductsTable,
       product: productsTable,
     })
       .from(inventoryCycleProductsTable)
       .innerJoin(productsTable, eq(inventoryCycleProductsTable.productId, productsTable.id))
       .where(eq(inventoryCycleProductsTable.cycleId, cycleId))
-      .orderBy(desc(inventoryCycleProductsTable.priority), productsTable.code);
+      .orderBy(productsTable.code);
 
-    data = products.map(r => {
+    const productIds = cycleProducts.map(r => r.product.id);
+    const warehouse = cycleInfo.warehouse;
+
+    // ── Query 2: Detalle de tomas (todos los registros de inventario de estos productos) ──
+    const inventoryRecords = productIds.length > 0 ? await db.select({
+      record: inventoryRecordsTable,
+      product: productsTable,
+    })
+      .from(inventoryRecordsTable)
+      .innerJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
+      .where(and(
+        inArray(inventoryRecordsTable.productId, productIds),
+        eq(productsTable.warehouse, warehouse)
+      ))
+      .orderBy(productsTable.code, asc(inventoryRecordsTable.recordDate))
+      : [];
+
+    // ── Sheet 1: Diferencias ─────────────────────────────────────────────
+    const dataDiff = cycleProducts.map(r => {
       const diff = r.cp.difference;
+      const statusLabels: Record<string, string> = {
+        pending: "Pendiente",
+        counted: "Conteado",
+        verified: "Verificado",
+        without_movement: "Sin Movimiento",
+        skipped: "Saltado",
+      };
       return {
         "Código": r.product.code,
         "Producto": r.product.name,
@@ -407,13 +439,73 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
         "Saldo Inicial": r.cp.initialQuantity ?? "",
         "Conteo Físico": r.cp.physicalCount ?? "",
         "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+        "Estado": statusLabels[r.cp.status] ?? r.cp.status,
         "Últ. Consumo": r.cp.initialUltimoConsumo ?? "",
-        "Estado": r.cp.status,
-        "Prioridad": r.cp.priority,
-        "Notas": r.cp.notes ?? "",
+        "Notas / Observaciones": r.cp.notes ?? "",
       };
     });
-    sheetName = cycleInfo ? `Progreso - ${cycleInfo.name}` : "Progreso Ciclo";
+
+    // ── Sheet 2: Detalle de tomas ────────────────────────────────────────
+    const dataDetail = inventoryRecords.map(r => {
+      const saldoSistema = Number(r.record.previousBalance ?? 0);
+      const saldoFisico = r.record.physicalCount != null ? Number(r.record.physicalCount) : null;
+      const diferencia = saldoFisico != null ? saldoFisico - saldoSistema : null;
+      return {
+        "Código": r.product.code,
+        "Producto": r.product.name,
+        "UM": r.product.unit,
+        "Fecha": fmtDate(r.record.recordDate),
+        "Almacén": r.record.warehouse,
+        "Saldo Sistema": saldoSistema,
+        "Cantidad Física": saldoFisico ?? "",
+        "Diferencia": diferencia != null ? (diferencia > 0 ? "+" : "") + diferencia.toFixed(2) : "",
+        "Ubicación": r.record.location ?? "",
+        "Observaciones": r.record.notes ?? "",
+      };
+    });
+
+    // ── Sheet 3: Movimiento general (todos los inventarios del almacén) ──
+    const allInventoryRecords = await db.select({
+      record: inventoryRecordsTable,
+      product: productsTable,
+    })
+      .from(inventoryRecordsTable)
+      .innerJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
+      .where(eq(productsTable.warehouse, warehouse))
+      .orderBy(productsTable.code, asc(inventoryRecordsTable.recordDate));
+
+    const dataGeneral = allInventoryRecords.map(r => {
+      const saldoSistema = Number(r.record.previousBalance ?? 0);
+      const saldoFisico = r.record.physicalCount != null ? Number(r.record.physicalCount) : null;
+      const diferencia = saldoFisico != null ? saldoFisico - saldoSistema : null;
+      return {
+        "Código": r.product.code,
+        "Producto": r.product.name,
+        "UM": r.product.unit,
+        "Fecha": fmtDate(r.record.recordDate),
+        "Almacén": r.record.warehouse,
+        "Saldo Sistema": saldoSistema,
+        "Cantidad Física": saldoFisico ?? "",
+        "Diferencia": diferencia != null ? (diferencia > 0 ? "+" : "") + diferencia.toFixed(2) : "",
+        "Ubicación": r.record.location ?? "",
+        "Responsable": r.record.responsible ?? "",
+        "Observaciones": r.record.notes ?? "",
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.json_to_sheet(dataDiff.length > 0 ? dataDiff : [{}]);
+    XLSX.utils.book_append_sheet(wb, ws1, "Diferencias");
+    const ws2 = XLSX.utils.json_to_sheet(dataDetail.length > 0 ? dataDetail : [{}]);
+    XLSX.utils.book_append_sheet(wb, ws2, "Detalle de Tomas");
+    const ws3 = XLSX.utils.json_to_sheet(dataGeneral.length > 0 ? dataGeneral : [{}]);
+    XLSX.utils.book_append_sheet(wb, ws3, "Movimiento General");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const filename = `inventario_${cycleInfo.name.replace(/[^a-zA-Z0-9]/g, "_")}_${cycleInfo.warehouse}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buf);
+    return;
   } else {
     res.status(400).json({ error: "Tipo de reporte no válido" });
     return;
