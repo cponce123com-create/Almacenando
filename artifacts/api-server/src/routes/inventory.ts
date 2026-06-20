@@ -92,6 +92,41 @@ async function uploadBoxPhotos(files: Files, productLabel: string, date: string)
   return urls;
 }
 
+// ── Live Progress ──────────────────────────────────────────────────────────────
+// Progreso en tiempo real basado en registros de inventario (no depende de ciclos)
+
+router.get("/progress", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+
+  // Total productos activos en el almacén
+  const warehouseCondition = warehouse && warehouse !== "all"
+    ? eq(productsTable.warehouse, warehouse)
+    : undefined;
+
+  const [totalProducts] = await db.select({ total: count() })
+    .from(productsTable)
+    .where(warehouseCondition ? and(eq(productsTable.status, "active"), warehouseCondition) : eq(productsTable.status, "active"));
+
+  // Productos que ya tienen al menos un registro de inventario
+  const inventoriedResult = await db.execute(sql`
+    SELECT COUNT(DISTINCT ir.product_id)::int AS inventoried
+    FROM inventory_records ir
+    INNER JOIN products p ON p.id = ir.product_id AND p.status = 'active'
+    ${warehouse && warehouse !== "all" ? sql`WHERE ir.warehouse = ${warehouse}` : sql``}
+  `);
+  const inventoried = (inventoriedResult.rows[0] as { inventoried: number } | undefined)?.inventoried ?? 0;
+  const total = Number(totalProducts?.total ?? 0);
+  const pending = Math.max(0, total - inventoried);
+  const percentage = total > 0 ? Math.round((inventoried / total) * 100) : 0;
+
+  res.json({
+    totalProducts: total,
+    inventoried,
+    pending,
+    percentage,
+  });
+}));
+
 // ── Stats ─────────────────────────────────────────────────────────────────────
 // Optimizado: una sola consulta SQL agregada en vez de N iteraciones en JS.
 

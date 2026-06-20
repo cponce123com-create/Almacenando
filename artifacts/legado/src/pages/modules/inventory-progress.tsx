@@ -156,6 +156,15 @@ export default function InventoryProgressPage() {
     queryFn: () => apiJson(`${BASE}/api/inventory-cycles/active${warehouseParam}`),
   });
 
+  // ── Live progress (real-time, based on actual inventory records) ──────────
+  const { data: liveProgress } = useQuery<{
+    totalProducts: number; inventoried: number; pending: number; percentage: number;
+  }>({
+    queryKey: ["inventory-live-progress", warehouse],
+    queryFn: () => apiJson(`${BASE}/api/inventory/progress${warehouseParam}`),
+    refetchInterval: 10000, // cada 10 segundos
+  });
+
   // Get available balance dates for the detect-no-movement flow
   const { data: balanceDates = [] } = useQuery<{ balanceDate: string; batchId: string }[]>({
     queryKey: ["balance-dates", warehouse],
@@ -302,6 +311,57 @@ export default function InventoryProgressPage() {
             )}
           </div>
         </div>
+
+        {/* ── Live Progress banner (siempre visible) ── */}
+        {liveProgress && (
+          <div className="bg-white rounded-xl border border-emerald-200 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart3 className="w-5 h-5 text-emerald-600" />
+              <h2 className="text-sm font-bold text-emerald-800 uppercase tracking-wider">Progreso en Tiempo Real</h2>
+              {liveProgress.percentage >= 100 ? (
+                <span className="ml-auto text-xs font-bold text-emerald-600 bg-emerald-100 rounded-full px-3 py-1">
+                  ¡Completado!
+                </span>
+              ) : (
+                <span className="ml-auto text-xs font-bold text-emerald-600 bg-emerald-100 rounded-full px-3 py-1">
+                  {liveProgress.percentage}%
+                </span>
+              )}
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  liveProgress.percentage >= 100
+                    ? "bg-gradient-to-r from-emerald-400 to-emerald-600"
+                    : "bg-gradient-to-r from-emerald-400 to-blue-500"
+                }`}
+                style={{ width: `${Math.min(100, liveProgress.percentage)}%` }}
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-3 mt-4">
+              <div className="bg-emerald-50 rounded-lg px-3 py-2.5">
+                <p className="text-xs text-slate-500 mb-0.5">Total Productos</p>
+                <p className="text-xl font-bold text-slate-900">{liveProgress.totalProducts}</p>
+              </div>
+              <div className="bg-blue-50 rounded-lg px-3 py-2.5">
+                <p className="text-xs text-slate-500 mb-0.5">Ya Inventariados</p>
+                <p className="text-xl font-bold text-blue-600">{liveProgress.inventoried}</p>
+              </div>
+              <div className="bg-amber-50 rounded-lg px-3 py-2.5">
+                <p className="text-xs text-slate-500 mb-0.5">Pendientes</p>
+                <p className={`text-xl font-bold ${liveProgress.pending > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                  {liveProgress.pending}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 mt-2">
+              Basado en registros de inventario reales. Se actualiza cada 10 segundos.
+              {liveProgress.inventoried > 0 && liveProgress.totalProducts > 0 && (
+                <span> Te faltan <strong className="text-amber-600">{liveProgress.pending}</strong> de {liveProgress.totalProducts} productos por inventariar.</span>
+              )}
+            </p>
+          </div>
+        )}
 
         {/* Progress bar */}
         {activeCycle && (
