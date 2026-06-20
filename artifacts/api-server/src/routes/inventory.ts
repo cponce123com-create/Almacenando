@@ -1,5 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
+import * as XLSX from "xlsx";
+import { parseExcelBuffer, normalizeHeaders } from "../lib/excel-parser.js";
 import { db } from "@workspace/db";
 import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable } from "@workspace/db";
 import { eq, desc, sql, and, inArray, count, max } from "drizzle-orm";
@@ -448,6 +450,221 @@ router.delete(
     if (!deleted) { res.status(404).json({ error: "Registro no encontrado" }); return; }
     void writeAuditLog({ userId: authedReq.userId, action: "delete", resource: "inventory_record", resourceId: id, ipAddress: req.ip });
     res.json({ message: "Registro eliminado" });
+  })
+);
+
+// ── Template ───────────────────────────────────────────────────────────────────
+
+const IMPORT_TEMPLATE_HEADERS = [
+  "almacen",
+  "codigo",
+  "cantidad_fisica",
+  "ubicacion",
+  "observaciones",
+  "peso_caja",
+  "lote_caja",
+];
+
+router.get("/template", requireAuth, asyncHandler(async (_req, res) => {
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(
+    [Object.fromEntries(IMPORT_TEMPLATE_HEADERS.map(h => [h, ""]))],
+    { header: IMPORT_TEMPLATE_HEADERS }
+  );
+  ws["!cols"] = IMPORT_TEMPLATE_HEADERS.map(() => ({ wch: 22 }));
+  // Add a sample row
+  XLSX.utils.sheet_add_aoa(ws, [["General", "ABC-001", "50.5", "Rack A / Nivel 2", "Inventario nocturno", "25.0", "LOTE-001"]], { origin: "A2" });
+  XLSX.utils.book_append_sheet(wb, ws, "Inventario");
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="plantilla_inventario.xlsx"');
+  res.send(buf);
+}));
+
+// ── Import ─────────────────────────────────────────────────────────────────────
+
+const uploadImport = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+router.post(
+  "/import",
+  requireAuth,
+  requireRole("supervisor", "admin", "operator"),
+  uploadImport.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) {
+      res.status(400).json({ error: "No se recibió ningún archivo" });
+      return;
+    }
+
+    const authedReq = req as AuthenticatedRequest;
+    const defaultWarehouse = (req.query.warehouse as string) || (req.body.warehouse as string) || "General";
+    const defaultDate = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+
+    let rawRows: Record<string, unknown>[];
+    try {
+      rawRows = parseExcelBuffer(req.file.buffer).rawRows;
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+      return;
+    }
+
+    const headers = normalizeHeaders(rawRows);
+    const required = ["codigo", "cantidad_fisica"];
+    const missingCols = required.filter((col) => !headers.includes(col));
+    if (missingCols.length > 0) {
+      res.status(400).json({
+        error: `Columnas requeridas faltantes: ${missingCols.join(", ")}`,
+        missing: missingCols,
+      });
+      return;
+    }
+
+    const normalizedRows = rawRows.map((row) => {
+      const n: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(row))
+        n[k.toLowerCase().trim().replace(/\\s+/g, "_")] = v;
+      return n;
+    });
+
+    // Pre-load product map
+    const allCodes = [...new Set(normalizedRows.map(r => String(r.codigo ?? "").trim()).filter(Boolean))];
+    // Load product map for all codes
+    const productMap = new Map<string, { id: string; code: string; name: string; unit: string; warehouse: string }>();
+    if (allCodes.length > 0) {
+      const products = await db.select({ id: productsTable.id, code: productsTable.code, name: productsTable.name, unit: productsTable.unit, warehouse: productsTable.warehouse })
+        .from(productsTable)
+        .where(inArray(productsTable.code, allCodes));
+      for (const p of products) productMap.set(p.code.toLowerCase(), p);
+    }
+
+    const inserted: Array<{ code: string; productName: string; quantity: string; }> = [];
+    const errors: Array<{ row: number; code: string; error: string }> = [];
+    const recordsToCreate: Array<{
+      warehouse: string; productId: string; recordDate: string; physicalCount: number;
+      location: string | null; notes: string | null; boxWeight: string | null; boxLot: string | null;
+    }> = [];
+
+    for (let i = 0; i < normalizedRows.length; i++) {
+      const row = normalizedRows[i]!;
+      const rowNum = i + 2;
+      const code = String(row.codigo ?? "").trim();
+
+      if (!code) {
+        errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" });
+        continue;
+      }
+
+      const product = productMap.get(code.toLowerCase());
+      if (!product) {
+        errors.push({ row: rowNum, code, error: "Producto no encontrado en la base de datos" });
+        continue;
+      }
+
+      const qtyStr = String(row.cantidad_fisica ?? "").trim().replace(",", ".");
+      const qty = parseFloat(qtyStr);
+      if (!qtyStr || isNaN(qty) || qty < 0) {
+        errors.push({ row: rowNum, code, error: "La 'cantidad_fisica' debe ser un número válido mayor o igual a 0" });
+        continue;
+      }
+
+      recordsToCreate.push({
+        warehouse: String(row.almacen ?? "").trim() || defaultWarehouse,
+        productId: product.id,
+        recordDate: defaultDate,
+        physicalCount: qty,
+        location: String(row.ubicacion ?? "").trim() || null,
+        notes: String(row.observaciones ?? "").trim() || null,
+        boxWeight: String(row.peso_caja ?? "").trim() || null,
+        boxLot: String(row.lote_caja ?? "").trim() || null,
+      });
+
+      inserted.push({
+        code: product.code,
+        productName: product.name,
+        quantity: qtyStr,
+      });
+    }
+
+    // Actually create records in DB
+    let createdCount = 0;
+    if (recordsToCreate.length > 0) {
+      await db.transaction(async (tx) => {
+        for (const rec of recordsToCreate) {
+          const id = generateId();
+          const physicalCount = String(rec.physicalCount);
+          await tx.insert(inventoryRecordsTable).values({
+            id,
+            warehouse: rec.warehouse,
+            productId: rec.productId,
+            recordDate: rec.recordDate,
+            responsible: authedReq.userId,
+            previousBalance: "0",
+            physicalCount,
+            finalBalance: physicalCount,
+            location: rec.location,
+            notes: rec.notes,
+            registeredBy: authedReq.userId,
+          } as any);
+
+          if (rec.boxWeight || rec.boxLot) {
+            await tx.insert(inventoryBoxesTable).values({
+              id: generateId(),
+              inventoryRecordId: id,
+              boxNumber: 1,
+              weight: rec.boxWeight,
+              lot: rec.boxLot,
+            });
+          }
+
+          // Auto-update cycle progress
+          try {
+            const [activeCycle] = await tx.select({ id: inventoryCyclesTable.id })
+              .from(inventoryCyclesTable)
+              .where(and(
+                eq(inventoryCyclesTable.warehouse, rec.warehouse),
+                eq(inventoryCyclesTable.status, "active")
+              ))
+              .orderBy(desc(inventoryCyclesTable.createdAt))
+              .limit(1);
+
+            if (activeCycle) {
+              const [existingCp] = await tx.select({ id: inventoryCycleProductsTable.id })
+                .from(inventoryCycleProductsTable)
+                .where(and(
+                  eq(inventoryCycleProductsTable.cycleId, activeCycle.id),
+                  eq(inventoryCycleProductsTable.productId, rec.productId)
+                ))
+                .limit(1);
+
+              if (existingCp) {
+                await tx.update(inventoryCycleProductsTable)
+                  .set({
+                    status: "counted",
+                    physicalCount: rec.physicalCount,
+                    finalQuantity: rec.physicalCount,
+                    countedDate: rec.recordDate,
+                    countedBy: authedReq.userId,
+                    inventoryRecordId: id,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(inventoryCycleProductsTable.id, existingCp.id));
+              }
+            }
+          } catch { /* cycle update is best-effort */ }
+
+          createdCount++;
+        }
+      });
+    }
+
+    void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "inventory_import", details: { inserted: createdCount, errors: errors.length }, ipAddress: req.ip as string });
+
+    res.json({
+      inserted: createdCount,
+      errors,
+      total: normalizedRows.length,
+      data: inserted,
+    });
   })
 );
 

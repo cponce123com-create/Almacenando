@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/hooks/use-auth';
+import { getAuthHeaders } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin, Upload, Download, FileSpreadsheet } from 'lucide-react';
 
 const LOCATION_SUGGESTIONS = [
   "Lata 1", "Lata 2", "Lata 3", "Lata 4", "Lata 5",
@@ -62,6 +63,54 @@ export default function TomaDeInventarioPage() {
   const fileRef3 = useRef<HTMLInputElement>(null);
   const fileRef4 = useRef<HTMLInputElement>(null);
   const fileRefs = [fileRef0, fileRef1, fileRef2, fileRef3, fileRef4];
+
+  // ── Import state ───────────────────────────────────────────────────────────
+  const importFileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ inserted: number; errors: Array<{ row: number; code: string; error: string }>; total: number; data: Array<{ code: string; productName: string; quantity: string }> } | null>(null);
+  const [showImportResult, setShowImportResult] = useState(false);
+
+  const handleTemplate = async () => {
+    const token = getAuthHeaders()?.Authorization?.replace("Bearer ", "") ?? "";
+    const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+    const a = document.createElement("a");
+    a.href = `${baseUrl}/api/inventory/template`;
+    a.setAttribute("download", "plantilla_inventario.xlsx");
+    a.click();
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const token = getAuthHeaders()?.Authorization?.replace("Bearer ", "") ?? "";
+      const baseUrl = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("warehouse", selectedWarehouse);
+      const res = await fetch(`${baseUrl}/api/inventory/import`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Error al importar", description: data.error ?? "Error desconocido", variant: "destructive" });
+        return;
+      }
+      setImportResult(data);
+      setShowImportResult(true);
+      qc.invalidateQueries({ queryKey: ["/api/inventory"] });
+      qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
+      toast({ title: "Importación completada", description: `${data.inserted} registros creados, ${data.errors?.length ?? 0} errores` });
+    } catch (err) {
+      toast({ title: "Error al importar", description: String(err), variant: "destructive" });
+    } finally {
+      setImporting(false);
+      if (importFileRef.current) importFileRef.current.value = "";
+    }
+  };
 
   const setField = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -222,6 +271,18 @@ export default function TomaDeInventarioPage() {
                 {WAREHOUSES.map(w => <SelectItem key={w} value={w}>{w}</SelectItem>)}
               </SelectContent>
             </Select>
+            {canWrite && (
+              <>
+                <Button variant="outline" size="sm" className="gap-1.5 text-slate-600" onClick={handleTemplate}>
+                  <Download className="w-3.5 h-3.5" /> Plantilla
+                </Button>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors ${importing ? "opacity-50 pointer-events-none" : ""}`}>
+                  {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  Importar Excel
+                  <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleImportFile} disabled={importing} />
+                </label>
+              </>
+            )}
             {canWrite && (
               <Button onClick={() => setShowForm(true)} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
                 <Plus className="w-4 h-4" /> Nuevo Registro
@@ -654,6 +715,62 @@ export default function TomaDeInventarioPage() {
 
         {/* ── Visor de foto ── */}
         {viewPhoto && <PhotoViewer url={viewPhoto} onClose={() => setViewPhoto(null)} />}
+
+        {/* ── Resultado de importación ── */}
+        <Dialog open={showImportResult} onOpenChange={setShowImportResult}>
+          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Resultado de Importación
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-emerald-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-emerald-700">{importResult?.inserted ?? 0}</p>
+                  <p className="text-xs text-emerald-600 font-medium">Registros creados</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3 text-center">
+                  <p className="text-2xl font-bold text-red-700">{importResult?.errors?.length ?? 0}</p>
+                  <p className="text-xs text-red-600 font-medium">Errores</p>
+                </div>
+              </div>
+              {importResult?.errors && importResult.errors.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-red-700 uppercase mb-2">Errores por fila</p>
+                  <div className="bg-red-50 rounded-lg divide-y divide-red-100 max-h-48 overflow-y-auto">
+                    {importResult.errors.map((e, i) => (
+                      <div key={i} className="px-3 py-2 text-xs">
+                        <span className="font-semibold text-red-800">Fila {e.row}</span>
+                        <span className="text-red-600 ml-2">({e.code})</span>
+                        <p className="text-red-500 mt-0.5">{e.error}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {importResult?.data && importResult.data.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-emerald-700 uppercase mb-2">Registros importados</p>
+                  <div className="bg-emerald-50 rounded-lg divide-y divide-emerald-100 max-h-48 overflow-y-auto">
+                    {importResult.data.map((d, i) => (
+                      <div key={i} className="px-3 py-2 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-semibold text-emerald-800">{d.code}</span>
+                          <span className="text-emerald-600 ml-2">{d.productName}</span>
+                        </div>
+                        <span className="font-bold text-emerald-700">{d.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowImportResult(false)}>Cerrar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
       </div>
     </AppLayout>
