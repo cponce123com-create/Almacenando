@@ -149,11 +149,16 @@ function toast({ ...props }: Toast) {
     })
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
 
+  // Duración adaptativa: 2000ms en móvil, 3000ms en desktop
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768
+  const duration = props.duration ?? (isMobile ? 2000 : 3000)
+
   dispatch({
     type: "ADD_TOAST",
     toast: {
       ...props,
       id,
+      duration,
       open: true,
       onOpenChange: (open) => {
         if (!open) dismiss()

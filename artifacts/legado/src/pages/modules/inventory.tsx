@@ -46,6 +46,15 @@ export default function TomaDeInventarioPage() {
   const [filterProduct, setFilterProduct] = useState("all");
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce de 300ms para la búsqueda (evita lag en móvil)
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
+  }, [searchTerm]);
 
   // Form state
   const [form, setForm] = useState({
@@ -195,8 +204,8 @@ export default function TomaDeInventarioPage() {
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() => {
     let list = filterProduct === "all" ? records : records.filter(r => r.productId === filterProduct);
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase().trim();
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase().trim();
       list = list.filter(r => {
         const p = productMap[r.productId];
         if (!p) return false;
@@ -204,7 +213,7 @@ export default function TomaDeInventarioPage() {
       });
     }
     return list;
-  }, [records, filterProduct, searchTerm, productMap]);
+  }, [records, filterProduct, debouncedSearch, productMap]);
 
   const getDiff = (r: InventoryRecord) => {
     const sys = parseFloat(r.previousBalance) || 0;
@@ -272,7 +281,7 @@ export default function TomaDeInventarioPage() {
               <p className="text-slate-500 text-sm">Registro de existencias por producto y lote</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
             <Select value={selectedWarehouse} onValueChange={v => { setSelectedWarehouse(v); setFilterProduct("all"); }}>
               <SelectTrigger className="w-28">
                 <SelectValue />
@@ -283,20 +292,20 @@ export default function TomaDeInventarioPage() {
             </Select>
             {canWrite && (
               <>
-                <Button variant="outline" size="sm" className="gap-1.5 text-slate-600" onClick={handleTemplate}>
-                  <Download className="w-3.5 h-3.5" /> Plantilla
+                <div className="hidden sm:flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="gap-1.5 text-slate-600" onClick={handleTemplate}>
+                    <Download className="w-3.5 h-3.5" /> Plantilla
+                  </Button>
+                  <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors ${importing ? "opacity-50 pointer-events-none" : ""}`}>
+                    {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    Importar Excel
+                    <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleImportFile} disabled={importing} />
+                  </label>
+                </div>
+                <Button onClick={() => setShowForm(true)} className="gap-2 bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto px-6 py-2.5 sm:py-1.5 text-sm sm:text-sm">
+                  <Plus className="w-5 h-5 sm:w-4 sm:h-4" /> Nuevo Registro
                 </Button>
-                <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 bg-white text-sm font-medium text-slate-600 cursor-pointer hover:bg-slate-50 transition-colors ${importing ? "opacity-50 pointer-events-none" : ""}`}>
-                  {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                  Importar Excel
-                  <input ref={importFileRef} type="file" accept=".xlsx,.xls" className="sr-only" onChange={handleImportFile} disabled={importing} />
-                </label>
               </>
-            )}
-            {canWrite && (
-              <Button onClick={() => setShowForm(true)} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
-                <Plus className="w-4 h-4" /> Nuevo Registro
-              </Button>
             )}
           </div>
         </div>
@@ -354,16 +363,16 @@ export default function TomaDeInventarioPage() {
             />
             {searchTerm && (
               <button
-                onClick={() => setSearchTerm("")}
+                onClick={() => { setSearchTerm(""); setDebouncedSearch(""); }}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-4 h-4" />
               </button>
             )}
           </div>
-          {searchTerm && (
+          {debouncedSearch && (
             <p className="text-xs text-slate-400 mt-2">
-              {filtered.length} resultado{filtered.length !== 1 ? "s" : ""} para "{searchTerm}"
+              {filtered.length} resultado{filtered.length !== 1 ? "s" : ""} para "{debouncedSearch}"
             </p>
           )}
         </div>

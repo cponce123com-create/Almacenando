@@ -108,11 +108,14 @@ router.get("/progress", requireAuth, asyncHandler(async (req, res) => {
     .where(warehouseCondition ? and(eq(productsTable.status, "active"), warehouseCondition) : eq(productsTable.status, "active"));
 
   // Productos que ya tienen al menos un registro de inventario
+  // NOTA: Usamos p.warehouse en vez de ir.warehouse porque la columna warehouse
+  // en inventory_records se agregó después (migración 0002, DEFAULT 'General'),
+  // lo que dejaba registros antiguos fuera del progreso.
   const inventoriedResult = await db.execute(sql`
     SELECT COUNT(DISTINCT ir.product_id)::int AS inventoried
     FROM inventory_records ir
     INNER JOIN products p ON p.id = ir.product_id AND p.status = 'active'
-    ${warehouse && warehouse !== "all" ? sql`WHERE ir.warehouse = ${warehouse}` : sql``}
+    ${warehouse && warehouse !== "all" ? sql`WHERE p.warehouse = ${warehouse}` : sql``}
   `);
   const inventoried = (inventoriedResult.rows[0] as { inventoried: number } | undefined)?.inventoried ?? 0;
   const total = Number(totalProducts?.total ?? 0);
