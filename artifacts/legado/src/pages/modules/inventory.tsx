@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin, Upload, Download, FileSpreadsheet } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin, Upload, Download, FileSpreadsheet, Search } from 'lucide-react';
 
 const LOCATION_SUGGESTIONS = [
   "Lata 1", "Lata 2", "Lata 3", "Lata 4", "Lata 5",
@@ -45,6 +45,7 @@ export default function TomaDeInventarioPage() {
   const [viewBoxesRecord, setViewBoxesRecord] = useState<InventoryRecord | null>(null);
   const [filterProduct, setFilterProduct] = useState("all");
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Form state
   const [form, setForm] = useState({
@@ -192,9 +193,18 @@ export default function TomaDeInventarioPage() {
   }, [form.productId, products, balanceByCode]);
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
-  const filtered = useMemo(() =>
-    filterProduct === "all" ? records : records.filter(r => r.productId === filterProduct),
-    [records, filterProduct]);
+  const filtered = useMemo(() => {
+    let list = filterProduct === "all" ? records : records.filter(r => r.productId === filterProduct);
+    if (searchTerm.trim()) {
+      const q = searchTerm.toLowerCase().trim();
+      list = list.filter(r => {
+        const p = productMap[r.productId];
+        if (!p) return false;
+        return p.code.toLowerCase().includes(q) || p.name.toLowerCase().includes(q);
+      });
+    }
+    return list;
+  }, [records, filterProduct, searchTerm, productMap]);
 
   const getDiff = (r: InventoryRecord) => {
     const sys = parseFloat(r.previousBalance) || 0;
@@ -330,6 +340,32 @@ export default function TomaDeInventarioPage() {
               {products.map(p => <SelectItem key={p.id} value={p.id}>{p.code} — {p.name}</SelectItem>)}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Buscador inteligente */}
+        <div className="bg-white rounded-xl border border-slate-100 p-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Buscar producto por código o nombre…"
+              className="pl-9"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {searchTerm && (
+            <p className="text-xs text-slate-400 mt-2">
+              {filtered.length} resultado{filtered.length !== 1 ? "s" : ""} para "{searchTerm}"
+            </p>
+          )}
         </div>
 
         {/* Tabla */}

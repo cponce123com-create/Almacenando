@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { parseExcelBuffer, normalizeHeaders } from "../lib/excel-parser.js";
 import { db } from "@workspace/db";
 import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable } from "@workspace/db";
-import { eq, desc, sql, and, inArray, count, max } from "drizzle-orm";
+import { eq, desc, asc, sql, and, inArray, count, max } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
@@ -193,20 +193,24 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
 
   const [countResult, records] = await Promise.all([
     db.select({ total: count() }).from(inventoryRecordsTable).where(condition),
-    db.select().from(inventoryRecordsTable)
+    db.select()
+      .from(inventoryRecordsTable)
+      .innerJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
       .where(condition)
-      .orderBy(desc(inventoryRecordsTable.recordDate))
+      .orderBy(asc(productsTable.code), desc(inventoryRecordsTable.recordDate))
       .limit(limit)
       .offset(offset),
   ]);
+  // Flatten joined result — extract inventory record only
+  const flatRecords = records.map(r => r.inventory_records);
   const total = countResult[0]?.total ?? 0;
 
-  if (records.length === 0) {
+  if (flatRecords.length === 0) {
     res.json({ data: [], total, page, limit });
     return;
   }
 
-  const ids = records.map(r => r.id);
+  const ids = flatRecords.map(r => r.id);
 
   const boxes = await db.select().from(inventoryBoxesTable)
     .where(inArray(inventoryBoxesTable.inventoryRecordId, ids))
@@ -218,7 +222,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
     boxMap.get(box.inventoryRecordId)!.push(box);
   }
 
-  const productIds = [...new Set(records.map(r => r.productId))];
+  const productIds = [...new Set(flatRecords.map(r => r.productId))];
   const lcRows = await db.select({
     productId: inventoryRecordsTable.productId,
     lastConsumptionDate: max(inventoryRecordsTable.recordDate),
@@ -233,7 +237,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
   }
 
   res.json({
-    data: records.map(r => ({
+    data: flatRecords.map(r => ({
       ...r,
       boxes: boxMap.get(r.id) ?? [],
       lastConsumptionDate: lcMap.get(r.productId) ?? null,
