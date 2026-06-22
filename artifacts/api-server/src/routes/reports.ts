@@ -584,64 +584,27 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     : [];
 
   // ── Sheet 1: Resumen Consolidado ──
-  // Agrupar por producto, mostrar el último conteo de cada ciclo
-  const productSummary = new Map<string, {
-    code: string; productName: string; unit: string;
-    cycleCounts: Record<string, number | null>;
-    firstInitialQty: number | null;
-  }>();
+  // Una fila por (producto, ciclo) — muestra el estado en cada ciclo
+  // Incluye Últ. Consumo y Días sin Movimiento
 
-  for (const r of allCycleProducts) {
-    const key = r.product.id;
-    if (!productSummary.has(key)) {
-      productSummary.set(key, {
-        code: r.product.code,
-        productName: r.product.name,
-        unit: r.product.unit,
-        cycleCounts: {},
-        firstInitialQty: r.cp.initialQuantity,
-      });
-    }
-    const entry = productSummary.get(key)!;
-    entry.cycleCounts[r.cycleName] = r.cp.physicalCount;
-    if (entry.firstInitialQty === null && r.cp.initialQuantity !== null) {
-      entry.firstInitialQty = r.cp.initialQuantity;
-    }
+  function calcDaysSince(dateStr: string | null | undefined): number | null {
+    if (!dateStr) return null;
+    const d = new Date(dateStr + "T00:00:00");
+    if (isNaN(d.getTime())) return null;
+    return Math.floor((Date.now() - d.getTime()) / 86400000);
   }
 
-  const dataConsolidated = Array.from(productSummary.values()).map(entry => {
-    // Last physical count = the most recent cycle that has a count
-    let lastPhysical: number | null = null;
-    let lastCycleName = "";
-    for (const cycle of cycles) {
-      if (entry.cycleCounts[cycle.name] !== undefined) {
-        lastPhysical = entry.cycleCounts[cycle.name];
-        lastCycleName = cycle.name;
-      }
-    }
-    const diff = (lastPhysical !== null && entry.firstInitialQty !== null)
-      ? lastPhysical - entry.firstInitialQty
-      : null;
-
-    return {
-      "Código": entry.code,
-      "Producto": entry.productName,
-      "UM": entry.unit,
-      "Saldo Inicial": entry.firstInitialQty ?? "",
-      "Último Conteo": lastPhysical ?? "",
-      "Diferencia": diff !== null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
-      "Ciclo": lastCycleName,
-    };
-  });
-
-  // ── Sheet 2: Diferencias por Ciclo ──
   const statusLabels: Record<string, string> = {
     pending: "Pendiente", counted: "Conteado", verified: "Verificado",
     without_movement: "Sin Movimiento", skipped: "Saltado",
   };
 
-  const dataDiffByCycle = allCycleProducts.map(r => {
+  const dataConsolidated = allCycleProducts.map(r => {
     const diff = r.cp.difference;
+    const ultimoConsumo = r.cp.initialUltimoConsumo;
+    const daysSince = calcDaysSince(ultimoConsumo);
+    const monthsSince = daysSince !== null ? Math.floor(daysSince / 30.44) : null;
+
     return {
       "Ciclo": r.cycleName,
       "Código": r.product.code,
@@ -651,6 +614,29 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "Conteo Físico": r.cp.physicalCount ?? "",
       "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
       "Estado": statusLabels[r.cp.status] ?? r.cp.status,
+      "Últ. Consumo": ultimoConsumo ?? "",
+      "Días sin Mov.": daysSince !== null ? `${daysSince} días` : "",
+      "Meses sin Mov.": monthsSince !== null ? `${monthsSince} meses` : "",
+    };
+  });
+
+  // ── Sheet 2: Diferencias por Ciclo ──
+  const dataDiffByCycle = allCycleProducts.map(r => {
+    const diff = r.cp.difference;
+    const ultimoConsumo = r.cp.initialUltimoConsumo;
+    const daysSince = calcDaysSince(ultimoConsumo);
+    const monthsSince = daysSince !== null ? Math.floor(daysSince / 30.44) : null;
+    return {
+      "Ciclo": r.cycleName,
+      "Código": r.product.code,
+      "Producto": r.product.name,
+      "UM": r.product.unit,
+      "Saldo Inicial": r.cp.initialQuantity ?? "",
+      "Conteo Físico": r.cp.physicalCount ?? "",
+      "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+      "Estado": statusLabels[r.cp.status] ?? r.cp.status,
+      "Últ. Consumo": ultimoConsumo ?? "",
+      "Días sin Mov.": daysSince !== null ? `${daysSince} días` : "",
     };
   });
 
