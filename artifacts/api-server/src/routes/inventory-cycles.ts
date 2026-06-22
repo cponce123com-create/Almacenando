@@ -952,8 +952,7 @@ router.get("/:id/summary", requireAuth, asyncHandler(async (req, res) => {
       COUNT(DISTINCT ir.product_id) AS product_count,
       COUNT(*)::int AS record_count
     FROM inventory_records ir
-    WHERE ir.product_id = ANY(${sql.join(pidList.map(id => sql`${id}`), sql`, `)})
-    GROUP BY ir.record_date
+    WHERE ir.product_id IN (${sql.join(pidList.map(id => sql`${id}`), sql`, `)})    GROUP BY ir.record_date
     ORDER BY ir.record_date DESC
   `);
 

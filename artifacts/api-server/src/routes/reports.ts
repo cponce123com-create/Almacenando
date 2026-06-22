@@ -647,7 +647,7 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       ir.record_date
     FROM inventory_records ir
     JOIN products p ON p.id = ir.product_id
-    WHERE ir.product_id = ANY(${sql.join(productIdArray.map(id => sql`${id}`), sql`, `)})
+    WHERE ir.product_id IN (${sql.join(productIdArray.map(id => sql`${id}`), sql`, `)})
       AND p.warehouse = ${warehouse}
       AND ir.physical_count IS NOT NULL
     ORDER BY ir.product_id, ir.record_date DESC, ir.created_at DESC
