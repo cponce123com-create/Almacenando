@@ -438,9 +438,9 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
         "Código": r.product.code,
         "Producto": r.product.name,
         "UM": r.product.unit,
-        "Saldo Inicial": r.cp.initialQuantity ?? "",
-        "Conteo Físico": r.cp.physicalCount ?? "",
-        "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+        "Saldo Inicial": r.cp.initialQuantity,        // number | null
+        "Conteo Físico": r.cp.physicalCount,           // number | null
+        "Diferencia": diff,                              // number | null
         "Estado": statusLabels[r.cp.status] ?? r.cp.status,
         "Últ. Consumo": r.cp.initialUltimoConsumo ?? "",
         "Notas / Observaciones": r.cp.notes ?? "",
@@ -458,9 +458,9 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
         "UM": r.product.unit,
         "Fecha": fmtDate(r.record.recordDate),
         "Almacén": r.record.warehouse,
-        "Saldo Sistema": saldoSistema,
-        "Cantidad Física": saldoFisico ?? "",
-        "Diferencia": diferencia != null ? (diferencia > 0 ? "+" : "") + diferencia.toFixed(2) : "",
+        "Saldo Sistema": saldoSistema,                 // number
+        "Cantidad Física": saldoFisico,                // number | null
+        "Diferencia": diferencia,                       // number | null
         "Ubicación": r.record.location ?? "",
         "Observaciones": r.record.notes ?? "",
       };
@@ -486,9 +486,9 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
         "UM": r.product.unit,
         "Fecha": fmtDate(r.record.recordDate),
         "Almacén": r.record.warehouse,
-        "Saldo Sistema": saldoSistema,
-        "Cantidad Física": saldoFisico ?? "",
-        "Diferencia": diferencia != null ? (diferencia > 0 ? "+" : "") + diferencia.toFixed(2) : "",
+        "Saldo Sistema": saldoSistema,                 // number
+        "Cantidad Física": saldoFisico,                // number | null
+        "Diferencia": diferencia,                       // number | null
         "Ubicación": r.record.location ?? "",
         "Responsable": r.record.responsible ?? "",
         "Observaciones": r.record.notes ?? "",
@@ -684,13 +684,13 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "Producto": entry.productName,
       "UM": entry.unit,
       "Ciclos": cycleCount,
-      "Saldo Inicial": entry.firstInitialQty ?? "",
-      "Conteo Físico": entry.lastPhysicalCount ?? "",
-      "Diferencia": diff !== null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+      "Saldo Inicial": entry.firstInitialQty,        // number | null
+      "Conteo Físico": entry.lastPhysicalCount,       // number | null
+      "Diferencia": diff,                              // number | null (raw, sin formato)
       "Estado": statusLabels[entry.bestStatus] ?? entry.bestStatus,
       "Últ. Consumo": ultimoConsumo ?? "",
-      "Días sin Mov.": daysSince !== null ? `${daysSince} días` : "",
-      "Meses sin Mov.": monthsSince !== null ? `${monthsSince} meses` : "",
+      "Días sin Mov.": daysSince,                      // number | null
+      "Meses sin Mov.": monthsSince,                   // number | null
     };
   });
 
@@ -699,18 +699,17 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     const diff = r.cp.difference;
     const ultimoConsumo = r.cp.initialUltimoConsumo;
     const daysSince = calcDaysSince(ultimoConsumo);
-    const monthsSince = daysSince !== null ? Math.floor(daysSince / 30.44) : null;
     return {
       "Ciclo": r.cycleName,
       "Código": r.product.code,
       "Producto": r.product.name,
       "UM": r.product.unit,
-      "Saldo Inicial": r.cp.initialQuantity ?? "",
-      "Conteo Físico": r.cp.physicalCount ?? "",
-      "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+      "Saldo Inicial": r.cp.initialQuantity,          // number | null
+      "Conteo Físico": r.cp.physicalCount,            // number | null
+      "Diferencia": diff,                               // number | null
       "Estado": statusLabels[r.cp.status] ?? r.cp.status,
       "Últ. Consumo": ultimoConsumo ?? "",
-      "Días sin Mov.": daysSince !== null ? `${daysSince} días` : "",
+      "Días sin Mov.": daysSince,                      // number | null
     };
   });
 
@@ -725,9 +724,9 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "UM": r.product.unit,
       "Fecha": fmtDate(r.record.recordDate),
       "Almacén": r.record.warehouse,
-      "Saldo Sistema": saldoSistema,
-      "Cantidad Física": saldoFisico ?? "",
-      "Diferencia": diferencia != null ? (diferencia > 0 ? "+" : "") + diferencia.toFixed(2) : "",
+      "Saldo Sistema": saldoSistema,                   // number
+      "Cantidad Física": saldoFisico,                  // number | null
+      "Diferencia": diferencia,                         // number | null
       "Ubicación": r.record.location ?? "",
       "Observaciones": r.record.notes ?? "",
     };
