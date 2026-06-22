@@ -639,24 +639,25 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     counted: 5, verified: 4, without_movement: 3, pending: 2, skipped: 1,
   };
 
-  // ── Obtener el ÚLTIMO physicalCount de inventory_records para cada producto ──
+  // ── Obtener el TOTAL de physicalCount de inventory_records para cada producto ──
+  // SUM en vez de latest value porque un producto puede contarse en partes
+  // (ej: 470 kg + 1000 kg = 1470 kg total)
   const latestRecords = productIdArray.length > 0 ? await db.execute(sql`
-    SELECT DISTINCT ON (ir.product_id)
+    SELECT
       ir.product_id,
-      ir.physical_count,
-      ir.record_date
+      SUM(COALESCE(ir.physical_count::numeric, 0)) AS total_physical
     FROM inventory_records ir
     JOIN products p ON p.id = ir.product_id
     WHERE ir.product_id IN (${sql.join(productIdArray.map(id => sql`${id}`), sql`, `)})
       AND p.warehouse = ${warehouse}
       AND ir.physical_count IS NOT NULL
-    ORDER BY ir.product_id, ir.record_date DESC, ir.created_at DESC
+    GROUP BY ir.product_id
   `) : { rows: [] };
 
   const latestPhysicalMap = new Map<string, number>();
-  for (const row of (latestRecords.rows as { product_id: string; physical_count: number; record_date: string }[])) {
+  for (const row of (latestRecords.rows as { product_id: string; total_physical: number }[])) {
     if (!latestPhysicalMap.has(row.product_id)) {
-      latestPhysicalMap.set(row.product_id, Number(row.physical_count));
+      latestPhysicalMap.set(row.product_id, Number(row.total_physical));
     }
   }
 
