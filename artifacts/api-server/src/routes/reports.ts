@@ -584,8 +584,11 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     : [];
 
   // ── Sheet 1: Resumen Consolidado ──
-  // Una fila por (producto, ciclo) — muestra el estado en cada ciclo
-  // Incluye Últ. Consumo y Días sin Movimiento
+  // UNA fila por producto — datos consolidados de TODOS los ciclos seleccionados
+  // Saldo Inicial = del primer ciclo donde apareció
+  // Conteo Físico = del último ciclo donde se contó
+  // Diferencia = ConteoFísico - SaldoInicial
+  // Incluye Últ. Consumo, Días sin Mov., Meses sin Mov.
 
   function calcDaysSince(dateStr: string | null | undefined): number | null {
     if (!dateStr) return null;
@@ -599,21 +602,92 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     without_movement: "Sin Movimiento", skipped: "Saltado",
   };
 
-  const dataConsolidated = allCycleProducts.map(r => {
-    const diff = r.cp.difference;
-    const ultimoConsumo = r.cp.initialUltimoConsumo;
+  // Estado con prioridad: counted > verified > without_movement > pending > skipped
+  const statusPriority: Record<string, number> = {
+    counted: 5, verified: 4, without_movement: 3, pending: 2, skipped: 1,
+  };
+
+  // Agrupar por producto
+  type ProductGroup = {
+    code: string; productName: string; unit: string;
+    firstInitialQty: number | null;
+    lastPhysicalCount: number | null;
+    lastUltimoConsumo: string | null;
+    bestStatus: string;
+  };
+
+  const productMap = new Map<string, ProductGroup>();
+
+  for (const r of allCycleProducts) {
+    const key = r.product.id;
+    if (!productMap.has(key)) {
+      productMap.set(key, {
+        code: r.product.code,
+        productName: r.product.name,
+        unit: r.product.unit,
+        firstInitialQty: r.cp.initialQuantity,
+        lastPhysicalCount: r.cp.physicalCount,
+        lastUltimoConsumo: r.cp.initialUltimoConsumo,
+        bestStatus: r.cp.status,
+      });
+    } else {
+      const entry = productMap.get(key)!;
+      // Sobrescribir solo si el ciclo actual es más reciente (cycles está DESC)
+      // firstInitialQty: mantener el más antiguo (último en el array)
+      // lastPhysicalCount, lastUltimoConsumo: el más reciente (primero en el array)
+      // Como cycles está ordenado DESC, el index en cycles determina la antigüedad
+      if (r.cp.physicalCount !== null) {
+        entry.lastPhysicalCount = r.cp.physicalCount;
+      }
+      if (r.cp.initialUltimoConsumo !== null) {
+        entry.lastUltimoConsumo = r.cp.initialUltimoConsumo;
+      }
+      // Mejor estado
+      if ((statusPriority[r.cp.status] ?? 0) > (statusPriority[entry.bestStatus] ?? 0)) {
+        entry.bestStatus = r.cp.status;
+      }
+      // firstInitialQty: mantener el más antiguo (el que ya tenemos, a menos que el actual sea más antiguo)
+      // Como cycles está DESC, encontramos el index de este producto en el array
+      const existingIsOlder = entry.firstInitialQty !== null; // ya tenemos uno
+      if (!existingIsOlder && r.cp.initialQuantity !== null) {
+        entry.firstInitialQty = r.cp.initialQuantity;
+      }
+    }
+  }
+
+  // Re-pasar para firstInitialQty: buscar el más antiguo (último en array cycles)
+  // Ya que los cycles vienen DESC, el más antiguo es el último
+  const oldestCycleDate = cycles[cycles.length - 1]?.startDate ?? "";
+  // Para cada producto, si aparece en el ciclo más antiguo, usar su initialQuantity
+  for (const r of allCycleProducts) {
+    if (r.cycleName === cycles[cycles.length - 1]?.name && r.cp.initialQuantity !== null) {
+      const entry = productMap.get(r.product.id);
+      if (entry) {
+        entry.firstInitialQty = r.cp.initialQuantity;
+      }
+    }
+  }
+
+  const dataConsolidated = Array.from(productMap.entries()).map(([_id, entry]) => {
+    const ultimoConsumo = entry.lastUltimoConsumo;
     const daysSince = calcDaysSince(ultimoConsumo);
     const monthsSince = daysSince !== null ? Math.floor(daysSince / 30.44) : null;
+    const diff = (entry.lastPhysicalCount !== null && entry.firstInitialQty !== null)
+      ? entry.lastPhysicalCount - entry.firstInitialQty
+      : null;
+
+    // Determinar cuántos ciclos tiene este producto
+    const cycleCount = allCycleProducts.filter(r => r.product.id === _id).length;
 
     return {
-      "Ciclo": r.cycleName,
-      "Código": r.product.code,
-      "Producto": r.product.name,
-      "UM": r.product.unit,
-      "Saldo Inicial": r.cp.initialQuantity ?? "",
-      "Conteo Físico": r.cp.physicalCount ?? "",
-      "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
-      "Estado": statusLabels[r.cp.status] ?? r.cp.status,
+      "Código": entry.code,
+      "Producto": entry.productName,
+      "UM": entry.unit,
+      "Ciclos": cycleCount,
+      "Saldo Inicial": entry.firstInitialQty ?? "",
+      "Conteo Físico": entry.lastPhysicalCount ?? "",
+      "Diferencia": diff !== null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+      "Estado": statusLabels[entry.bestStatus] ?? entry.bestStatus,
       "Últ. Consumo": ultimoConsumo ?? "",
       "Días sin Mov.": daysSince !== null ? `${daysSince} días` : "",
       "Meses sin Mov.": monthsSince !== null ? `${monthsSince} meses` : "",
