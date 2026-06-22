@@ -6,6 +6,7 @@ import {
   productsTable,
   balanceRecordsTable,
   inventoryRecordsTable,
+  usersTable,
 } from "@workspace/db";
 import { eq, and, desc, asc, count, sql, inArray, not, isNull, lte } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
@@ -22,6 +23,7 @@ import { logger } from "../lib/logger.js";
  * PATCH /inventory-cycles/:id, POST /inventory-cycles/:id/close,
  * GET /inventory-cycles/:id/progress, GET /inventory-cycles/:id/recommendations
  * PATCH /inventory-cycles/:id/products/:productId
+ * GET /inventory-cycles/history, GET /inventory-cycles/:id/summary
  */
 
 const router = Router();
@@ -769,16 +771,212 @@ router.post("/:id/close", requireAuth, requireRole("supervisor", "admin"), async
     .where(eq(inventoryCyclesTable.id, id as string))
     .returning();
 
+  // ── Get critical differences (top 10) ──
+  const criticalProducts = await db.select({
+    cp: inventoryCycleProductsTable,
+    product: productsTable,
+  })
+    .from(inventoryCycleProductsTable)
+    .innerJoin(productsTable, eq(inventoryCycleProductsTable.productId, productsTable.id))
+    .where(and(
+      eq(inventoryCycleProductsTable.cycleId, id as string),
+      eq(inventoryCycleProductsTable.status, "counted"),
+      sql`ABS(${inventoryCycleProductsTable.difference}) >= 0.01`
+    ))
+    .orderBy(sql`ABS(${inventoryCycleProductsTable.difference}) DESC`)
+    .limit(10);
+
+  const criticalDifferences = criticalProducts.map(r => ({
+    code: r.product.code,
+    productName: r.product.name,
+    unit: r.product.unit,
+    initialQuantity: r.cp.initialQuantity,
+    physicalCount: r.cp.physicalCount,
+    difference: r.cp.difference,
+  }));
+
   void writeAuditLog({
     userId: req.userId,
     action: "close",
     resource: "inventory_cycle",
     resourceId: id as string,
-    details: { pending: counters.pending, counted: counters.counted, withoutMovement: counters.withoutMovement },
+    details: { pending: counters.pending, counted: counters.counted, withoutMovement: counters.withoutMovement, criticalCount: criticalDifferences.length },
     ipAddress: req.ip,
   });
 
-  res.json(updated);
+  res.json({
+    ...updated,
+    pendingProducts: counters.pending,
+    criticalDifferences,
+  });
+}));
+
+// ── History ─────────────────────────────────────────────────────────────────
+
+router.get("/history", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string | undefined;
+  const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+
+  const conditions = [eq(inventoryCyclesTable.status, "closed")];
+  if (warehouse && warehouse !== "all") {
+    conditions.push(eq(inventoryCyclesTable.warehouse, warehouse));
+  }
+
+  const [{ total }] = await db.select({ total: count() })
+    .from(inventoryCyclesTable)
+    .where(and(...conditions));
+
+  const cycles = await db.select({
+    id: inventoryCyclesTable.id,
+    warehouse: inventoryCyclesTable.warehouse,
+    name: inventoryCyclesTable.name,
+    description: inventoryCyclesTable.description,
+    startDate: inventoryCyclesTable.startDate,
+    endDate: inventoryCyclesTable.endDate,
+    totalProducts: inventoryCyclesTable.totalProducts,
+    countedProducts: inventoryCyclesTable.countedProducts,
+    withoutMovement: inventoryCyclesTable.withoutMovement,
+    closedAt: inventoryCyclesTable.closedAt,
+    createdAt: inventoryCyclesTable.createdAt,
+    closedByName: usersTable.name,
+  })
+    .from(inventoryCyclesTable)
+    .leftJoin(usersTable, eq(inventoryCyclesTable.closedBy, usersTable.id))
+    .where(and(...conditions))
+    .orderBy(desc(inventoryCyclesTable.closedAt))
+    .limit(limit)
+    .offset(offset);
+
+  // Calcular pending para cada ciclo
+  const data = cycles.map(c => ({
+    ...c,
+    pending: Math.max(0, c.totalProducts - c.countedProducts - c.withoutMovement),
+  }));
+
+  res.json({ data, total, page, limit });
+}));
+
+// ── Summary ─────────────────────────────────────────────────────────────────
+
+router.get("/:id/summary", requireAuth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const [cycle] = await db.select().from(inventoryCyclesTable)
+    .where(eq(inventoryCyclesTable.id, id as string))
+    .limit(1);
+
+  if (!cycle) { res.status(404).json({ error: "Ciclo no encontrado" }); return; }
+
+  // ── Stats ──
+  const statusCounts = await db.select({
+    status: inventoryCycleProductsTable.status,
+    count: count(),
+  })
+    .from(inventoryCycleProductsTable)
+    .where(eq(inventoryCycleProductsTable.cycleId, id as string))
+    .groupBy(inventoryCycleProductsTable.status);
+
+  const stats = {
+    pending: 0, counted: 0, verified: 0,
+    withoutMovement: 0, skipped: 0, total: 0,
+  };
+  for (const s of statusCounts) {
+    const key = s.status as keyof typeof stats;
+    if (key in stats) stats[key] = Number(s.count);
+    stats.total += Number(s.count);
+  }
+
+  // ── Difference analysis ──
+  const productsWithCount = await db.select({
+    cp: inventoryCycleProductsTable,
+    product: productsTable,
+  })
+    .from(inventoryCycleProductsTable)
+    .innerJoin(productsTable, eq(inventoryCycleProductsTable.productId, productsTable.id))
+    .where(and(
+      eq(inventoryCycleProductsTable.cycleId, id as string),
+      eq(inventoryCycleProductsTable.status, "counted"),
+    ));
+
+  let exactMatch = 0;
+  let surplus = 0;
+  let shortage = 0;
+
+  for (const r of productsWithCount) {
+    const diff = r.cp.difference;
+    if (diff === null || Math.abs(diff) < 0.01) exactMatch++;
+    else if (diff > 0) surplus++;
+    else shortage++;
+  }
+
+  // Top 10 largest absolute differences
+  const largestDiff = [...productsWithCount]
+    .filter(r => r.cp.difference !== null)
+    .sort((a, b) => Math.abs(b.cp.difference ?? 0) - Math.abs(a.cp.difference ?? 0))
+    .slice(0, 10)
+    .map(r => ({
+      code: r.product.code,
+      productName: r.product.name,
+      unit: r.product.unit,
+      initialQuantity: r.cp.initialQuantity,
+      physicalCount: r.cp.physicalCount,
+      difference: r.cp.difference,
+    }));
+
+  const notCounted = stats.total - stats.counted - stats.verified - stats.withoutMovement - stats.skipped;
+
+  // ── Sessions (group inventory_records by date) ──
+  const cycleProductIds = await db.select({ productId: inventoryCycleProductsTable.productId })
+    .from(inventoryCycleProductsTable)
+    .where(eq(inventoryCycleProductsTable.cycleId, id as string));
+
+  if (cycleProductIds.length === 0) {
+    res.json({
+      cycle,
+      stats,
+      differences: {
+        exactMatch, surplus, shortage,
+        notCounted,
+        largestDifferences: largestDiff,
+      },
+      sessions: [],
+    });
+    return;
+  }
+
+  const pidList = cycleProductIds.map(r => r.productId);
+
+  const sessionRows = await db.execute(sql`
+    SELECT
+      ir.record_date,
+      COUNT(DISTINCT ir.product_id) AS product_count,
+      COUNT(*)::int AS record_count
+    FROM inventory_records ir
+    WHERE ir.product_id = ANY(${sql.join(pidList.map(id => sql`${id}`), sql`, `)})
+    GROUP BY ir.record_date
+    ORDER BY ir.record_date DESC
+  `);
+
+  const sessions = (sessionRows.rows as {
+    record_date: string;
+    product_count: number;
+    record_count: number;
+  }[]).map(r => ({
+    date: r.record_date,
+    productCount: Number(r.product_count),
+    recordCount: r.record_count,
+  }));
+
+  res.json({
+    cycle,
+    stats,
+    differences: {
+      exactMatch, surplus, shortage,
+      notCounted,
+      largestDifferences: largestDiff,
+    },
+    sessions,
+  });
 }));
 
 // ── Delete cycle ────────────────────────────────────────────────────────────

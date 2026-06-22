@@ -10,6 +10,8 @@ import { count, sql, and, gte, lte, eq, desc, asc, ilike, or, inArray } from "dr
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 
+import { z } from "zod/v4";
+
 /**
  * Reportes
  * Reportes y exportaciones
@@ -517,6 +519,194 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="reporte_${type}.xlsx"`);
+  res.send(buf);
+}));
+
+// ── Exportación consolidada multi-ciclo ────────────────────────────────────
+
+const consolidatedCyclesSchema = z.object({
+  cycleIds: z.array(z.string().min(1)).min(1),
+});
+
+router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "supervisor", "quality"), asyncHandler(async (req, res) => {
+  const parsed = consolidatedCyclesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Se requiere un array de IDs de ciclos (cycleIds)" });
+    return;
+  }
+
+  const { cycleIds } = parsed.data;
+
+  // ── Obtener info de los ciclos ──
+  const cycles = await db.select()
+    .from(inventoryCyclesTable)
+    .where(inArray(inventoryCyclesTable.id, cycleIds))
+    .orderBy(desc(inventoryCyclesTable.createdAt));
+
+  if (cycles.length === 0) {
+    res.status(404).json({ error: "No se encontraron ciclos" });
+    return;
+  }
+
+  const warehouse = cycles[0].warehouse;
+  const allProductIds = new Set<string>();
+
+  // ── Obtener todos los cycle_products de estos ciclos ──
+  const allCycleProducts = await db.select({
+    cp: inventoryCycleProductsTable,
+    product: productsTable,
+    cycleName: inventoryCyclesTable.name,
+  })
+    .from(inventoryCycleProductsTable)
+    .innerJoin(productsTable, eq(inventoryCycleProductsTable.productId, productsTable.id))
+    .innerJoin(inventoryCyclesTable, eq(inventoryCycleProductsTable.cycleId, inventoryCyclesTable.id))
+    .where(inArray(inventoryCycleProductsTable.cycleId, cycleIds))
+    .orderBy(productsTable.code);
+
+  for (const r of allCycleProducts) {
+    allProductIds.add(r.product.id);
+  }
+
+  const productIdArray = Array.from(allProductIds);
+
+  // ── Obtener inventory_records de estos productos ──
+  const allRecords = productIdArray.length > 0 ? await db.select({
+    record: inventoryRecordsTable,
+    product: productsTable,
+  })
+    .from(inventoryRecordsTable)
+    .innerJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
+    .where(and(
+      inArray(inventoryRecordsTable.productId, productIdArray),
+      eq(productsTable.warehouse, warehouse)
+    ))
+    .orderBy(productsTable.code, asc(inventoryRecordsTable.recordDate))
+    : [];
+
+  // ── Sheet 1: Resumen Consolidado ──
+  // Agrupar por producto, mostrar el último conteo de cada ciclo
+  const productSummary = new Map<string, {
+    code: string; productName: string; unit: string;
+    cycleCounts: Record<string, number | null>;
+    firstInitialQty: number | null;
+  }>();
+
+  for (const r of allCycleProducts) {
+    const key = r.product.id;
+    if (!productSummary.has(key)) {
+      productSummary.set(key, {
+        code: r.product.code,
+        productName: r.product.name,
+        unit: r.product.unit,
+        cycleCounts: {},
+        firstInitialQty: r.cp.initialQuantity,
+      });
+    }
+    const entry = productSummary.get(key)!;
+    entry.cycleCounts[r.cycleName] = r.cp.physicalCount;
+    if (entry.firstInitialQty === null && r.cp.initialQuantity !== null) {
+      entry.firstInitialQty = r.cp.initialQuantity;
+    }
+  }
+
+  const dataConsolidated = Array.from(productSummary.values()).map(entry => {
+    // Last physical count = the most recent cycle that has a count
+    let lastPhysical: number | null = null;
+    let lastCycleName = "";
+    for (const cycle of cycles) {
+      if (entry.cycleCounts[cycle.name] !== undefined) {
+        lastPhysical = entry.cycleCounts[cycle.name];
+        lastCycleName = cycle.name;
+      }
+    }
+    const diff = (lastPhysical !== null && entry.firstInitialQty !== null)
+      ? lastPhysical - entry.firstInitialQty
+      : null;
+
+    return {
+      "Código": entry.code,
+      "Producto": entry.productName,
+      "UM": entry.unit,
+      "Saldo Inicial": entry.firstInitialQty ?? "",
+      "Último Conteo": lastPhysical ?? "",
+      "Diferencia": diff !== null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+      "Ciclo": lastCycleName,
+    };
+  });
+
+  // ── Sheet 2: Diferencias por Ciclo ──
+  const statusLabels: Record<string, string> = {
+    pending: "Pendiente", counted: "Conteado", verified: "Verificado",
+    without_movement: "Sin Movimiento", skipped: "Saltado",
+  };
+
+  const dataDiffByCycle = allCycleProducts.map(r => {
+    const diff = r.cp.difference;
+    return {
+      "Ciclo": r.cycleName,
+      "Código": r.product.code,
+      "Producto": r.product.name,
+      "UM": r.product.unit,
+      "Saldo Inicial": r.cp.initialQuantity ?? "",
+      "Conteo Físico": r.cp.physicalCount ?? "",
+      "Diferencia": diff != null ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "",
+      "Estado": statusLabels[r.cp.status] ?? r.cp.status,
+    };
+  });
+
+  // ── Sheet 3: Detalle de Tomas ──
+  const dataDetail = allRecords.map(r => {
+    const saldoSistema = Number(r.record.previousBalance ?? 0);
+    const saldoFisico = r.record.physicalCount != null ? Number(r.record.physicalCount) : null;
+    const diferencia = saldoFisico != null ? saldoFisico - saldoSistema : null;
+    return {
+      "Código": r.product.code,
+      "Producto": r.product.name,
+      "UM": r.product.unit,
+      "Fecha": fmtDate(r.record.recordDate),
+      "Almacén": r.record.warehouse,
+      "Saldo Sistema": saldoSistema,
+      "Cantidad Física": saldoFisico ?? "",
+      "Diferencia": diferencia != null ? (diferencia > 0 ? "+" : "") + diferencia.toFixed(2) : "",
+      "Ubicación": r.record.location ?? "",
+      "Observaciones": r.record.notes ?? "",
+    };
+  });
+
+  // ── Sheet 4: Sesiones ──
+  const dataSessions = cycles.map(c => {
+    const counted = allCycleProducts.filter(r =>
+      r.cycleName === c.name &&
+      (r.cp.status === "counted" || r.cp.status === "verified")
+    );
+    return {
+      "Ciclo": c.name,
+      "Almacén": c.warehouse,
+      "Inicio": fmtDate(c.startDate),
+      "Fin": fmtDate(c.endDate),
+      "Total Productos": c.totalProducts,
+      "Conteados": c.countedProducts,
+      "Sin Movimiento": c.withoutMovement,
+      "Pendientes": Math.max(0, c.totalProducts - c.countedProducts - c.withoutMovement),
+    };
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.json_to_sheet(dataConsolidated.length > 0 ? dataConsolidated : [{}]);
+  XLSX.utils.book_append_sheet(wb, ws1, "Resumen Consolidado");
+  const ws2 = XLSX.utils.json_to_sheet(dataDiffByCycle.length > 0 ? dataDiffByCycle : [{}]);
+  XLSX.utils.book_append_sheet(wb, ws2, "Diferencias por Ciclo");
+  const ws3 = XLSX.utils.json_to_sheet(dataDetail.length > 0 ? dataDetail : [{}]);
+  XLSX.utils.book_append_sheet(wb, ws3, "Detalle de Tomas");
+  const ws4 = XLSX.utils.json_to_sheet(dataSessions.length > 0 ? dataSessions : [{}]);
+  XLSX.utils.book_append_sheet(wb, ws4, "Sesiones");
+
+  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  const suffix = cycles.length === 1 ? cycles[0].name : `${cycles.length}_ciclos`;
+  const filename = `inventario_consolidado_${suffix.replace(/[^a-zA-Z0-9]/g, "_")}_${warehouse}.xlsx`;
+
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(buf);
 }));
 

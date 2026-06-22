@@ -374,7 +374,10 @@ router.post(
         .limit(1);
 
       if (activeCycle && created) {
-        const [existingCp] = await db.select({ id: inventoryCycleProductsTable.id })
+        const [existingCp] = await db.select({
+          id: inventoryCycleProductsTable.id,
+          initialQuantity: inventoryCycleProductsTable.initialQuantity,
+        })
           .from(inventoryCycleProductsTable)
           .where(and(
             eq(inventoryCycleProductsTable.cycleId, activeCycle.id),
@@ -394,7 +397,11 @@ router.post(
             const pCount = parseFloat(physicalCount);
             updateData.physicalCount = pCount;
             updateData.finalQuantity = pCount;
-            const initQty = created.previousBalance ?? null;
+            // Usar initialQuantity del ciclo para la diferencia
+            let initQty: number | null = existingCp.initialQuantity;
+            if (initQty === null && created.previousBalance) {
+              initQty = Number(created.previousBalance);
+            }
             if (initQty !== null) {
               updateData.difference = pCount - initQty;
             }

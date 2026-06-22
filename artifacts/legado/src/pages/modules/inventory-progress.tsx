@@ -14,7 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  ClipboardList, Plus, Trash2, Loader2, AlertCircle, Search, Target, CheckCircle2,
+  Calendar, ClipboardList, Plus, Trash2, Loader2, AlertCircle, Search, Target, CheckCircle2,
   Clock, Radio, CircleDotDashed, BarChart3, Lightbulb, PackageX, TrendingUp,
   TrendingDown, Minus, FileSpreadsheet, Archive, XCircle, RefreshCw,
 } from "lucide-react";
@@ -57,6 +57,31 @@ interface RecommendationResponse {
   recommendations: Recommendation[];
   totalPending: number;
   suggestedCount: number;
+}
+
+interface CycleHistoryItem {
+  id: string; warehouse: string; name: string; description?: string | null;
+  startDate: string; endDate?: string | null;
+  totalProducts: number; countedProducts: number; withoutMovement: number;
+  closedAt: string | null; createdAt: string;
+  closedByName: string | null; pending: number;
+}
+
+interface CycleSummary {
+  cycle: Cycle;
+  stats: { pending: number; counted: number; verified: number; withoutMovement: number; skipped: number; total: number };
+  differences: {
+    exactMatch: number; surplus: number; shortage: number; notCounted: number;
+    largestDifferences: Array<{ code: string; productName: string; unit: string; initialQuantity: number | null; physicalCount: number | null; difference: number | null }>;
+  };
+  sessions: Array<{ date: string; productCount: number; recordCount: number }>;
+}
+
+interface CloseResult {
+  id: string; status: string;
+  countedProducts: number; withoutMovement: number;
+  pendingProducts: number;
+  criticalDifferences: Array<{ code: string; productName: string; unit: string; initialQuantity: number | null; physicalCount: number | null; difference: number | null }>;
 }
 
 const apiJson = async (path: string, opts?: RequestInit) => {
@@ -147,6 +172,11 @@ export default function InventoryProgressPage() {
   const [search, setSearch] = useState("");
   const [selectedBatchId, setSelectedBatchId] = useState<string>("");
   const [detectResult, setDetectResult] = useState<{ marked: number; total: number } | null>(null);
+  const [selectedCycleIds, setSelectedCycleIds] = useState<Set<string>>(new Set());
+  const [showSummaryDialog, setShowSummaryDialog] = useState(false);
+  const [summaryCycleId, setSummaryCycleId] = useState<string | null>(null);
+  const [closeResult, setCloseResult] = useState<CloseResult | null>(null);
+  const [closeOptions, setCloseOptions] = useState({ markPendingAsSkipped: false, exportBeforeClose: false });
 
   const warehouseParam = warehouse === "all" ? "" : `?warehouse=${warehouse}`;
 
@@ -193,6 +223,19 @@ export default function InventoryProgressPage() {
     refetchInterval: 30000,
   });
 
+  // Get history of closed cycles
+  const { data: historyData } = useQuery<{ data: CycleHistoryItem[]; total: number }>({
+    queryKey: ["cycle-history", warehouse],
+    queryFn: () => apiJson(`${BASE}/api/inventory-cycles/history${warehouseParam}&limit=50`),
+  });
+
+  // Get cycle summary
+  const { data: summaryData } = useQuery<CycleSummary>({
+    queryKey: ["cycle-summary", summaryCycleId],
+    queryFn: () => apiJson(`${BASE}/api/inventory-cycles/${summaryCycleId}/summary`),
+    enabled: !!summaryCycleId,
+  });
+
   // Create cycle mutation
   const createCycleMutation = useMutation({
     mutationFn: () => apiJson(`${BASE}/api/inventory-cycles`, {
@@ -217,10 +260,11 @@ export default function InventoryProgressPage() {
   // Close cycle mutation
   const closeCycleMutation = useMutation({
     mutationFn: () => apiJson(`${BASE}/api/inventory-cycles/${activeCycle!.id}/close`, { method: "POST" }),
-    onSuccess: (data) => {
+    onSuccess: (data: CloseResult) => {
       qc.invalidateQueries({ queryKey: ["active-cycle"] });
       qc.invalidateQueries({ queryKey: ["cycle-progress"] });
-      setShowCloseCycle(false);
+      qc.invalidateQueries({ queryKey: ["cycle-history"] });
+      setCloseResult(data);
       toast({ title: "Ciclo cerrado", description: `${data.countedProducts} conteados, ${data.withoutMovement} sin movimiento.` });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -602,6 +646,93 @@ export default function InventoryProgressPage() {
             </div>
           </>
         )}
+
+        {/* ── Ciclos Anteriores ── */}
+        {historyData && historyData.data.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Archive className="w-5 h-5 text-slate-500" />
+                <h2 className="text-sm font-bold text-slate-700">Ciclos Anteriores</h2>
+                <span className="text-xs text-slate-400">({historyData.total} cerrados)</span>
+              </div>
+              {selectedCycleIds.size >= 2 && (
+                <Button size="sm" variant="outline" className="border-blue-300 text-blue-700"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`${BASE}/api/reports/export/consolidated-cycles`, {
+                        method: "POST",
+                        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+                        body: JSON.stringify({ cycleIds: Array.from(selectedCycleIds) }),
+                      });
+                      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `inventario_consolidado_${selectedCycleIds.size}_ciclos.xlsx`;
+                      document.body.appendChild(a); a.click();
+                      document.body.removeChild(a); URL.revokeObjectURL(url);
+                      toast({ title: "Exportación completada", description: "Excel consolidado descargado" });
+                    } catch (e) {
+                      toast({ title: "Error", description: String(e), variant: "destructive" });
+                    }
+                  }}>
+                  <FileSpreadsheet className="w-4 h-4 mr-1.5" />
+                  Exportar Combinado ({selectedCycleIds.size})
+                </Button>
+              )}
+            </div>
+            <div className="divide-y divide-slate-100">
+              {historyData.data.map(hc => (
+                <div key={hc.id} className="px-5 py-3 flex items-center gap-4 hover:bg-slate-50/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    checked={selectedCycleIds.has(hc.id)}
+                    onChange={(e) => {
+                      const next = new Set(selectedCycleIds);
+                      e.target.checked ? next.add(hc.id) : next.delete(hc.id);
+                      setSelectedCycleIds(next);
+                    }}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">{hc.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {hc.totalProducts} productos · {hc.countedProducts} conteados · {hc.withoutMovement} s/m
+                      {hc.pending > 0 && <span className="text-amber-600"> · {hc.pending} pendientes</span>}
+                      {hc.closedByName && <span> · Cerrado por {hc.closedByName}</span>}
+                      {hc.endDate && <span> · {hc.endDate}</span>}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs"
+                      onClick={() => { setSummaryCycleId(hc.id); setShowSummaryDialog(true); }}>
+                      Ver Resumen
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs"
+                      onClick={async () => {
+                        const url = `${BASE}/api/reports/export/inventory-cycle-progress?cycleId=${hc.id}`;
+                        try {
+                          const res = await fetch(url, { headers: { ...getAuthHeaders() } });
+                          if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+                          const blob = await res.blob();
+                          const blobUrl = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = blobUrl;
+                          a.download = `inventario_${hc.name.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`;
+                          document.body.appendChild(a); a.click();
+                          document.body.removeChild(a); URL.revokeObjectURL(blobUrl);
+                        } catch (e) { toast({ title: "Error", description: String(e), variant: "destructive" }); }
+                      }}>
+                      <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Exportar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Create cycle dialog */}
@@ -719,49 +850,234 @@ export default function InventoryProgressPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Close cycle dialog */}
-      <AlertDialog open={showCloseCycle} onOpenChange={o => { if (!o) setShowCloseCycle(false); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>¿Cerrar ciclo de inventario?</AlertDialogTitle>
-            <AlertDialogDescription>
-              <div className="space-y-2 mt-2">
-                <p>Esto cerrará el ciclo actual. Se guardarán las estadísticas finales:</p>
+      {/* Close cycle enhanced dialog */ }
+      <Dialog open={showCloseCycle} onOpenChange={o => { if (!o) { setShowCloseCycle(false); setCloseResult(null); setCloseOptions({ markPendingAsSkipped: false, exportBeforeClose: false }); } }} >
+        <DialogContent className="max-w-lg">
+          {closeResult ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-emerald-700">
+                  <CheckCircle2 className="w-5 h-5" /> Ciclo cerrado exitosamente
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
                 <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="bg-blue-50 rounded-lg p-2">
-                    <p className="text-lg font-bold text-blue-700">{stats.counted + stats.verified}</p>
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <p className="text-lg font-bold text-blue-700">{closeResult.countedProducts}</p>
                     <p className="text-xs text-blue-600">Conteados</p>
                   </div>
-                  <div className="bg-slate-100 rounded-lg p-2">
-                    <p className="text-lg font-bold text-slate-700">{stats.withoutMovement}</p>
+                  <div className="bg-slate-100 rounded-lg p-3">
+                    <p className="text-lg font-bold text-slate-700">{closeResult.withoutMovement}</p>
                     <p className="text-xs text-slate-600">Sin Movimiento</p>
                   </div>
-                  <div className="bg-amber-50 rounded-lg p-2">
-                    <p className="text-lg font-bold text-amber-700">{stats.pending}</p>
+                  <div className="bg-amber-50 rounded-lg p-3">
+                    <p className="text-lg font-bold text-amber-700">{closeResult.pendingProducts}</p>
                     <p className="text-xs text-amber-600">Pendientes</p>
                   </div>
                 </div>
-                {stats.pending > 0 && (
-                  <p className="text-xs text-amber-600 font-medium">
-                    ⚠️ Quedan {stats.pending} productos pendientes que no serán conteados.
-                  </p>
+                {closeResult.criticalDifferences && closeResult.criticalDifferences.length > 0 && (
+                  <div>
+                    <p className="text-xs font-bold text-red-600 mb-2">
+                      ⚠️ Diferencias críticas detectadas ({closeResult.criticalDifferences.length}):
+                    </p>
+                    <div className="max-h-32 overflow-y-auto space-y-1">
+                      {closeResult.criticalDifferences.map((d, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs bg-red-50 rounded px-3 py-1.5">
+                          <span className="font-mono font-semibold text-slate-600">{d.code}</span>
+                          <span className="flex-1 truncate text-slate-700">{d.productName}</span>
+                          <span className={`font-mono font-bold ${(d.difference ?? 0) > 0 ? "text-blue-600" : "text-red-600"}`}>
+                            {(d.difference ?? 0) > 0 ? "+" : ""}{d.difference?.toFixed(2)} {d.unit}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
+                <Button className="w-full" onClick={() => { setShowCloseCycle(false); setCloseResult(null); }}>
+                  Cerrar
+                </Button>
               </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={closeCycleMutation.isPending}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-amber-600 hover:bg-amber-700"
-              onClick={() => closeCycleMutation.mutate()}
-              disabled={closeCycleMutation.isPending}
-            >
-              {closeCycleMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              Cerrar Ciclo
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-amber-700">
+                  <Archive className="w-5 h-5" /> Cerrar Ciclo de Inventario
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="text-sm text-slate-600">
+                  <p className="font-semibold mb-2">Resumen final:</p>
+                  <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <p className="text-lg font-bold text-blue-700">{stats.counted + stats.verified}</p>
+                      <p className="text-xs text-blue-600">Conteados</p>
+                    </div>
+                    <div className="bg-slate-100 rounded-lg p-3">
+                      <p className="text-lg font-bold text-slate-700">{stats.withoutMovement}</p>
+                      <p className="text-xs text-slate-600">Sin Movimiento</p>
+                    </div>
+                    <div className="bg-amber-50 rounded-lg p-3">
+                      <p className="text-lg font-bold text-amber-700">{stats.pending}</p>
+                      <p className="text-xs text-amber-600">Pendientes</p>
+                    </div>
+                  </div>
+                  {stats.pending > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 mb-3">
+                      <p className="font-medium">⚠️ Quedan {stats.pending} productos pendientes.</p>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2 border-t border-slate-100 pt-3">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                      checked={closeOptions.markPendingAsSkipped}
+                      onChange={e => setCloseOptions(prev => ({ ...prev, markPendingAsSkipped: e.target.checked }))}
+                      disabled={stats.pending === 0}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Marcar pendientes como "Saltados"</p>
+                      <p className="text-xs text-slate-400">Los {stats.pending} productos pendientes quedarán registrados como omitidos</p>
+                    </div>
+                  </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600"
+                      checked={closeOptions.exportBeforeClose}
+                      onChange={e => setCloseOptions(prev => ({ ...prev, exportBeforeClose: e.target.checked }))}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Exportar resultados a Excel antes de cerrar</p>
+                      <p className="text-xs text-slate-400">Descargará automáticamente el archivo .xlsx con los resultados</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowCloseCycle(false)}
+                  disabled={closeCycleMutation.isPending}>Cancelar</Button>
+                <Button className="bg-amber-600 hover:bg-amber-700"
+                  onClick={async () => {
+                    if (closeOptions.exportBeforeClose && activeCycle) {
+                      const url = `${BASE}/api/reports/export/inventory-cycle-progress?cycleId=${activeCycle.id}`;
+                      try {
+                        const res = await fetch(url, { headers: { ...getAuthHeaders() } });
+                        if (res.ok) {
+                          const blob = await res.blob();
+                          const blobUrl = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = blobUrl;
+                          a.download = `inventario_${activeCycle.name.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`;
+                          document.body.appendChild(a); a.click();
+                          document.body.removeChild(a); URL.revokeObjectURL(blobUrl);
+                        }
+                      } catch { /* best effort */ }
+                    }
+                    closeCycleMutation.mutate();
+                  }}
+                  disabled={closeCycleMutation.isPending}
+                >
+                  {closeCycleMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Cerrar Ciclo
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Summary dialog */}
+      <Dialog open={showSummaryDialog} onOpenChange={o => { if (!o) { setShowSummaryDialog(false); setSummaryCycleId(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-blue-600" />
+              {summaryData ? summaryData.cycle.name : "Resumen del Ciclo"}
+            </DialogTitle>
+          </DialogHeader>
+          {!summaryData ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>
+          ) : (
+            <div className="space-y-4">
+              {/* Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { label: "Conteados", value: summaryData.stats.counted + summaryData.stats.verified, color: "text-blue-700", bg: "bg-blue-50" },
+                  { label: "Sin Movimiento", value: summaryData.stats.withoutMovement, color: "text-slate-600", bg: "bg-slate-100" },
+                  { label: "Pendientes", value: summaryData.stats.pending, color: "text-amber-600", bg: "bg-amber-50" },
+                  { label: "Saltados", value: summaryData.stats.skipped, color: "text-red-600", bg: "bg-red-50" },
+                  { label: "Total", value: summaryData.stats.total, color: "text-slate-900", bg: "bg-slate-50" },
+                  { label: "Diferencia Exacts", value: summaryData.differences.exactMatch, color: "text-emerald-600", bg: "bg-emerald-50" },
+                ].map(s => (
+                  <div key={s.label} className={`${s.bg} rounded-lg px-3 py-2.5 text-center`}>
+                    <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
+                    <p className="text-xs text-slate-500">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Balance */}
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="bg-blue-50 rounded-lg p-2">
+                  <span className="font-bold text-blue-700">{summaryData.differences.surplus}</span>
+                  <p className="text-blue-600">Sobrantes</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-2">
+                  <span className="font-bold text-red-700">{summaryData.differences.shortage}</span>
+                  <p className="text-red-600">Faltantes</p>
+                </div>
+                <div className="bg-slate-100 rounded-lg p-2">
+                  <span className="font-bold text-slate-700">{summaryData.differences.notCounted}</span>
+                  <p className="text-slate-600">Sin conteo</p>
+                </div>
+              </div>
+
+              {/* Sessions */}
+              {summaryData.sessions.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">Sesiones</p>
+                  <div className="space-y-1">
+                    {summaryData.sessions.map(s => (
+                      <div key={s.date} className="flex items-center gap-3 bg-slate-50 rounded-lg px-3 py-2 text-sm">
+                        <Calendar className="w-4 h-4 text-slate-400" />
+                        <span className="font-semibold text-slate-700">{s.date}</span>
+                        <span className="text-slate-500">{s.productCount} productos</span>
+                        <span className="text-slate-400">{s.recordCount} registros</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Largest differences */}
+              {summaryData.differences.largestDifferences.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">
+                    Mayores diferencias ({summaryData.differences.largestDifferences.length})
+                  </p>
+                  <div className="space-y-1">
+                    {summaryData.differences.largestDifferences.map((d, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs bg-slate-50 rounded px-3 py-1.5">
+                        <span className="font-mono font-semibold text-slate-500">{d.code}</span>
+                        <span className="flex-1 truncate">{d.productName}</span>
+                        <span className={`font-mono font-bold ${(d.difference ?? 0) > 0 ? "text-blue-600" : "text-red-600"}`}>
+                          {(d.difference ?? 0) > 0 ? "+" : ""}{d.difference?.toFixed(2)} {d.unit}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowSummaryDialog(false); setSummaryCycleId(null); }}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete cycle dialog */}
       <AlertDialog open={!!deleteTarget} onOpenChange={o => { if (!o) setDeleteTarget(null); }}>
