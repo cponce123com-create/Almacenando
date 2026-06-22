@@ -618,10 +618,10 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
 
   // ── Sheet 1: Resumen Consolidado ──
   // UNA fila por producto — datos consolidados de TODOS los ciclos seleccionados
-  // Saldo Inicial = del primer ciclo donde apareció
-  // Conteo Físico = del último ciclo donde se contó
+  // Saldo Inicial = del primer ciclo (el más antiguo)
+  // Conteo Físico = del ÚLTIMO registro de inventario real (inventory_records)
   // Diferencia = ConteoFísico - SaldoInicial
-  // Incluye Últ. Consumo, Días sin Mov., Meses sin Mov.
+  // Incluye Últ. Consumo (de balance_records), Días sin Mov., Meses sin Mov.
 
   function calcDaysSince(dateStr: string | null | undefined): number | null {
     if (!dateStr) return null;
@@ -635,95 +635,117 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     without_movement: "Sin Movimiento", skipped: "Saltado",
   };
 
-  // Estado con prioridad: counted > verified > without_movement > pending > skipped
   const statusPriority: Record<string, number> = {
     counted: 5, verified: 4, without_movement: 3, pending: 2, skipped: 1,
   };
 
-  // Agrupar por producto
-  type ProductGroup = {
-    code: string; productName: string; unit: string;
-    firstInitialQty: number | null;
-    lastPhysicalCount: number | null;
-    lastUltimoConsumo: string | null;
-    bestStatus: string;
-  };
+  // ── Obtener el ÚLTIMO physicalCount de inventory_records para cada producto ──
+  const latestRecords = productIdArray.length > 0 ? await db.execute(sql`
+    SELECT DISTINCT ON (ir.product_id)
+      ir.product_id,
+      ir.physical_count,
+      ir.record_date
+    FROM inventory_records ir
+    JOIN products p ON p.id = ir.product_id
+    WHERE ir.product_id = ANY(${sql.join(productIdArray.map(id => sql`${id}`), sql`, `)})
+      AND p.warehouse = ${warehouse}
+      AND ir.physical_count IS NOT NULL
+    ORDER BY ir.product_id, ir.record_date DESC, ir.created_at DESC
+  `) : { rows: [] };
 
-  const productMap = new Map<string, ProductGroup>();
+  const latestPhysicalMap = new Map<string, number>();
+  for (const row of (latestRecords.rows as { product_id: string; physical_count: number; record_date: string }[])) {
+    if (!latestPhysicalMap.has(row.product_id)) {
+      latestPhysicalMap.set(row.product_id, Number(row.physical_count));
+    }
+  }
 
+  // ── Obtener el ÚLTIMO ultimo_consumo de balance_records para cada producto ──
+  const latestBalances = productIdArray.length > 0 ? await db.execute(sql`
+    SELECT DISTINCT ON (br.code)
+      br.code, br.ultimo_consumo
+    FROM balance_records br
+    WHERE br.warehouse = ${warehouse}
+      AND br.ultimo_consumo IS NOT NULL
+      AND br.ultimo_consumo > '2013-01-01'
+    ORDER BY br.code, br.balance_date DESC, br.created_at DESC
+  `) : { rows: [] };
+
+  const latestBalanceUltimoConsumo = new Map<string, string>();
+  for (const row of (latestBalances.rows as { code: string; ultimo_consumo: string }[])) {
+    if (!latestBalanceUltimoConsumo.has(row.code)) {
+      latestBalanceUltimoConsumo.set(row.code, row.ultimo_consumo);
+    }
+  }
+
+  // ── Primera initialQuantity por producto (del ciclo más antiguo donde aparezca) ──
+  // cycles está ordenado DESC, el más antiguo es el último
+  const oldestCycle = cycles[cycles.length - 1];
+  const oldestCycleProductIds = new Set(
+    allCycleProducts
+      .filter(r => r.cycleName === oldestCycle?.name && r.cp.initialQuantity !== null)
+      .map(r => r.product.id)
+  );
+
+  const firstInitialQtyMap = new Map<string, number>();
   for (const r of allCycleProducts) {
-    const key = r.product.id;
-    if (!productMap.has(key)) {
-      productMap.set(key, {
+    if (r.cp.initialQuantity !== null && !firstInitialQtyMap.has(r.product.id)) {
+      firstInitialQtyMap.set(r.product.id, r.cp.initialQuantity);
+    }
+  }
+  // Forzar el del ciclo más antiguo si existe
+  for (const r of allCycleProducts) {
+    if (r.cycleName === oldestCycle?.name && r.cp.initialQuantity !== null) {
+      firstInitialQtyMap.set(r.product.id, r.cp.initialQuantity);
+    }
+  }
+
+  // ── Mejor estado por producto (de todos los ciclos) ──
+  const bestStatusMap = new Map<string, string>();
+  for (const r of allCycleProducts) {
+    const current = bestStatusMap.get(r.product.id);
+    if (!current || (statusPriority[r.cp.status] ?? 0) > (statusPriority[current] ?? 0)) {
+      bestStatusMap.set(r.product.id, r.cp.status);
+    }
+  }
+
+  // ── Construir el consolidado ──
+  // Mapa de producto.id → datos básicos (code, name, unit, productName)
+  const productInfoMap = new Map<string, { code: string; productName: string; unit: string }>();
+  for (const r of allCycleProducts) {
+    if (!productInfoMap.has(r.product.id)) {
+      productInfoMap.set(r.product.id, {
         code: r.product.code,
         productName: r.product.name,
         unit: r.product.unit,
-        firstInitialQty: r.cp.initialQuantity,
-        lastPhysicalCount: r.cp.physicalCount,
-        lastUltimoConsumo: r.cp.initialUltimoConsumo,
-        bestStatus: r.cp.status,
       });
-    } else {
-      const entry = productMap.get(key)!;
-      // Sobrescribir solo si el ciclo actual es más reciente (cycles está DESC)
-      // firstInitialQty: mantener el más antiguo (último en el array)
-      // lastPhysicalCount, lastUltimoConsumo: el más reciente (primero en el array)
-      // Como cycles está ordenado DESC, el index en cycles determina la antigüedad
-      if (r.cp.physicalCount !== null) {
-        entry.lastPhysicalCount = r.cp.physicalCount;
-      }
-      if (r.cp.initialUltimoConsumo !== null) {
-        entry.lastUltimoConsumo = r.cp.initialUltimoConsumo;
-      }
-      // Mejor estado
-      if ((statusPriority[r.cp.status] ?? 0) > (statusPriority[entry.bestStatus] ?? 0)) {
-        entry.bestStatus = r.cp.status;
-      }
-      // firstInitialQty: mantener el más antiguo (el que ya tenemos, a menos que el actual sea más antiguo)
-      // Como cycles está DESC, encontramos el index de este producto en el array
-      const existingIsOlder = entry.firstInitialQty !== null; // ya tenemos uno
-      if (!existingIsOlder && r.cp.initialQuantity !== null) {
-        entry.firstInitialQty = r.cp.initialQuantity;
-      }
     }
   }
 
-  // Re-pasar para firstInitialQty: buscar el más antiguo (último en array cycles)
-  // Ya que los cycles vienen DESC, el más antiguo es el último
-  const oldestCycleDate = cycles[cycles.length - 1]?.startDate ?? "";
-  // Para cada producto, si aparece en el ciclo más antiguo, usar su initialQuantity
-  for (const r of allCycleProducts) {
-    if (r.cycleName === cycles[cycles.length - 1]?.name && r.cp.initialQuantity !== null) {
-      const entry = productMap.get(r.product.id);
-      if (entry) {
-        entry.firstInitialQty = r.cp.initialQuantity;
-      }
-    }
-  }
-
-  const dataConsolidated = Array.from(productMap.entries()).map(([_id, entry]) => {
-    const ultimoConsumo = entry.lastUltimoConsumo;
+  const dataConsolidated = Array.from(productInfoMap.entries()).map(([productId, info]) => {
+    const firstInitialQty = firstInitialQtyMap.get(productId) ?? null;
+    const lastPhysicalCount = latestPhysicalMap.get(productId) ?? null;
+    const ultimoConsumo = latestBalanceUltimoConsumo.get(info.code) ?? null;
     const daysSince = calcDaysSince(ultimoConsumo);
     const monthsSince = daysSince !== null ? Math.floor(daysSince / 30.44) : null;
-    const diff = (entry.lastPhysicalCount !== null && entry.firstInitialQty !== null)
-      ? entry.lastPhysicalCount - entry.firstInitialQty
+    const diff = (lastPhysicalCount !== null && firstInitialQty !== null)
+      ? lastPhysicalCount - firstInitialQty
       : null;
-
-    // Determinar cuántos ciclos tiene este producto
-    const cycleCount = allCycleProducts.filter(r => r.product.id === _id).length;
+    const bestStatus = bestStatusMap.get(productId) ?? "pending";
+    const cycleCount = allCycleProducts.filter(r => r.product.id === productId).length;
 
     return {
-      "Código": entry.code,
-      "Producto": entry.productName,
-      "UM": entry.unit,
+      "Código": info.code,
+      "Producto": info.productName,
+      "UM": info.unit,
       "Ciclos": cycleCount,
-      "Saldo Inicial": entry.firstInitialQty,        // number | null
-      "Conteo Físico": entry.lastPhysicalCount,       // number | null
-      "Diferencia": diff,                              // number | null (raw, sin formato)
-      "Estado": statusLabels[entry.bestStatus] ?? entry.bestStatus,
-      "Últ. Consumo": toDate(ultimoConsumo),               // Date | null
-      "Días sin Mov.": daysSince,                      // number | null
-      "Meses sin Mov.": monthsSince,                   // number | null
+      "Saldo Inicial": firstInitialQty,                 // number | null
+      "Conteo Físico": lastPhysicalCount,               // number | null (del inventory_records REAL)
+      "Diferencia": diff,                                // number | null
+      "Estado": statusLabels[bestStatus] ?? bestStatus,
+      "Últ. Consumo": toDate(ultimoConsumo),            // Date | null
+      "Días sin Mov.": daysSince,                        // number | null
+      "Meses sin Mov.": monthsSince,                     // number | null
     };
   });
 
