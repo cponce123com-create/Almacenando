@@ -26,6 +26,36 @@ function fmtDate(d: string | null | undefined): string {
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 }
 
+/** Convierte string ISO a Date object (o null si está vacío) */
+function toDate(d: string | null | undefined): Date | null {
+  if (!d) return null;
+  const dt = new Date(d + "T00:00:00");
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
+/** Aplica formato dd/mm/yyyy a columnas de fecha en un worksheet */
+function formatDateColumns(ws: XLSX.WorkSheet, headers: string[]) {
+  const ref = ws["!ref"];
+  if (!ref) return;
+  const range = XLSX.utils.decode_range(ref);
+  if (range.s.r !== 0) return; // primera fila debe ser header
+  for (const header of headers) {
+    let colIdx = -1;
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: 0, c: C })];
+      if (cell && cell.v === header) { colIdx = C; break; }
+    }
+    if (colIdx === -1) continue;
+    for (let R = range.s.r + 1; R <= range.e.r; R++) {
+      const addr = XLSX.utils.encode_cell({ r: R, c: colIdx });
+      const cell = ws[addr];
+      if (cell && cell.t === "n") {
+        cell.z = "dd/mm/yyyy";
+      }
+    }
+  }
+}
+
 function buildDateFilter(col: unknown, from?: string, to?: string) {
   const filters = [];
   if (from) filters.push(gte(col as Parameters<typeof gte>[0], from));
@@ -442,7 +472,7 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
         "Conteo Físico": r.cp.physicalCount,           // number | null
         "Diferencia": diff,                              // number | null
         "Estado": statusLabels[r.cp.status] ?? r.cp.status,
-        "Últ. Consumo": r.cp.initialUltimoConsumo ?? "",
+        "Últ. Consumo": toDate(r.cp.initialUltimoConsumo),
         "Notas / Observaciones": r.cp.notes ?? "",
       };
     });
@@ -456,7 +486,7 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
         "Código": r.product.code,
         "Producto": r.product.name,
         "UM": r.product.unit,
-        "Fecha": fmtDate(r.record.recordDate),
+        "Fecha": toDate(r.record.recordDate),            // Date | null
         "Almacén": r.record.warehouse,
         "Saldo Sistema": saldoSistema,                 // number
         "Cantidad Física": saldoFisico,                // number | null
@@ -484,7 +514,7 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
         "Código": r.product.code,
         "Producto": r.product.name,
         "UM": r.product.unit,
-        "Fecha": fmtDate(r.record.recordDate),
+        "Fecha": toDate(r.record.recordDate),            // Date | null
         "Almacén": r.record.warehouse,
         "Saldo Sistema": saldoSistema,                 // number
         "Cantidad Física": saldoFisico,                // number | null
@@ -497,10 +527,13 @@ router.get("/export/:type", requireAuth, requireRole("admin", "supervisor", "qua
 
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.json_to_sheet(dataDiff.length > 0 ? dataDiff : [{}]);
+    formatDateColumns(ws1, ["Últ. Consumo"]);
     XLSX.utils.book_append_sheet(wb, ws1, "Diferencias");
     const ws2 = XLSX.utils.json_to_sheet(dataDetail.length > 0 ? dataDetail : [{}]);
+    formatDateColumns(ws2, ["Fecha"]);
     XLSX.utils.book_append_sheet(wb, ws2, "Detalle de Tomas");
     const ws3 = XLSX.utils.json_to_sheet(dataGeneral.length > 0 ? dataGeneral : [{}]);
+    formatDateColumns(ws3, ["Fecha"]);
     XLSX.utils.book_append_sheet(wb, ws3, "Movimiento General");
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
     const filename = `inventario_${cycleInfo.name.replace(/[^a-zA-Z0-9]/g, "_")}_${cycleInfo.warehouse}.xlsx`;
@@ -688,7 +721,7 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "Conteo Físico": entry.lastPhysicalCount,       // number | null
       "Diferencia": diff,                              // number | null (raw, sin formato)
       "Estado": statusLabels[entry.bestStatus] ?? entry.bestStatus,
-      "Últ. Consumo": ultimoConsumo ?? "",
+      "Últ. Consumo": toDate(ultimoConsumo),               // Date | null
       "Días sin Mov.": daysSince,                      // number | null
       "Meses sin Mov.": monthsSince,                   // number | null
     };
@@ -708,7 +741,7 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "Conteo Físico": r.cp.physicalCount,            // number | null
       "Diferencia": diff,                               // number | null
       "Estado": statusLabels[r.cp.status] ?? r.cp.status,
-      "Últ. Consumo": ultimoConsumo ?? "",
+      "Últ. Consumo": toDate(ultimoConsumo),               // Date | null
       "Días sin Mov.": daysSince,                      // number | null
     };
   });
@@ -722,7 +755,7 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "Código": r.product.code,
       "Producto": r.product.name,
       "UM": r.product.unit,
-      "Fecha": fmtDate(r.record.recordDate),
+      "Fecha": toDate(r.record.recordDate),            // Date | null
       "Almacén": r.record.warehouse,
       "Saldo Sistema": saldoSistema,                   // number
       "Cantidad Física": saldoFisico,                  // number | null
@@ -741,8 +774,8 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     return {
       "Ciclo": c.name,
       "Almacén": c.warehouse,
-      "Inicio": fmtDate(c.startDate),
-      "Fin": fmtDate(c.endDate),
+      "Inicio": toDate(c.startDate),
+      "Fin": toDate(c.endDate),
       "Total Productos": c.totalProducts,
       "Conteados": c.countedProducts,
       "Sin Movimiento": c.withoutMovement,
@@ -752,12 +785,16 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
 
   const wb = XLSX.utils.book_new();
   const ws1 = XLSX.utils.json_to_sheet(dataConsolidated.length > 0 ? dataConsolidated : [{}]);
+  formatDateColumns(ws1, ["Últ. Consumo"]);
   XLSX.utils.book_append_sheet(wb, ws1, "Resumen Consolidado");
   const ws2 = XLSX.utils.json_to_sheet(dataDiffByCycle.length > 0 ? dataDiffByCycle : [{}]);
+  formatDateColumns(ws2, ["Últ. Consumo"]);
   XLSX.utils.book_append_sheet(wb, ws2, "Diferencias por Ciclo");
   const ws3 = XLSX.utils.json_to_sheet(dataDetail.length > 0 ? dataDetail : [{}]);
+  formatDateColumns(ws3, ["Fecha"]);
   XLSX.utils.book_append_sheet(wb, ws3, "Detalle de Tomas");
   const ws4 = XLSX.utils.json_to_sheet(dataSessions.length > 0 ? dataSessions : [{}]);
+  formatDateColumns(ws4, ["Inicio", "Fin"]);
   XLSX.utils.book_append_sheet(wb, ws4, "Sesiones");
 
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
