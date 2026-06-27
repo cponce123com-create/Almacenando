@@ -229,7 +229,15 @@ export default function TomaDeInventarioPage() {
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() => {
     let list = filterProduct === "all" ? records : records.filter(r => r.productId === filterProduct);
-    if (showCurrentRoundOnly && activeRound) list = list.filter(r => (r as any).roundId === activeRound.id);
+    if (showCurrentRoundOnly) {
+      if (activeRound) {
+        list = list.filter(r => (r as any).roundId === activeRound.id);
+      } else {
+        // Sin ronda activa: mostrar solo registros de hoy
+        const today = new Date().toISOString().slice(0, 10);
+        list = list.filter(r => r.recordDate === today);
+      }
+    }
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.toLowerCase().trim();
       list = list.filter(r => {
@@ -429,19 +437,17 @@ export default function TomaDeInventarioPage() {
         </div>
 
               <div className="flex items-center gap-2 mt-2 sm:mt-0">
-                {activeRound && (
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={showCurrentRoundOnly}
-                      onChange={e => setShowCurrentRoundOnly(e.target.checked)}
-                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <span className="text-xs text-slate-600 font-medium">
-                      Solo ronda actual <span className="text-emerald-600 font-bold">#{activeRound?.roundNumber}</span>
-                    </span>
-                  </label>
-                )}
+                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showCurrentRoundOnly}
+                    onChange={e => setShowCurrentRoundOnly(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="text-xs text-slate-600 font-medium">
+                    {activeRound ? `Solo ronda actual #${activeRound.roundNumber}` : "Solo inventario de hoy"}
+                  </span>
+                </label>
               </div>
 
         {/* Buscador inteligente */}
