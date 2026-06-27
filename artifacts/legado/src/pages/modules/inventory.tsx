@@ -576,7 +576,7 @@ export default function TomaDeInventarioPage() {
 
         {/* ── Formulario nuevo registro ── */}
         <Dialog open={showForm} onOpenChange={v => { setShowForm(v); if (!v) resetForm(); }}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-full sm:max-w-2xl h-full sm:h-auto sm:max-h-[90vh] max-sm:!rounded-none max-sm:!m-0 max-sm:!p-4 overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ClipboardList className="w-5 h-5 text-emerald-600" /> Nuevo Registro de Inventario
