@@ -303,7 +303,7 @@ export function BarcodeScanner({ products, onProductFound, onClose }: {
           playsInline
           muted
           className="w-full object-cover"
-          style={{ minHeight: "180px", maxHeight: "220px", transform: "scaleX(-1)" }}
+          style={{ minHeight: "180px", maxHeight: "220px" }}
         />
         {status === "initializing" && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60">
