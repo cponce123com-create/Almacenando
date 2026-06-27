@@ -33,6 +33,7 @@ import {
   Scan,
   PackageCheck,
   Map,
+  History,
   Target,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
