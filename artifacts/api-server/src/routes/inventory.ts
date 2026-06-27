@@ -329,7 +329,7 @@ router.post(
     // Obtener ronda activa para asignar round_id (raw SQL para evitar dependencias)
     let activeRoundId: string | null = null;
     try {
-      const result = await db.execute(sql`SELECT id FROM inventory_rounds WHERE warehouse = ${parsed.data.warehouse} AND status = "active" LIMIT 1`);
+      const result = await db.execute(sql`SELECT id FROM inventory_rounds WHERE warehouse = ${parsed.data.warehouse} AND status = 'active' LIMIT 1`);
       const rows = result.rows as Array<{ id: string }> | undefined;
       if (rows && rows.length > 0) activeRoundId = rows[0]!.id;
     } catch { /* si no hay ronda activa, se guarda sin round_id */ }

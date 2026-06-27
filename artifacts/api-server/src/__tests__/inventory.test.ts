@@ -23,6 +23,7 @@ vi.mock("@workspace/db", () => ({
     insert: dbInsertMock,
     update: dbUpdateMock,
     delete: dbDeleteMock,
+    execute: dbSelectMock, // Alias: execute se comporta como select en tests
   },
   inventoryRecordsTable: {
     id: { name: "id" },
@@ -36,6 +37,8 @@ vi.mock("@workspace/db", () => ({
     physicalCount: { name: "physical_count" },
     photoUrl: { name: "photo_url" },
     responsible: { name: "responsible" },
+    location: { name: "location" },
+    missingLabel: { name: "missing_label" },
     notes: { name: "notes" },
     registeredBy: { name: "registered_by" },
     createdAt: { name: "created_at" },
@@ -46,8 +49,10 @@ vi.mock("@workspace/db", () => ({
     inventoryRecordId: { name: "inventory_record_id" },
     boxNumber: { name: "box_number" },
     weight: { name: "weight" },
+    tare: { name: "tare" },
     lot: { name: "lot" },
     photoUrl: { name: "photo_url" },
+    createdAt: { name: "created_at" },
   },
   productsTable: {
     id: { name: "id" },
