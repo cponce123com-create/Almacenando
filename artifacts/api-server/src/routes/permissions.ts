@@ -72,21 +72,23 @@ router.put("/:role", requireAuth, requireRole("admin"), asyncHandler(async (req,
     updatedAt: now,
   }));
 
-  for (const v of values) {
-    await db.insert(userPermissionsTable).values(v)
-      .onConflictDoUpdate({
-        target: [userPermissionsTable.role, userPermissionsTable.pageId],
-        set: {
-          canView: v.canView,
-          canImport: v.canImport,
-          canExport: v.canExport,
-          canEdit: v.canEdit,
-          canDelete: v.canDelete,
-          updatedBy: v.updatedBy,
-          updatedAt: v.updatedAt,
-        },
-      });
-  }
+  await db.transaction(async (tx) => {
+    for (const v of values) {
+      await tx.insert(userPermissionsTable).values(v)
+        .onConflictDoUpdate({
+          target: [userPermissionsTable.role, userPermissionsTable.pageId],
+          set: {
+            canView: v.canView,
+            canImport: v.canImport,
+            canExport: v.canExport,
+            canEdit: v.canEdit,
+            canDelete: v.canDelete,
+            updatedBy: v.updatedBy,
+            updatedAt: v.updatedAt,
+          },
+        });
+    }
+  });
 
   const updated = await db.select().from(userPermissionsTable)
     .where(eq(userPermissionsTable.role, role as WarehouseRole));
