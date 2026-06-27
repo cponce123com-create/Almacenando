@@ -189,7 +189,11 @@ Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
-  const html = `${smtpHeader("Reporte de Stock de Colorantes")}${smtpWrap(`<p>Se informa el siguiente stock físico de colorantes:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}`)}${smtpFooter}`;
+  const html = smtpWrap(
+    smtpHeader("Reporte de Stock de Colorantes", "📊", "#3b82f6"),
+    `<p>Se informa el siguiente stock físico de colorantes:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, `${i.name} / ${i.quantity} ${i.unit}`] as [string, string]))}`,
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
 
   const { to, cc } = await getStockRecipients("color");
   if (!to) { logger.warn("[email-color] NOTIFY_STOCK_COLOR no configurado"); return; }
@@ -213,7 +217,11 @@ Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
-  const html = `${smtpHeader("Reporte de Stock de Auxiliares")}${smtpWrap(`<p>Se informa el siguiente stock físico de auxiliares:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}`)}${smtpFooter}`;
+  const html = smtpWrap(
+    smtpHeader("Reporte de Stock de Auxiliares", "📊", "#3b82f6"),
+    `<p>Se informa el siguiente stock físico de auxiliares:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, `${i.name} / ${i.quantity} ${i.unit}`] as [string, string]))}`,
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
 
   const { to, cc } = await getStockRecipients("aux");
   if (!to) { logger.warn("[email-aux] NOTIFY_STOCK_AUX no configurado"); return; }
@@ -239,7 +247,11 @@ Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
-  const html = `${smtpHeader("Solicitud de Aprobación de Orden Interna")}${smtpWrap(`<p>Se solicita la aprobación de la siguiente orden:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}${notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : ""}`)}${smtpFooter}`;
+  const html = smtpWrap(
+    smtpHeader("Solicitud de Aprobación de Orden Interna", "📋", "#f59e0b"),
+    `<p>Se solicita la aprobación de la siguiente orden:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, `${i.name} / ${i.quantity} ${i.unit}`] as [string, string]))}${notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : ""}`,
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
 
   const { getOrderApprovalRecipient } = await import("../email-recipients.js");
   const to = getOrderApprovalRecipient();
@@ -266,7 +278,11 @@ Saludos Cordiales.
 
 Carlos Ponce
 Supervisor de Cocina Colores`;
-  const html = `${smtpHeader("Solicitud de Bolsas Plásticas")}${smtpWrap(`<p>Se solicita el peso de las siguientes bolsas plásticas:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, i.name, i.quantity, i.unit]))}${notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : ""}`)}${smtpFooter}`;
+  const html = smtpWrap(
+    smtpHeader("Solicitud de Bolsas Plásticas", "🛍️", "#10b981"),
+    `<p>Se solicita el peso de las siguientes bolsas plásticas:</p>${infoTable(["Código", "Producto", "Cantidad", "UM"], items.map(i => [i.code, `${i.name} / ${i.quantity} ${i.unit}`] as [string, string]))}${notes ? `<p><strong>Observaciones:</strong> ${notes}</p>` : ""}`,
+    smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
+  );
 
   const { getPlasticBagRecipients } = await import("../email-recipients.js");
   const { to, cc } = getPlasticBagRecipients();

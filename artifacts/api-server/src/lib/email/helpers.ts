@@ -26,11 +26,13 @@ export function smtpWrap(header: string, body: string, footer: string): string {
   </div>`;
 }
 
-export function infoTable(rows: Array<[string, string]>, borderColor = "#3b82f6", bgColor = "#f1f5f9"): string {
+export function infoTable(headers: string[], rows: Array<[string, string]>, borderColor = "#3b82f6", bgColor = "#f1f5f9"): string {
+  const headerRow = `<tr>${headers.map(h => `<th style="padding:8px 10px;font-weight:700;background:${borderColor};color:#fff;border-bottom:2px solid ${borderColor};text-align:left">${h}</th>`).join("")}</tr>`;
   const rowHtml = rows.map(([k, v]) =>
     `<tr><td style="padding:6px 10px;font-weight:600;border-bottom:1px solid #e2e8f0;width:40%">${k}</td><td style="padding:6px 10px;border-bottom:1px solid #e2e8f0">${v}</td></tr>`
   ).join("\n");
   return `<table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:12px 0">
+    <thead>${headerRow}</thead>
     <tbody>${rowHtml}</tbody>
   </table>`;
 }
