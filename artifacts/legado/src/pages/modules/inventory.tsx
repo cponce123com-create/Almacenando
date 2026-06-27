@@ -691,14 +691,14 @@ export default function TomaDeInventarioPage() {
                 </div>
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   {/* Header */}
-                  <div className="grid grid-cols-[3rem_1fr_auto_3.5rem] gap-1 bg-slate-50 border-b border-slate-200 px-2 sm:px-4 py-2">
+                  <div className="grid grid-cols-[3rem_1fr_min-content_3.5rem] gap-1 bg-slate-50 border-b border-slate-200 px-2 sm:px-4 py-2">
                     <span className="text-xs font-semibold text-slate-400">#</span>
                     <span className="text-xs font-semibold text-slate-500">Peso · Tara</span>
                     <span className="text-xs font-semibold text-slate-500">Lote</span>
                     <span className="text-xs font-semibold text-slate-500 text-center">Foto</span>
                   </div>
                   {boxes.map((box, i) => (
-                    <div key={i} className="grid grid-cols-[3rem_1fr_auto_3.5rem] gap-1 items-start px-2 sm:px-4 py-2.5 border-b border-slate-100 last:border-0">
+                    <div key={i} className="grid grid-cols-[3rem_1fr_min-content_3.5rem] gap-1 items-start px-2 sm:px-4 py-2.5 border-b border-slate-100 last:border-0">
                       <span className="text-xs font-bold text-slate-400 pt-2">{i + 1}</span>
                       <div className="space-y-1">
                         <Input
@@ -712,13 +712,29 @@ export default function TomaDeInventarioPage() {
                         />
                         <div className="flex items-center gap-1"> <select value={box.tare || ""} onChange={e => updateBox(i, "tare", e.target.value)} className="h-7 text-[11px] rounded-md border border-input bg-background px-1.5 py-0 w-full"> <option value="">Tara</option> {TARE_PRESETS.map(p => ( <option key={p.value} value={p.value}>{p.label}</option> ))} </select> {box.tare === "otro" && ( <Input type="number" step="0.1" min="0" placeholder="Manual (kg)" value={box.tare === "otro" ? "" : box.tare} onChange={e => updateBox(i, "tare", e.target.value || "otro")} className="h-7 text-xs" /> )} {box.tare && box.tare !== "otro" && parseFloat(box.weight) > 0 && ( <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap"> Neto: {calcNetWeight(box.weight, box.tare)} </span> )} </div>
                       </div>
-                      <Input
-                        type="text"
-                        placeholder="Lote, fecha venc., observación..."
-                        value={box.lot}
-                        onChange={e => updateBox(i, "lot", e.target.value)}
-                        className="h-8 text-sm"
-                      />
+                      <div className="flex flex-col items-start gap-0.5">
+                        <label className="flex items-center gap-1 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={!!box.lot}
+                            onChange={e => {
+                              if (!e.target.checked) updateBox(i, "lot", "");
+                              else updateBox(i, "lot", " ");
+                            }}
+                            className="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <span className="text-[10px] text-slate-500 font-medium">Lote</span>
+                        </label>
+                        {box.lot && (
+                          <Input
+                            type="text"
+                            placeholder="Número de lote..."
+                            value={box.lot === " " ? "" : box.lot}
+                            onChange={e => updateBox(i, "lot", e.target.value)}
+                            className="h-7 text-[11px] w-16 sm:w-24"
+                          />
+                        )}
+                      </div>
                       <div className="flex items-center justify-center">
                         <input
                           ref={fileRefs[i]}
