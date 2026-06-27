@@ -45,6 +45,8 @@ export default function TomaDeInventarioPage() {
   const [deleteTarget, setDeleteTarget] = useState<InventoryRecord | null>(null);
   const [viewBoxesRecord, setViewBoxesRecord] = useState<InventoryRecord | null>(null);
   const [filterProduct, setFilterProduct] = useState("all");
+  const [activeRound, setActiveRound] = useState<{ id: string; roundNumber: number } | null>(null);
+  const [showCurrentRoundOnly, setShowCurrentRoundOnly] = useState(true);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -178,6 +180,15 @@ export default function TomaDeInventarioPage() {
     queryFn: () => apiJson(`/api/inventory/stats?warehouse=${selectedWarehouse}`),
   });
 
+  // Fetch active round for filtering
+  const { data: activeRoundData } = useQuery<{ id: string; roundNumber: number } | null>({
+    queryKey: ["/api/rounds/active", selectedWarehouse],
+    queryFn: () => apiJson(`/api/rounds/active?warehouse=${selectedWarehouse}`).catch(() => null),
+    refetchOnMount: true,
+  });
+  // Sync active round
+  useEffect(() => { if (activeRoundData) setActiveRound(activeRoundData); }, [activeRoundData]);
+
   const { data: latestBalances = EMPTY_BALANCES } = useQuery<BalanceRecord[]>({
     queryKey: ["/api/balances/latest", selectedWarehouse],
     queryFn: () => apiJson(`/api/balances/latest?warehouse=${selectedWarehouse}`),
@@ -218,6 +229,7 @@ export default function TomaDeInventarioPage() {
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() => {
     let list = filterProduct === "all" ? records : records.filter(r => r.productId === filterProduct);
+    if (showCurrentRoundOnly && activeRound) list = list.filter(r => (r as any).roundId === activeRound.id);
     if (debouncedSearch.trim()) {
       const q = debouncedSearch.toLowerCase().trim();
       list = list.filter(r => {
@@ -415,6 +427,22 @@ export default function TomaDeInventarioPage() {
             </SelectContent>
           </Select>
         </div>
+
+              <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                {activeRound && (
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showCurrentRoundOnly}
+                      onChange={e => setShowCurrentRoundOnly(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span className="text-xs text-slate-600 font-medium">
+                      Solo ronda actual <span className="text-emerald-600 font-bold">#{activeRound?.roundNumber}</span>
+                    </span>
+                  </label>
+                )}
+              </div>
 
         {/* Buscador inteligente */}
         <div className="bg-white rounded-xl border border-slate-100 p-4">
