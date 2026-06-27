@@ -3,11 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // ---------------------------------------------------------------------------
 // Token persistence
-// Access token is short-lived (15 min). Refresh token lasts 7 days.
-// Both are stored in localStorage to survive page refreshes.
+// Access token is stored in-memory only (not localStorage) to prevent XSS.
+// Refresh token is in an HttpOnly cookie (set by the server).
 // ---------------------------------------------------------------------------
 const TOKEN_KEY = "auth_token";
-const REFRESH_TOKEN_KEY = "auth_refresh_token";
 
 function readToken(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -19,16 +18,12 @@ function writeToken(key: string, value: string | null): void {
   } catch { /* localStorage may be blocked */ }
 }
 
-let memoryToken: string | null = readToken(TOKEN_KEY);
-let memoryRefreshToken: string | null = readToken(REFRESH_TOKEN_KEY);
+let memoryToken: string | null = null; // Ya no se lee de localStorage al inicio
 
-// Sync in-memory tokens from localStorage when they change externally
-// (e.g., from the token refresh logic in inventory-partials.tsx).
+// Sync in-memory token from localStorage when it changes externally.
 function syncTokensFromStorage(): void {
   const storedToken = readToken(TOKEN_KEY);
-  const storedRefresh = readToken(REFRESH_TOKEN_KEY);
   if (storedToken !== memoryToken) memoryToken = storedToken;
-  if (storedRefresh !== memoryRefreshToken) memoryRefreshToken = storedRefresh;
 }
 
 // Listen for storage events from other tabs AND custom refresh events
@@ -59,34 +54,27 @@ export function getAuthHeaders(): Record<string, string> {
 }
 
 /**
- * Intenta refrescar el access token usando el refresh token almacenado.
+ * Intenta refrescar el access token usando el refresh token de la HttpOnly cookie.
  * Devuelve true si se pudo refrescar, false si no.
  */
 async function tryRefreshToken(): Promise<boolean> {
-  const rt = memoryRefreshToken;
-  if (!rt) return false;
-
   try {
     const res = await fetch("/api/auth/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: rt }),
+      // Sin body — el refresh token viaja en la cookie HttpOnly
     });
 
     if (!res.ok) {
       // Refresh token inválido o expirado — limpiar todo
       memoryToken = null;
-      memoryRefreshToken = null;
       writeToken(TOKEN_KEY, null);
-      writeToken(REFRESH_TOKEN_KEY, null);
       return false;
     }
 
     const data = await res.json();
     memoryToken = data.token;
-    memoryRefreshToken = data.refreshToken;
     writeToken(TOKEN_KEY, data.token);
-    writeToken(REFRESH_TOKEN_KEY, data.refreshToken);
     return true;
   } catch {
     return false;
@@ -121,9 +109,7 @@ export function useAuth() {
       if (!res.ok) {
         if (res.status === 401) {
           memoryToken = null;
-          memoryRefreshToken = null;
           writeToken(TOKEN_KEY, null);
-          writeToken(REFRESH_TOKEN_KEY, null);
           setToken(null);
         }
         return null;
@@ -148,9 +134,7 @@ export function useAuth() {
 
     const result = await res.json();
     memoryToken = result.token;
-    memoryRefreshToken = result.refreshToken;
     writeToken(TOKEN_KEY, result.token);
-    writeToken(REFRESH_TOKEN_KEY, result.refreshToken);
     setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
     return result.user;
@@ -161,9 +145,7 @@ export function useAuth() {
 
     // Clear local state immediately
     memoryToken = null;
-    memoryRefreshToken = null;
     writeToken(TOKEN_KEY, null);
-    writeToken(REFRESH_TOKEN_KEY, null);
     setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();

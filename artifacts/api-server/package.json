@@ -18,6 +18,8 @@
     "@workspace/db": "workspace:*",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.6.1",
+    "cookie-parser": "^1.4.7",
+    "@types/cookie-parser": "^1.4.7",
     "compression": "^1.8.0",
     "cors": "^2",
     "drizzle-orm": "catalog:",

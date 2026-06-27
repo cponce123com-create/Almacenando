@@ -107,27 +107,19 @@ let _refreshing: Promise<boolean> | null = null;
 async function tryRefreshTokenOnce(): Promise<boolean> {
   if (_refreshing) return _refreshing;
 
-  const rt = (() => {
-    try { return localStorage.getItem("auth_refresh_token"); } catch { return null; }
-  })();
-
-  if (!rt) return false;
-
   _refreshing = (async () => {
     try {
       const res = await fetch("/api/auth/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: rt }),
+        // El refresh token viaja en la cookie HttpOnly — no necesita body
       });
       if (!res.ok) {
         localStorage.removeItem("auth_token");
-        localStorage.removeItem("auth_refresh_token");
         return false;
       }
       const data = await res.json();
       localStorage.setItem("auth_token", data.token);
-      localStorage.setItem("auth_refresh_token", data.refreshToken);
       window.dispatchEvent(new CustomEvent("app:token-refreshed"));
       return true;
     } catch {
