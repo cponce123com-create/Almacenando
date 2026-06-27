@@ -586,6 +586,29 @@ export default function TomaDeInventarioPage() {
 
             <div className="space-y-5">
 
+              {/* Scanner toggle */}
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-2">
+                  <Camera className="w-4 h-4 text-emerald-600" /> Escanear código de barras
+                </Label>
+                <Button
+                  type="button"
+                  variant={showScanner ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => setShowScanner(v => !v)}
+                >
+                  {showScanner ? "Ocultar escáner" : "Abrir escáner"}
+                </Button>
+              </div>
+              {showScanner && (
+                <BarcodeScanner
+                  products={products}
+                  onProductFound={(id) => { setField("productId", id); setShowScanner(false); }}
+                  onClose={() => setShowScanner(false)}
+                />
+              )}
+
               {/* Producto + fecha */}
               <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-end">
                 <div className="space-y-1.5">
