@@ -281,7 +281,7 @@ router.post(
 
     const files = (req.files ?? {}) as Files;
 
-    let boxEntries: { weight: string; lot: string }[] = [];
+    let boxEntries: { weight: string; tare?: string; lot: string }[] = [];
     if (parsed.data.boxesData) {
       try { boxEntries = JSON.parse(parsed.data.boxesData); } catch (err) { logger.warn({ err }, "boxesData JSON inválido — se ignorarán las cajas"); }
     }

@@ -700,15 +700,22 @@ export default function TomaDeInventarioPage() {
                   {boxes.map((box, i) => (
                     <div key={i} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-2 items-center px-4 py-2.5 border-b border-slate-100 last:border-0">
                       <span className="text-xs font-bold text-slate-400">{i + 1}</span>
-                      <Input
-                        type="number"
-                        step="0.001"
-                        min="0"
-                        placeholder="0.00"
-                        value={box.weight}
-                        onChange={e => updateBox(i, "weight", e.target.value)}
-                        className="h-8 text-sm"
-                      />
+                      <div className="space-y-0.5">
+                        <Input
+                          type="number"
+                          step="0.001"
+                          min="0"
+                          placeholder="0.00"
+                          value={box.weight}
+                          onChange={e => updateBox(i, "weight", e.target.value)}
+                          className="h-8 text-sm"
+                        />
+                        {box.tare && (
+                          <p className="text-[10px] text-emerald-600 font-medium text-center">
+                            Tara: {box.tare} kg
+                          </p>
+                        )}
+                      </div>
                       <Input
                         type="text"
                         placeholder="Lote, fecha venc., observación..."

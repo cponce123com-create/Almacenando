@@ -8,6 +8,7 @@ export const inventoryBoxesTable = pgTable("inventory_boxes", {
     .references(() => inventoryRecordsTable.id, { onDelete: "cascade" }),
   boxNumber: integer("box_number").notNull(),
   weight: numeric("weight"),
+  tare: numeric("tare"),              // tara aplicada (ej: 1.8 para colorantes)
   lot: text("lot"),
   photoUrl: text("photo_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
