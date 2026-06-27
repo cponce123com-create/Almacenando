@@ -46,6 +46,7 @@ export const NUM_BOXES = 2;
 
 /** Taras predefinidas para el dropdown */
 export const TARE_PRESETS = [
+  { label: "Sin tara", value: "0" },
   { label: "1.5 kg", value: "1.5" },
   { label: "1.8 kg (Colorantes)", value: "1.8" },
   { label: "2 kg", value: "2" },

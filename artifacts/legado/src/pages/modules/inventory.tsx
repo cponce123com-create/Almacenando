@@ -717,11 +717,22 @@ export default function TomaDeInventarioPage() {
                             className="h-7 text-[11px] rounded-md border border-input bg-background px-1.5 py-0 w-full"
                           >
                             <option value="">Tara</option>
-                            {TARE_PRESETS.filter(p => p.value !== "otro").map(p => (
+                            {TARE_PRESETS.map(p => (
                               <option key={p.value} value={p.value}>{p.label}</option>
                             ))}
                           </select>
-                          {box.tare && parseFloat(box.weight) > 0 && (
+                          {box.tare === "otro" && (
+                            <Input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              placeholder="Tara manual (kg)"
+                              value={box.tare === "otro" ? "" : box.tare}
+                              onChange={e => updateBox(i, "tare", e.target.value || "otro")}
+                              className="h-7 text-xs"
+                            />
+                          )}
+                          {box.tare && box.tare !== "otro" && parseFloat(box.weight) > 0 && (
                             <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">
                               Neto: {calcNetWeight(box.weight, box.tare)}
                             </span>
