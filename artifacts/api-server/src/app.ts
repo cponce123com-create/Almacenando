@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import compression from "compression";
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
@@ -17,6 +18,11 @@ const app: Express = express();
 // evitando que un atacante falsee su IP con el header X-Forwarded-For.
 // ---------------------------------------------------------------------------
 app.set("trust proxy", 1);
+
+// ---------------------------------------------------------------------------
+// Cookie parser — necesario para leer refresh token de HttpOnly cookies
+// ---------------------------------------------------------------------------
+app.use(cookieParser());
 
 // ---------------------------------------------------------------------------
 // Helmet — agrega headers HTTP de seguridad automáticamente:
@@ -95,7 +101,7 @@ app.use(
 // Se usa como correlation ID en logs y se devuelve en el header X-Request-Id.
 // ---------------------------------------------------------------------------
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const requestId = (req.headers["x-request-id"] as string) ?? randomUUID();
+  const requestId = randomUUID();
   res.setHeader("X-Request-Id", requestId);
   (req as any).requestId = requestId;
   next();

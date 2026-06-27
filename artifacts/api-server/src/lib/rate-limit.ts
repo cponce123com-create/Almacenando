@@ -1,7 +1,7 @@
 import rateLimit from "express-rate-limit";
 
 // Helper: skip rate limiting in development, or when explicitly disabled in production
-const shouldSkip = () => process.env.NODE_ENV !== "production" || process.env.DISABLE_RATE_LIMIT === "true";
+const shouldSkip = () => process.env.NODE_ENV === "test" || process.env.DISABLE_RATE_LIMIT === "true";
 
 /** 10 login attempts per 15 minutes per IP */
 export const authLoginLimiter = rateLimit({
@@ -53,8 +53,17 @@ export const passwordResetLimiter = rateLimit({
   skip: shouldSkip,
 });
 
-/**
- * 20 AI/LLM requests per 15 minutes per IP.
+/** 20 refresh attempts per 15 minutes per IP */
+export const refreshTokenLimiter = rateLimit({
+   windowMs: 15 * 60 * 1000,
+   limit: 20,
+   standardHeaders: "draft-7",
+   legacyHeaders: false,
+   message: { error: "Demasiadas solicitudes de renovación. Espera 15 minutos antes de intentar de nuevo." },
+   skip: shouldSkip,
+ });
+
+ /** 10 AI/LLM requests per 15 minutes per IP.
  * Applies to /api/compatibility, /api/msds/:productId/extract and any other Gemini-backed route.
  * This prevents cost spikes from abusive or accidental looping clients.
  */

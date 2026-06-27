@@ -12,7 +12,7 @@ if (!jwtSecret) {
 }
 const JWT_SECRET = jwtSecret;
 
-const ACCESS_TOKEN_EXPIRES_IN = 2 * 60 * 60; // 2 hours (was 15 min — avoids mid-inventory expiry)
+const ACCESS_TOKEN_EXPIRES_IN = 20 * 60; // 20 minutos (antes 2h)
 const REFRESH_TOKEN_EXPIRES_IN = 7 * 24 * 60 * 60; // 7 days
 
 export async function cleanupExpiredTokens(): Promise<void> {

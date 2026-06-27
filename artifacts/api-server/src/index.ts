@@ -4,7 +4,6 @@ import { seedWarehouseData, purgeDemoData } from "./lib/seed.js";
 import { cleanupExpiredTokens, hashPassword } from "./lib/auth.js";
 import { passwordSchema } from "./lib/password-schema.js";
 import { startScheduledJobs } from "./lib/scheduled-jobs.js";
-import { ensureMissingColumns } from "./lib/ensure-columns.js";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { count } from "drizzle-orm";
@@ -75,10 +74,6 @@ const server = app.listen(port, async () => {
 
   // Clean up any expired revoked tokens left over from a previous run.
   void cleanupExpiredTokens();
-
-  // Ensure required columns exist (barcode, location_id, stock) — safety net
-  // for when Drizzle migrations weren't properly applied.
-  await ensureMissingColumns();
 
   // -------------------------------------------------------------------
   // Seed demo data SOLO si RUN_SEED=true está definido explícitamente.
