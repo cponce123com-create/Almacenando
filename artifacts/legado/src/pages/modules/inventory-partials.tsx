@@ -2,7 +2,7 @@
 // Keeping this file separate reduces inventory.tsx from ~906 to ~600 lines
 // and makes each sub-component independently testable.
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -192,48 +192,85 @@ export function BarcodeScanner({ products, onProductFound, onClose }: {
   onProductFound: (productId: string) => void;
   onClose: () => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const scannerRef = useRef<any>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const scanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [status, setStatus] = useState<"initializing" | "scanning" | "found" | "error">("initializing");
   const [foundProduct, setFoundProduct] = useState<Product | null>(null);
   const [barcodeInput, setBarcodeInput] = useState("");
 
+  // ── Helper: match barcode against products ──────────────────────────────
+  const findProduct = useCallback((rawCode: string): Product | undefined => {
+    const clean = rawCode.trim();
+    return products.find(p =>
+      p.code === clean ||
+      p.code.replace(/[^0-9]/g, "") === clean.replace(/[^0-9]/g, "")
+    );
+  }, [products]);
+
+  // ── On product found ────────────────────────────────────────────────────
+  const handleFound = useCallback((product: Product) => {
+    setFoundProduct(product);
+    setStatus("found");
+    onProductFound(product.id);
+    // Stop camera
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (scanTimerRef.current) {
+      clearInterval(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+  }, [onProductFound]);
+
+  // ── Start camera + scanning ─────────────────────────────────────────────
   useEffect(() => {
+    if (!("getUserMedia" in navigator)) {
+      setStatus("error");
+      return;
+    }
+
     let mounted = true;
 
     (async () => {
       try {
-        const { Html5Qrcode } = await import("html5-qrcode");
-        if (!mounted || !containerRef.current) return;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment", width: { min: 320, ideal: 640 }, height: { min: 240, ideal: 480 } },
+        });
+        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
 
-        const scanner = new Html5Qrcode("barcode-scanner-view");
-        scannerRef.current = scanner;
+        streamRef.current = stream;
 
-        await scanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 120 },
-          },
-          (decodedText: string) => {
-            // Barcode found — try to match by product code
-            const cleanCode = decodedText.trim();
-            const match = products.find(p =>
-              p.code === cleanCode ||
-              p.code.replace(/[^0-9]/g, "") === cleanCode.replace(/[^0-9]/g, "")
-            );
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
 
-            if (match && mounted) {
-              scanner.stop().catch(() => {});
-              setFoundProduct(match);
-              setStatus("found");
-              onProductFound(match.id);
-            }
-          },
-          () => { /* scan failure — ignore, keep trying */ }
-        );
+        if (!mounted) return;
+        setStatus("scanning");
 
-        if (mounted) setStatus("scanning");
+        // ── BarcodeDetector API (native, Chrome Android 85+) ──────────
+        const canDetect = "BarcodeDetector" in window;
+        const detector = canDetect
+          ? new (window as any).BarcodeDetector({ formats: ["ean_13", "ean_8", "code_128", "code_39", "code_93", "codabar", "itf", "qr_code", "upc_a", "upc_e", "data_matrix", "pdf417", "aztec"] })
+          : null;
+
+        if (canDetect && detector) {
+          scanTimerRef.current = setInterval(async () => {
+            if (!videoRef.current || !mounted) return;
+            try {
+              const barcodes = await detector.detect(videoRef.current);
+              for (const b of barcodes) {
+                const match = findProduct(b.rawValue);
+                if (match && mounted) { handleFound(match); break; }
+              }
+            } catch { /* detection frame error — skip */ }
+          }, 500);
+        } else {
+          // No native detector — keep camera on, manual input needed
+          // The user will type the barcode manually below
+        }
       } catch (err) {
         if (mounted) setStatus("error");
       }
@@ -241,37 +278,32 @@ export function BarcodeScanner({ products, onProductFound, onClose }: {
 
     return () => {
       mounted = false;
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-      }
+      if (scanTimerRef.current) { clearInterval(scanTimerRef.current); scanTimerRef.current = null; }
+      if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+      if (videoRef.current) videoRef.current.srcObject = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Manual barcode input fallback
   const handleManualBarcode = (code: string) => {
-    const cleanCode = code.trim();
-    const match = products.find(p =>
-      p.code === cleanCode ||
-      p.code.replace(/[^0-9]/g, "") === cleanCode.replace(/[^0-9]/g, "")
-    );
+    const match = findProduct(code);
     if (match) {
-      setFoundProduct(match);
-      setStatus("found");
-      onProductFound(match.id);
-      if (scannerRef.current) scannerRef.current.stop().catch(() => {});
+      handleFound(match);
     }
   };
 
   return (
     <div className="rounded-xl border border-slate-200 overflow-hidden">
       {/* Scanner viewport */}
-      <div className="relative bg-black">
-        <div
-          id="barcode-scanner-view"
-          ref={containerRef}
-          className="w-full"
-          style={{ minHeight: "180px", maxHeight: "220px" }}
+      <div className="relative bg-black rounded-t-xl overflow-hidden">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full object-cover"
+          style={{ minHeight: "180px", maxHeight: "220px", transform: "scaleX(-1)" }}
         />
         {status === "initializing" && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60">
@@ -285,8 +317,8 @@ export function BarcodeScanner({ products, onProductFound, onClose }: {
           <div className="absolute inset-0 flex items-center justify-center bg-black/60">
             <div className="flex flex-col items-center gap-2 text-white text-center px-4">
               <Camera className="w-6 h-6 text-slate-400" />
-              <span className="text-xs">No se pudo abrir la cámara</span>
-              <span className="text-[10px] text-slate-400">Puedes buscar manualmente el código abajo</span>
+              <span className="text-xs">Cámara no disponible</span>
+              <span className="text-[10px] text-slate-400">Ingresa el código manualmente abajo</span>
             </div>
           </div>
         )}
@@ -305,6 +337,14 @@ export function BarcodeScanner({ products, onProductFound, onClose }: {
             <div className="w-3/4 h-0.5 bg-emerald-500/70 animate-pulse rounded-full shadow-lg shadow-emerald-400/50" />
           </div>
         )}
+        {/* Camera unavailable overlay (no native detector) */}
+        {status === "scanning" && !("BarcodeDetector" in window) && (
+          <div className="absolute top-2 left-2 right-2 flex items-center justify-center">
+            <span className="text-[10px] text-white/70 bg-black/50 px-2 py-0.5 rounded-full">
+              Escaneo automático no disponible — ingresa el código abajo
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Controls */}
@@ -313,7 +353,8 @@ export function BarcodeScanner({ products, onProductFound, onClose }: {
         <div className="relative">
           <Input
             type="text"
-            placeholder="O ingresa el código de barras manualmente…"
+            inputMode="numeric"
+            placeholder="Ingresa el código de barras…"
             value={barcodeInput}
             onChange={e => setBarcodeInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") handleManualBarcode(barcodeInput); }}
