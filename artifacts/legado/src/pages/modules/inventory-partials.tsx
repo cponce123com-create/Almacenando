@@ -31,19 +31,56 @@ export interface BalanceRecord {
   id: string; code: string; quantity: string; productDescription: string; unit: string; balanceDate: string;
   ultimoConsumo?: string | null;
 }
-export interface BoxEntry { weight: string; lot: string; }
+export interface BoxEntry {
+  weight: string;   // peso bruto (lo que ingresa el usuario)
+  tare: string;     // tara seleccionada (ej: "1.8", "2")
+  netWeight: string; // calculado: weight - tare
+  lot: string;
+}
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
 export const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QD"] as const;
-export const NUM_BOXES = 5;
+export const NUM_BOXES = 2;
+
+/** Taras predefinidas para el dropdown */
+export const TARE_PRESETS = [
+  { label: "1.5 kg", value: "1.5" },
+  { label: "1.8 kg (Colorantes)", value: "1.8" },
+  { label: "2 kg", value: "2" },
+  { label: "4 kg", value: "4" },
+  { label: "6 kg", value: "6" },
+  { label: "10 kg", value: "10" },
+  { label: "Otro…", value: "otro" },
+] as const;
+
+/**
+ * Determina si un código de producto está en el rango de colorantes
+ * (0200-0000 a 0299-9999) y devuelve la tara automática de 1.8 kg.
+ */
+export function getAutoTare(code: string): number | null {
+  // Extraer los primeros 4 dígitos del código (ej: "0200-0000" → "0200")
+  const prefix = code.replace(/[^0-9]/g, "").slice(0, 4);
+  if (!prefix || prefix.length < 4) return null;
+  const num = Number(prefix);
+  if (num >= 200 && num <= 299) return 1.8;
+  return null;
+}
+
+/** Calcula el peso neto = bruto - tara */
+export function calcNetWeight(gross: string, tare: string): string {
+  const g = parseFloat(gross) || 0;
+  const t = parseFloat(tare) || 0;
+  return Math.max(0, g - t).toFixed(3);
+}
 
 // Stable empty arrays — avoids recreating references on every render
 export const EMPTY_PRODUCTS: Product[] = [];
 export const EMPTY_BALANCES: BalanceRecord[] = [];
 
 export const today = () => new Date().toISOString().slice(0, 10);
-export const emptyBoxes = (): BoxEntry[] => Array.from({ length: NUM_BOXES }, () => ({ weight: "", lot: "" }));
+export const emptyBoxes = (): BoxEntry[] =>
+  Array.from({ length: NUM_BOXES }, () => ({ weight: "", tare: "", netWeight: "0.000", lot: "" }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

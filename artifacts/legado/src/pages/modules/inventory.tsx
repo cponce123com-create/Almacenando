@@ -29,6 +29,7 @@ const LOCATION_SUGGESTIONS = [
 ];
 import {
   WAREHOUSES, NUM_BOXES, EMPTY_PRODUCTS, EMPTY_BALANCES, today, emptyBoxes, sinMovimiento, apiJson, apiForm,
+  TARE_PRESETS, getAutoTare, calcNetWeight,
   ProductCombobox, PhotoViewer, CoverageStats, BoxesDialog, InventarioPrevioBanner,
   type Product, type InventoryBox, type InventoryRecord, type InventoryStats, type BalanceRecord, type BoxEntry,
 } from './inventory-partials';
@@ -200,6 +201,18 @@ export default function TomaDeInventarioPage() {
     if (next !== form.previousBalance) setField("previousBalance", next);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.productId, products, balanceByCode]);
+
+  // Auto-tare when product changes — detects colorantes (0200-0000 to 0299-9999) → 1.8kg
+  useEffect(() => {
+    if (!form.productId) return;
+    const product = products.find(p => p.id === form.productId);
+    if (!product) return;
+    const autoTare = getAutoTare(product.code);
+    if (autoTare !== null) {
+      setBoxes(prev => prev.map(b => ({ ...b, tare: String(autoTare) })));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.productId, products]);
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() => {
