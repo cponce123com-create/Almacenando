@@ -66,7 +66,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), as
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return;
   }
-  const { productId, productName, ...rest } = parsed.data;
+  const { productId, productName, quantity, ...rest } = parsed.data;
   if (!productId && !productName) {
     res.status(400).json({ error: "Debe indicar un nombre de producto" }); return;
   }
@@ -75,9 +75,9 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), as
     id,
     productId: productId || null,
     productName: productName || null,
+    quantity: Number(quantity),
     ...rest,
-    photos: [],
-    registeredBy: authedReq.user.id,
+    registeredBy: authedReq.userId,
   }).returning();
   res.status(201).json(created);
 }));
@@ -88,8 +88,9 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), a
   if (!existing) { res.status(404).json({ error: "No encontrado" }); return; }
   const parsed = surplusSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message }); return; }
+  const updateData = { ...parsed.data, quantity: parsed.data.quantity ? Number(parsed.data.quantity) : undefined, updatedAt: new Date() };
   const [updated] = await db.update(surplusProductsTable)
-    .set({ ...parsed.data, updatedAt: new Date() })
+    .set(updateData)
     .where(eq(surplusProductsTable.id, id as string)).returning();
   res.json(updated);
 }));
@@ -126,7 +127,7 @@ router.post("/:id/photos", requireAuth, upload.array("photos", 5), asyncHandler(
     const fname = buildPhotoName(record.surplusCode, existing.length + uploaded.length + 1, ext);
     try {
       await validateMimeType(f.buffer, "image");
-      const url = await uploadFileToDrive(f.buffer, fname, f.mimetype);
+      const { url } = await uploadFileToDrive(f.buffer, fname, f.mimetype);
       uploaded.push(url);
     } catch (e) {
       errors.push((e as Error).message ?? "Error");
@@ -142,7 +143,7 @@ router.post("/:id/photos", requireAuth, upload.array("photos", 5), asyncHandler(
     record: updated,
     uploaded: uploaded.length,
     errors,
-    uploadedBy: authedReq.user.id,
+    uploadedBy: authedReq.userId,
   });
 }));
 

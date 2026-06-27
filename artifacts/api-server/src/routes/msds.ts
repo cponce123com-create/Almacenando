@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, productsTable, balanceRecordsTable } from "@workspace/db";
 import type { Product } from "@workspace/db";
 import { eq, and, sql, asc, max } from "drizzle-orm";
-import type { JsonValue } from "drizzle-orm/pg-core";
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 import ExcelJS from "exceljs";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -133,7 +133,7 @@ router.get("/match/:productId", requireAuth, asyncHandler(async (req, res) => {
   const [product] = await db
     .select()
     .from(productsTable)
-    .where(eq(productsTable.id, req.params["productId"]!))
+    .where((eq(productsTable.id, req.params["productId"] as string) as any))
     .limit(1);
 
   if (!product) {
@@ -339,7 +339,7 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
 router.post("/:productId/candidates", requireAuth, asyncHandler(async (req, res) => {
   if (!guardDriveConfig(res as any)) return;
 
-  const { productId } = req.params;
+  const productId = req.params.productId as string;
 
   const [product] = await db
     .select()
@@ -440,7 +440,7 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
 // Confirms a single product's MSDS link and propagates to all warehouses with same code.
 
 router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor", "operator"), asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const { productId } = req.params;
+  const productId = req.params.productId as string;
 
   const [product] = await db
     .select()
@@ -957,7 +957,7 @@ router.post("/reset-all", requireAuth, requireRole("admin", "supervisor"), async
 router.post("/:productId/extract", aiLimiter, requireAuth, requireRole("admin", "supervisor", "quality"), asyncHandler(async (req, res) => {
   if (!guardDriveConfig(res as any)) return;
 
-  const { productId } = req.params;
+  const productId = req.params.productId as string;
 
   const [product] = await db
     .select()
@@ -981,7 +981,7 @@ router.post("/:productId/extract", aiLimiter, requireAuth, requireRole("admin", 
 
   await db.update(productsTable)
     .set({
-      msdsExtractedData: extracted as JsonValue,
+      msdsExtractedData: extracted as unknown as JsonValue,
       msdsExtractedAt: new Date(),
       updatedAt: new Date(),
     })
@@ -1000,7 +1000,7 @@ router.post("/:productId/extract", aiLimiter, requireAuth, requireRole("admin", 
 // Clears the extracted MSDS data from a product.
 
 router.delete("/:productId/extract", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req, res) => {
-  const { productId } = req.params;
+  const productId = req.params.productId as string;
 
   await db.update(productsTable)
     .set({ msdsExtractedData: null, msdsExtractedAt: null, updatedAt: new Date() })

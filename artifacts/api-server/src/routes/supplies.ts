@@ -66,7 +66,7 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler
   const data = parsed.data;
   const [updated] = await db.update(suppliesTable)
     .set({ ...data, code: data.code.toUpperCase(), updatedAt: new Date() })
-    .where(eq(suppliesTable.id, req.params.id))
+    .where(eq(suppliesTable.id, req.params.id as string))
     .returning();
   if (!updated) { res.status(404).json({ error: "Suministro no encontrado" }); return; }
   res.json(updated);
@@ -74,7 +74,7 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler
 
 // DELETE /api/supplies/:id
 router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
-  const [deleted] = await db.delete(suppliesTable).where(eq(suppliesTable.id, req.params.id)).returning();
+  const [deleted] = await db.delete(suppliesTable).where(eq(suppliesTable.id, req.params.id as string)).returning();
   if (!deleted) { res.status(404).json({ error: "Suministro no encontrado" }); return; }
   res.json({ ok: true });
 }));

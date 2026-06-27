@@ -8,6 +8,7 @@ import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import { destructiveActionLimiter } from "../lib/rate-limit.js";
+import { generateId } from "../lib/id.js";
 import { parseExcelBuffer } from "../lib/excel-parser.js";
 
 /**
@@ -322,7 +323,7 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), 
   const parsed = balanceSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const [updated] = await db.update(balanceRecordsTable)
-    .set({ ...parsed.data, updatedAt: new Date() })
+    .set({ ...parsed.data, quantity: parsed.data.quantity ? Number(parsed.data.quantity) : undefined, updatedAt: new Date() })
     .where(eq(balanceRecordsTable.id, id as string)).returning();
   if (!updated) { res.status(404).json({ error: "Registro no encontrado" }); return; }
   res.json(updated);

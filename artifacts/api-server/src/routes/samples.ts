@@ -89,6 +89,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "ope
     productName: productName || null,
     supplier: supplier || null,
     ...rest,
+    quantity: Number(rest.quantity || parsed.data.quantity),
     takenBy: authedReq.userId,
   }).returning();
   res.status(201).json(created);
@@ -102,7 +103,7 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), a
     return;
   }
   const [updated] = await db.update(samplesTable)
-    .set({ ...parsed.data, updatedAt: new Date() })
+    .set({ ...parsed.data, quantity: parsed.data.quantity ? Number(parsed.data.quantity) : undefined, updatedAt: new Date() })
     .where(eq(samplesTable.id, id as string)).returning();
   if (!updated) { res.status(404).json({ error: "Muestra no encontrada" }); return; }
   res.json(updated);

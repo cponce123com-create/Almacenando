@@ -157,7 +157,7 @@ async function checkExpiringLots(): Promise<number> {
     .select({
       id: dyeLotsTable.id,
       productId: dyeLotsTable.productId,
-      batchCode: dyeLotsTable.lotNumber,
+      lotNumber: dyeLotsTable.lotNumber,
       expirationDate: dyeLotsTable.expirationDate,
       productName: productsTable.name,
       productCode: productsTable.code,

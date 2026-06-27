@@ -217,7 +217,7 @@ router.get(
   "/orders/:id",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const [order] = await db
       .select({
@@ -277,7 +277,7 @@ router.get(
   "/orders/:id/items",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const items = await db
       .select({
@@ -317,7 +317,7 @@ router.put(
   "/items/:id/scan",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     const parsed = scanSchema.safeParse(req.body);
     if (!parsed.success) {

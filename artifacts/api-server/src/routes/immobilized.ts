@@ -50,7 +50,7 @@ router.get("/", requireAuth, asyncHandler(async (_req, res) => {
 }));
 
 router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const records = await db.select().from(immobilizedProductsTable).where(eq(immobilizedProductsTable.id, id as string)).limit(1);
   if (records.length === 0) {
     res.status(404).json({ error: "Registro no encontrado" });
@@ -72,12 +72,12 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), as
     ...parsed.data,
     registeredBy: authedReq.userId,
   }).returning();
-  void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "immobilized_product", resourceId: id, ipAddress: req.ip });
+  void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "immobilized_product", resourceId: id as string, ipAddress: req.ip });
   res.status(201).json(created);
 }));
 
 router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const authedReq = req as AuthenticatedRequest;
   const releaseSchema = z.object({
     status: z.enum(["immobilized", "released", "disposed"]).optional(),
@@ -99,12 +99,12 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler
     res.status(404).json({ error: "Registro no encontrado" });
     return;
   }
-  void writeAuditLog({ userId: authedReq.userId, action: "release", resource: "immobilized_product", resourceId: id, ipAddress: req.ip });
+  void writeAuditLog({ userId: authedReq.userId, action: "release", resource: "immobilized_product", resourceId: id as string, ipAddress: req.ip });
   res.json(updated);
 }));
 
 router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const [deleted] = await db.delete(immobilizedProductsTable).where(eq(immobilizedProductsTable.id, id as string)).returning();
   if (!deleted) {
     res.status(404).json({ error: "Registro no encontrado" });
@@ -121,7 +121,7 @@ router.post(
   requireRole("supervisor", "admin", "operator"),
   upload.array("photos", 5),
   asyncHandler(async (req, res) => {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const files = req.files as Express.Multer.File[] | undefined;
     if (!files || files.length === 0) {
       res.status(400).json({ error: "No se enviaron archivos" }); return;
@@ -204,7 +204,7 @@ router.delete(
       .where(eq(immobilizedProductsTable.id, id as string)).returning();
 
     const authedReq2 = req as AuthenticatedRequest;
-    void writeAuditLog({ userId: authedReq2.userId, action: "delete", resource: "immobilized_photo", resourceId: id, details: { photoIndex: idx }, ipAddress: req.ip });
+    void writeAuditLog({ userId: authedReq2.userId, action: "delete", resource: "immobilized_photo", resourceId: id as string, details: { photoIndex: idx }, ipAddress: req.ip });
     res.json(updated);
   })
 );

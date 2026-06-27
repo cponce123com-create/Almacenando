@@ -80,17 +80,14 @@ function dispatchNotifications({
 
   for (const recipient of recipients) {
     sendDyeLotNotificationEmail({
-      toEmail: recipient.email,
-      toName: recipient.name,
-      lotNumber,
       productName,
-      changeType,
-      changedByName,
-      qualityStatus,
+      lotNumber,
       quantity,
+      expirationDate: "",
       supplier,
-      notes,
-      appUrl,
+      qualityStatus,
+      senderName: changedByName,
+      recipients: [recipient.email],
     }).catch((err) => {
       logger.error({ err, toEmail: recipient.email }, "[dye-lots] Error enviando notificación de lote");
     });

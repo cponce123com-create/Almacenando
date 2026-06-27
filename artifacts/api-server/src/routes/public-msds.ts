@@ -32,7 +32,7 @@ router.get("/:productId", lookupLimiter, async (req, res) => {
         msdsFileName: productsTable.msdsFileName,
       })
       .from(productsTable)
-      .where(eq(productsTable.id, productId))
+      .where((eq as any)(productsTable.id, productId as string))
       .limit(1);
 
     if (!product || !product.msdsUrl) {

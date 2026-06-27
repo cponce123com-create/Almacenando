@@ -93,7 +93,7 @@ router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asy
 }));
 
 router.get("/:id", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req, res) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const records = await db.select().from(cuadreRecordsTable).where(eq(cuadreRecordsTable.id, id as string)).limit(1);
   if (records.length === 0) { res.status(404).json({ error: "Cuadre no encontrado" }); return; }
   const items = await db.select().from(cuadreItemsTable).where(eq(cuadreItemsTable.cuadreId, id as string));
@@ -129,7 +129,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
 }));
 
 router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const parsed = cuadreSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const { items, ...cuadreData } = parsed.data as { items?: z.infer<typeof cuadreItemSchema>[]; [k: string]: unknown };
@@ -159,7 +159,7 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler
 }));
 
 router.delete("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const [deleted] = await db.delete(cuadreRecordsTable).where(eq(cuadreRecordsTable.id, id as string)).returning();
   if (!deleted) { res.status(404).json({ error: "Cuadre no encontrado" }); return; }
   res.json({ message: "Cuadre eliminado" });

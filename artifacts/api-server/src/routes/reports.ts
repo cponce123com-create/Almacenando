@@ -785,9 +785,9 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "Saldo Sistema": saldoSistema,                   // number
       "Cantidad Física": saldoFisico,                  // number | null
       "Diferencia": diferencia,                         // number | null
-      "Peso Bruto": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const total = boxes.reduce((s, b) => s + (Number(b.weight) || 0), 0); return total > 0 ? total : null; })(),
-      "Tara": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const total = boxes.reduce((s, b) => s + (Number(b.tare) || 0), 0); return total > 0 ? total : null; })(),
-      "Peso Neto": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const gross = boxes.reduce((s, b) => s + (Number(b.weight) || 0), 0); const tare = boxes.reduce((s, b) => s + (Number(b.tare) || 0), 0); return (gross - tare) > 0 ? Math.round((gross - tare) * 1000) / 1000 : null; })(),
+      "Peso Bruto": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const total = boxes.reduce((s: number, b: {weight?: string; tare?: string}) => s + (Number(b.weight) || 0), 0); return total > 0 ? total : null; })(),
+      "Tara": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const total = boxes.reduce((s: number, b: {weight?: string; tare?: string}) => s + (Number(b.tare) || 0), 0); return total > 0 ? total : null; })(),
+      "Peso Neto": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const gross = boxes.reduce((s: number, b: {weight?: string; tare?: string}) => s + (Number(b.weight) || 0), 0); const tare = boxes.reduce((s: number, b: {weight?: string; tare?: string}) => s + (Number(b.tare) || 0), 0); return (gross - tare) > 0 ? Math.round((gross - tare) * 1000) / 1000 : null; })(),
       "Falta Etiqueta": r.record.missingLabel ? "Sí" : "No",
       "Ubicación": r.record.location ?? "",
       "Observaciones": r.record.notes ?? "",

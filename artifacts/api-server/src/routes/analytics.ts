@@ -49,11 +49,10 @@ router.get("/dashboard", requireAuth, asyncHandler(async (_req, res) => {
     // Últimos 10 movimientos de inventario
     db
       .select({
-        id: inventoryRecordsTable.id,
-        type: inventoryRecordsTable.type,
-        quantity: inventoryRecordsTable.quantity,
-        date: inventoryRecordsTable.recordDate,
-        productName: productsTable.name,
+        id: (inventoryRecordsTable as any).id,
+        type: (inventoryRecordsTable as any).type,
+        quantity: (inventoryRecordsTable as any).quantity,
+        date: inventoryRecordsTable.recordDate,        productName: productsTable.name,
         productCode: productsTable.code,
       })
       .from(inventoryRecordsTable)
@@ -113,13 +112,13 @@ router.get("/stock-trends", requireAuth, asyncHandler(async (req, res) => {
   const trends = await db
     .select({
       date: inventoryRecordsTable.recordDate,
-      type: inventoryRecordsTable.type,
+      type: sql`'record'`,
       total: count(),
-      quantity: sql<string>`SUM(CAST(${inventoryRecordsTable.quantity} AS DECIMAL))`,
+      quantity: sql<string>`SUM(CAST(${inventoryRecordsTable.finalBalance} AS DECIMAL))`,
     })
     .from(inventoryRecordsTable)
     .where(gte(inventoryRecordsTable.recordDate, since.toISOString().slice(0, 10)))
-    .groupBy(inventoryRecordsTable.recordDate, inventoryRecordsTable.type)
+    .groupBy(inventoryRecordsTable.recordDate, sql`'record'`)
     .orderBy(asc(inventoryRecordsTable.recordDate))
     .limit(365);
 
