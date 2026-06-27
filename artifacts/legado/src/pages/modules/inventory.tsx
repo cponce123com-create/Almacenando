@@ -395,7 +395,7 @@ export default function TomaDeInventarioPage() {
               { label: "Sin Diferencia", val: records.filter(r => { const d = getDiff(r); return d !== null && Math.abs(d) < 0.01; }).length, color: "text-emerald-600" },
               { label: "Con Cajas", val: records.filter(r => (r.boxes?.length ?? 0) > 0).length, color: "text-violet-600" },
             ].map(s => (
-              <div key={s.label} className="bg-white rounded-xl border border-slate-100 p-4">
+              <div key={s.label} className="bg-white rounded-xl border border-slate-100 p-3 sm:p-4">
                 <p className="text-xs text-slate-500 mb-1">{s.label}</p>
                 <p className={`text-2xl font-bold ${s.color}`}>{s.val}</p>
               </div>
@@ -406,7 +406,7 @@ export default function TomaDeInventarioPage() {
         {/* Filtro por producto */}
         <div className="bg-white rounded-xl border border-slate-100 p-4">
           <Select value={filterProduct} onValueChange={setFilterProduct}>
-            <SelectTrigger className="w-72">
+            <SelectTrigger className="w-full sm:w-72">
               <SelectValue placeholder="Filtrar por producto" />
             </SelectTrigger>
             <SelectContent>
@@ -576,7 +576,7 @@ export default function TomaDeInventarioPage() {
 
         {/* ── Formulario nuevo registro ── */}
         <Dialog open={showForm} onOpenChange={v => { setShowForm(v); if (!v) resetForm(); }}>
-          <DialogContent className="w-full sm:max-w-2xl h-full sm:h-auto sm:max-h-[90vh] max-sm:!rounded-none max-sm:!m-0 max-sm:!p-4 overflow-y-auto">
+          <DialogContent className="w-full sm:max-w-2xl h-full sm:h-auto sm:max-h-[90vh] max-sm:!rounded-none max-sm:!m-0 max-sm:!p-3 max-sm:!pb-20 overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <ClipboardList className="w-5 h-5 text-emerald-600" /> Nuevo Registro de Inventario
@@ -589,7 +589,7 @@ export default function TomaDeInventarioPage() {
               {/* Scanner toggle */}
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-emerald-600" /> Escanear código de barras
+                  <Camera className="w-4 h-4 text-emerald-600" /> Escanear
                 </Label>
                 <Button
                   type="button"
@@ -676,7 +676,7 @@ export default function TomaDeInventarioPage() {
                   onChange={e => setField("location", e.target.value)}
                   className="text-sm"
                 />
-                <datalist id="inventory-locations">
+                <datalist id="inventory-locations" className="max-h-32">
                   {LOCATION_SUGGESTIONS.map(l => <option key={l} value={l} />)}
                 </datalist>
               </div>
