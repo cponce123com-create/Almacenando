@@ -36,6 +36,7 @@ const SuppliesPage                = lazy(() => import("@/pages/modules/supplies"
 const SobrantesPage               = lazy(() => import("@/pages/modules/sobrantes"));
 const ProfilePage                 = lazy(() => import("@/pages/profile"));
 const LocationsPage               = lazy(() => import("@/pages/modules/locations"));
+const RoundsPage                  = lazy(() => import("@/pages/modules/rounds"));
 const InventoryProgressPage       = lazy(() => import("@/pages/modules/inventory-progress"));
 const ScannerPage                 = lazy(() => import("@/pages/modules/scanner"));
 const PickingPage                 = lazy(() => import("@/pages/modules/picking"));
@@ -132,6 +133,7 @@ function Router() {
       <Route path="/sobrantes"><ProtectedRoute component={SobrantesPage} /></Route>
       <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
       <Route path="/locations"><ProtectedRoute component={LocationsPage} /></Route>
+      <Route path="/rounds"><ProtectedRoute component={RoundsPage} /></Route>
       <Route path="/inventory-progress"><ProtectedRoute component={InventoryProgressPage} /></Route>
       <Route path="/scanner"><ProtectedRoute component={ScannerPage} /></Route>
       <Route path="/picking"><ProtectedRoute component={PickingPage} /></Route>
