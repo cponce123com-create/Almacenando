@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, doublePrecision, date, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, doublePrecision, date, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { productsTable } from "./products";
@@ -21,6 +21,7 @@ export const inventoryRecordsTable = pgTable(
     responsible: text("responsible"),
     location: text("location"),
     locationId: text("location_id").references(() => locationsTable.id),
+    missingLabel: boolean("missing_label").default(false),
     notes: text("notes"),
     registeredBy: text("registered_by").notNull().references(() => usersTable.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),

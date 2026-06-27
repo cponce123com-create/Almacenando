@@ -52,6 +52,7 @@ const inventorySchema = z.object({
   finalBalance: z.string().default("0"),
   physicalCount: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   location: z.string().optional(),
+  missingLabel: z.preprocess(v => v === "true" || v === true, z.boolean().optional().default(false)),
   notes: z.string().optional(),
   boxesData: z.string().optional(),
 });
@@ -339,6 +340,7 @@ router.post(
         physicalCount: physicalCount ?? null,
         photoUrl: mainPhotoUrl,
         location: parsed.data.location ?? null,
+        missingLabel: parsed.data.missingLabel ?? false,
         notes: parsed.data.notes,
         registeredBy: authedReq.userId,
       } as any).returning();
