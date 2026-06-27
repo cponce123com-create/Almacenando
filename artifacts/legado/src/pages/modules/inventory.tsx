@@ -691,228 +691,55 @@ export default function TomaDeInventarioPage() {
                 </div>
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   {/* Header */}
-                  <div className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-0 bg-slate-50 border-b border-slate-200 px-4 py-2">
+                  <div className="grid grid-cols-[3rem_1fr_auto_3.5rem] gap-1 bg-slate-50 border-b border-slate-200 px-2 sm:px-4 py-2">
                     <span className="text-xs font-semibold text-slate-400">#</span>
-                    <span className="text-xs font-semibold text-slate-500">Peso / Cantidad</span>
-                    <span className="text-xs font-semibold text-slate-500">Lote / Observación</span>
+                    <span className="text-xs font-semibold text-slate-500">Peso · Tara</span>
+                    <span className="text-xs font-semibold text-slate-500">Lote</span>
                     <span className="text-xs font-semibold text-slate-500 text-center">Foto</span>
                   </div>
                   {boxes.map((box, i) => (
-                    <div key={i} className="grid grid-cols-[3rem_1fr_1fr_3.5rem] gap-2 items-center px-4 py-2.5 border-b border-slate-100 last:border-0">
-                      <span className="text-xs font-bold text-slate-400">{i + 1}</span>
-                      <div className="space-y-0.5">
+                    <div key={i} className="grid grid-cols-[3rem_1fr_auto_3.5rem] gap-1 items-start px-2 sm:px-4 py-2.5 border-b border-slate-100 last:border-0">
+                      <span className="text-xs font-bold text-slate-400 pt-2">{i + 1}</span>
+                      <div className="space-y-1">
                         <Input
                           type="number"
                           step="0.001"
                           min="0"
-                          placeholder="0.00"
+                          placeholder="Bruto"
                           value={box.weight}
                           onChange={e => updateBox(i, "weight", e.target.value)}
                           className="h-8 text-sm"
                         />
-                        {box.tare && (
-                          <p className="text-[10px] text-emerald-600 font-medium text-center">
-                            Tara: {box.tare} kg
-                          </p>
-                        )}
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={box.tare || ""}
+                            onChange={e => updateBox(i, "tare", e.target.value)}
+                            className="h-7 text-[11px] rounded-md border border-input bg-background px-1.5 py-0 w-full"
+                          >
+                            <option value="">Tara</option>
+                            {TARE_PRESETS.filter(p => p.value !== "otro").map(p => (
+                              <option key={p.value} value={p.value}>{p.label}</option>
+                            ))}
+                          </select>
+                          {box.tare && parseFloat(box.weight) > 0 && (
+                            <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">
+                              Neto: {calcNetWeight(box.weight, box.tare)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <Input
-                        type="text"
-                        placeholder="Lote, fecha venc., observación..."
-                        value={box.lot}
-                        onChange={e => updateBox(i, "lot", e.target.value)}
-                        className="h-8 text-sm"
-                      />
-                      <div className="flex items-center justify-center">
+                      <div className="space-y-1 pt-0">
+                        <Input
+                          type="text"
+                          placeholder="Lote\u2026"
+                          value={box.lot}
+                          onChange={e => updateBox(i, "lot", e.target.value)}
+                          className="h-8 text-sm w-20 sm:w-28"
+                        />
+                      </div>
+                      <div className="flex items-start justify-center pt-2">
                         <input
                           ref={fileRefs[i]}
                           type="file"
                           accept="image/*"
                           capture="environment"
-                          className="hidden"
-                          onChange={e => handleBoxPhoto(i, e)}
-                        />
-                        {boxPreviews[i] ? (
-                          <div className="relative group">
-                            <button
-                              type="button"
-                              onClick={() => setViewPhoto(boxPreviews[i]!)}
-                              className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200">
-                              <img src={boxPreviews[i]!} alt="preview" className="w-full h-full object-cover" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => clearBoxPhoto(i)}
-                              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <X className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => fileRefs[i].current?.click()}
-                            className="w-9 h-9 border border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-300 hover:border-emerald-400 hover:text-emerald-500 transition-colors">
-                            <Camera className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Total y diferencia */}
-              {hasBoxData && (
-                <div className={`rounded-lg p-3 flex items-center justify-between border ${
-                  difference === null ? "bg-slate-50 border-slate-100"
-                  : Math.abs(difference) < 0.01 ? "bg-emerald-50 border-emerald-100"
-                  : difference > 0 ? "bg-blue-50 border-blue-100"
-                  : "bg-red-50 border-red-100"
-                }`}>
-                  <div>
-                    <p className="text-xs font-semibold text-slate-600">
-                      Total físico: <span className="font-mono text-slate-900">{totalPhysical.toFixed(3)} {productMap[form.productId]?.unit ?? ""}</span>
-                    </p>
-                    {difference !== null && (
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {Math.abs(difference) < 0.01
-                          ? "El físico coincide con el sistema ✓"
-                          : difference > 0
-                          ? "Hay más producto del que indica el sistema"
-                          : "Falta producto respecto al sistema"}
-                      </p>
-                    )}
-                  </div>
-                  {difference !== null && (
-                    <span className={`text-xl font-bold font-mono ${
-                      Math.abs(difference) < 0.01 ? "text-emerald-700"
-                      : difference > 0 ? "text-blue-700"
-                      : "text-red-600"
-                    }`}>
-                      {difference > 0 ? "+" : ""}{difference.toFixed(3)}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Observaciones generales */}
-              <div className="space-y-1.5">
-                <Label>Observaciones generales</Label>
-                <Textarea
-                  placeholder="Observaciones adicionales del conteo..."
-                  value={form.notes}
-                  onChange={e => setField("notes", e.target.value)}
-                  rows={2}
-                  className="resize-none"
-                />
-              </div>
-
-            </div>
-
-            <DialogFooter className="mt-4">
-              <Button type="button" variant="outline" onClick={() => { setShowForm(false); resetForm(); }}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={() => createMutation.mutate()}
-                disabled={createMutation.isPending || !canSubmit}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Guardar Registro
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* ── Detalle de cajas ── */}
-        <BoxesDialog
-          record={viewBoxesRecord}
-          productName={viewBoxesRecord ? (productMap[viewBoxesRecord.productId]?.name ?? "") : ""}
-          unit={viewBoxesRecord ? (productMap[viewBoxesRecord.productId]?.unit ?? "") : ""}
-          onClose={() => setViewBoxesRecord(null)}
-          onViewPhoto={url => setViewPhoto(url)}
-        />
-
-        {/* ── Eliminar ── */}
-        <AlertDialog open={!!deleteTarget} onOpenChange={o => { if (!o) setDeleteTarget(null); }}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>¿Eliminar registro?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Se eliminará el registro del {deleteTarget?.recordDate}. Esta acción no se puede deshacer.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction className="bg-red-600 hover:bg-red-700"
-                onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}>
-                {deleteMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Eliminar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-
-        {/* ── Visor de foto ── */}
-        {viewPhoto && <PhotoViewer url={viewPhoto} onClose={() => setViewPhoto(null)} />}
-
-        {/* ── Resultado de importación ── */}
-        <Dialog open={showImportResult} onOpenChange={setShowImportResult}>
-          <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5 text-emerald-600" /> Resultado de Importación
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-emerald-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-emerald-700">{importResult?.inserted ?? 0}</p>
-                  <p className="text-xs text-emerald-600 font-medium">Registros creados</p>
-                </div>
-                <div className="bg-red-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-red-700">{importResult?.errors?.length ?? 0}</p>
-                  <p className="text-xs text-red-600 font-medium">Errores</p>
-                </div>
-              </div>
-              {importResult?.errors && importResult.errors.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-red-700 uppercase mb-2">Errores por fila</p>
-                  <div className="bg-red-50 rounded-lg divide-y divide-red-100 max-h-48 overflow-y-auto">
-                    {importResult.errors.map((e, i) => (
-                      <div key={i} className="px-3 py-2 text-xs">
-                        <span className="font-semibold text-red-800">Fila {e.row}</span>
-                        <span className="text-red-600 ml-2">({e.code})</span>
-                        <p className="text-red-500 mt-0.5">{e.error}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {importResult?.data && importResult.data.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-emerald-700 uppercase mb-2">Registros importados</p>
-                  <div className="bg-emerald-50 rounded-lg divide-y divide-emerald-100 max-h-48 overflow-y-auto">
-                    {importResult.data.map((d, i) => (
-                      <div key={i} className="px-3 py-2 flex items-center justify-between text-xs">
-                        <div>
-                          <span className="font-semibold text-emerald-800">{d.code}</span>
-                          <span className="text-emerald-600 ml-2">{d.productName}</span>
-                        </div>
-                        <span className="font-bold text-emerald-700">{d.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowImportResult(false)}>Cerrar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-      </div>
-    </AppLayout>
-  );
-}
