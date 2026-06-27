@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Suspense, lazy, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { WarehouseProvider } from "@/contexts/WarehouseContext";
 
@@ -43,8 +44,15 @@ const WarehouseMapPage            = lazy(() => import("@/pages/modules/warehouse
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: false,
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10_000),
       refetchOnWindowFocus: false,
+      staleTime: 30_000,
+      gcTime: 5 * 60 * 1000,
+    },
+    mutations: {
+      retry: 2,
+      retryDelay: 1_000,
     },
   },
 });
@@ -139,6 +147,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WarehouseProvider>
+          <GlobalErrorToast />
           <ErrorBoundary moduleName="la aplicación">
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <Router />
@@ -149,6 +158,20 @@ function App() {
       </TooltipProvider>
     </QueryClientProvider>
   );
+}
+
+/** Escucha eventos 'app:error' disparados desde main.tsx y muestra toast */
+function GlobalErrorToast() {
+  const { toast } = useToast();
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail ?? "Error inesperado";
+      toast({ title: "Error", description: detail, variant: "destructive", duration: 5000 });
+    };
+    window.addEventListener("app:error", handler);
+    return () => window.removeEventListener("app:error", handler);
+  }, [toast]);
+  return null;
 }
 
 export default App;

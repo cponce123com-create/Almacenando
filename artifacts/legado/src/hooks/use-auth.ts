@@ -22,6 +22,21 @@ function writeToken(key: string, value: string | null): void {
 let memoryToken: string | null = readToken(TOKEN_KEY);
 let memoryRefreshToken: string | null = readToken(REFRESH_TOKEN_KEY);
 
+// Sync in-memory tokens from localStorage when they change externally
+// (e.g., from the token refresh logic in inventory-partials.tsx).
+function syncTokensFromStorage(): void {
+  const storedToken = readToken(TOKEN_KEY);
+  const storedRefresh = readToken(REFRESH_TOKEN_KEY);
+  if (storedToken !== memoryToken) memoryToken = storedToken;
+  if (storedRefresh !== memoryRefreshToken) memoryRefreshToken = storedRefresh;
+}
+
+// Listen for storage events from other tabs AND custom refresh events
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", () => syncTokensFromStorage());
+  window.addEventListener("app:token-refreshed", () => syncTokensFromStorage());
+}
+
 export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
 
 export interface AuthUser {
@@ -34,6 +49,7 @@ export interface AuthUser {
 }
 
 export function getAuthToken() {
+  syncTokensFromStorage();
   return memoryToken;
 }
 

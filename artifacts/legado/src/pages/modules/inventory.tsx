@@ -221,9 +221,56 @@ export default function TomaDeInventarioPage() {
     return phys !== null ? phys - sys : null;
   };
 
+  // ── Form persistence (survives accidental refreshes) ──────────────────────
+  const FORM_KEY = `inventory_form_${selectedWarehouse}`;
+  const BOXES_KEY = `inventory_boxes_${selectedWarehouse}`;
+
+  // Save form to sessionStorage on every change (crash recovery)
+  useEffect(() => {
+    if (!showForm) return;
+    try {
+      sessionStorage.setItem(FORM_KEY, JSON.stringify(form));
+      sessionStorage.setItem(BOXES_KEY, JSON.stringify(boxes));
+    } catch { /* quota exceeded — ignore */ }
+  }, [form, boxes, showForm, FORM_KEY, BOXES_KEY]);
+
+  // Restore form on mount if available
+  useEffect(() => {
+    try {
+      const savedForm = sessionStorage.getItem(FORM_KEY);
+      const savedBoxes = sessionStorage.getItem(BOXES_KEY);
+      if (savedForm && savedBoxes) {
+        const parsed = JSON.parse(savedForm);
+        if (parsed.productId) {
+          // Only restore if there's meaningful data
+          const parsedBoxes = JSON.parse(savedBoxes);
+          setTimeout(() => {
+            setForm(parsed);
+            setBoxes(parsedBoxes.map((b: any) => ({ weight: b.weight ?? "", lot: b.lot ?? "" })));
+            setShowForm(true);
+          }, 500);
+          sessionStorage.removeItem(FORM_KEY);
+          sessionStorage.removeItem(BOXES_KEY);
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  // Run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Clear saved form
+  const clearSavedForm = () => {
+    try {
+      sessionStorage.removeItem(FORM_KEY);
+      sessionStorage.removeItem(BOXES_KEY);
+    } catch { /* ignore */ }
+  };
+
   // Mutation
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const createMutation = useMutation({
     mutationFn: () => {
+      setMutationError(null);
       const fd = new FormData();
       fd.append("productId", form.productId);
       fd.append("warehouse", selectedWarehouse);
@@ -243,6 +290,7 @@ export default function TomaDeInventarioPage() {
       return apiForm("/api/inventory", fd, "POST");
     },
     onSuccess: () => {
+      clearSavedForm();
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
       qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
       qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
@@ -250,7 +298,10 @@ export default function TomaDeInventarioPage() {
       setShowForm(false);
       resetForm();
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => {
+      setMutationError(e.message);
+      toast({ title: "Error al guardar", description: e.message, variant: "destructive", duration: 8000 });
+    },
   });
 
   const deleteMutation = useMutation({

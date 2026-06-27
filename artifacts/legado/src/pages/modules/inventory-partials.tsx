@@ -62,15 +62,86 @@ export function sinMovimiento(dateStr: string | null | undefined): { label: stri
   return { label, color: "text-red-500", bg: "bg-red-50", pill: "bg-red-100 text-red-700" };
 }
 
+// ── Token refresh helper (shared between apiJson / apiForm) ──────────────────
+let _refreshing: Promise<boolean> | null = null;
+
+async function tryRefreshTokenOnce(): Promise<boolean> {
+  if (_refreshing) return _refreshing;
+
+  const rt = (() => {
+    try { return localStorage.getItem("auth_refresh_token"); } catch { return null; }
+  })();
+
+  if (!rt) return false;
+
+  _refreshing = (async () => {
+    try {
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+      if (!res.ok) {
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("auth_refresh_token");
+        return false;
+      }
+      const data = await res.json();
+      localStorage.setItem("auth_token", data.token);
+      localStorage.setItem("auth_refresh_token", data.refreshToken);
+      window.dispatchEvent(new CustomEvent("app:token-refreshed"));
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  try {
+    return await _refreshing;
+  } finally {
+    _refreshing = null;
+  }
+}
+
 export const apiJson = async (path: string, opts?: RequestInit) => {
-  const res = await fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
+  const doFetch = (headers: Record<string, string>) =>
+    fetch(path, { ...opts, headers: { ...headers, ...(opts?.headers ?? {}) } });
+
+  let res = await doFetch(getAuthHeaders());
+
+  if (res.status === 401) {
+    const refreshed = await tryRefreshTokenOnce();
+    if (refreshed) res = await doFetch(getAuthHeaders());
+  }
+
+  if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error("Demasiadas solicitudes. Espera unos segundos e intenta de nuevo.");
+    }
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error ?? "Error en el servidor");
+  }
   return res.json();
 };
 
 export const apiForm = async (path: string, formData: FormData, method = "POST") => {
-  const res = await fetch(path, { method, headers: getAuthHeaders(), body: formData });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
+  const doFetch = (headers: Record<string, string>) =>
+    fetch(path, { method, headers, body: formData });
+
+  let res = await doFetch(getAuthHeaders());
+
+  if (res.status === 401) {
+    const refreshed = await tryRefreshTokenOnce();
+    if (refreshed) res = await doFetch(getAuthHeaders());
+  }
+
+  if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error("Demasiadas solicitudes. Espera unos segundos e intenta de nuevo.");
+    }
+    const e = await res.json().catch(() => ({}));
+    throw new Error(e.error ?? "Error en el servidor");
+  }
   return res.json();
 };
 
