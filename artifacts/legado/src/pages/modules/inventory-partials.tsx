@@ -4,9 +4,10 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
-import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, ClipboardList } from "lucide-react";
+import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, TrendingDown, ClipboardList, Loader2, Camera } from "lucide-react";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -181,6 +182,174 @@ export const apiForm = async (path: string, formData: FormData, method = "POST")
   }
   return res.json();
 };
+
+// ── BarcodeScanner ─────────────────────────────────────────────────────────────
+// Uses html5-qrcode to scan barcodes from the camera in real-time.
+// When a barcode is detected, matches it against the products list by code.
+
+export function BarcodeScanner({ products, onProductFound, onClose }: {
+  products: Product[];
+  onProductFound: (productId: string) => void;
+  onClose: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scannerRef = useRef<any>(null);
+  const [status, setStatus] = useState<"initializing" | "scanning" | "found" | "error">("initializing");
+  const [foundProduct, setFoundProduct] = useState<Product | null>(null);
+  const [barcodeInput, setBarcodeInput] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      try {
+        const { Html5Qrcode } = await import("html5-qrcode");
+        if (!mounted || !containerRef.current) return;
+
+        const scanner = new Html5Qrcode("barcode-scanner-view");
+        scannerRef.current = scanner;
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 120 },
+          },
+          (decodedText: string) => {
+            // Barcode found — try to match by product code
+            const cleanCode = decodedText.trim();
+            const match = products.find(p =>
+              p.code === cleanCode ||
+              p.code.replace(/[^0-9]/g, "") === cleanCode.replace(/[^0-9]/g, "")
+            );
+
+            if (match && mounted) {
+              scanner.stop().catch(() => {});
+              setFoundProduct(match);
+              setStatus("found");
+              onProductFound(match.id);
+            }
+          },
+          () => { /* scan failure — ignore, keep trying */ }
+        );
+
+        if (mounted) setStatus("scanning");
+      } catch (err) {
+        if (mounted) setStatus("error");
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Manual barcode input fallback
+  const handleManualBarcode = (code: string) => {
+    const cleanCode = code.trim();
+    const match = products.find(p =>
+      p.code === cleanCode ||
+      p.code.replace(/[^0-9]/g, "") === cleanCode.replace(/[^0-9]/g, "")
+    );
+    if (match) {
+      setFoundProduct(match);
+      setStatus("found");
+      onProductFound(match.id);
+      if (scannerRef.current) scannerRef.current.stop().catch(() => {});
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden">
+      {/* Scanner viewport */}
+      <div className="relative bg-black">
+        <div
+          id="barcode-scanner-view"
+          ref={containerRef}
+          className="w-full"
+          style={{ minHeight: "180px", maxHeight: "220px" }}
+        />
+        {status === "initializing" && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+            <div className="flex flex-col items-center gap-2 text-white">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-xs">Iniciando cámara…</span>
+            </div>
+          </div>
+        )}
+        {status === "error" && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+            <div className="flex flex-col items-center gap-2 text-white text-center px-4">
+              <Camera className="w-6 h-6 text-slate-400" />
+              <span className="text-xs">No se pudo abrir la cámara</span>
+              <span className="text-[10px] text-slate-400">Puedes buscar manualmente el código abajo</span>
+            </div>
+          </div>
+        )}
+        {status === "found" && foundProduct && (
+          <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/80">
+            <div className="flex flex-col items-center gap-1 text-white text-center px-4">
+              <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+              <span className="text-sm font-bold">{foundProduct.code}</span>
+              <span className="text-xs text-emerald-200 truncate max-w-full">{foundProduct.name}</span>
+            </div>
+          </div>
+        )}
+        {/* Scanning overlay border */}
+        {status === "scanning" && (
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div className="w-3/4 h-0.5 bg-emerald-500/70 animate-pulse rounded-full shadow-lg shadow-emerald-400/50" />
+          </div>
+        )}
+      </div>
+
+      {/* Controls */}
+      <div className="bg-slate-50 px-4 py-3 space-y-2">
+        {/* Manual barcode input */}
+        <div className="relative">
+          <Input
+            type="text"
+            placeholder="O ingresa el código de barras manualmente…"
+            value={barcodeInput}
+            onChange={e => setBarcodeInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") handleManualBarcode(barcodeInput); }}
+            className="h-9 text-sm pr-20"
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="absolute right-1 top-1/2 -translate-y-1/2 h-7 text-xs"
+            onClick={() => handleManualBarcode(barcodeInput)}
+          >
+            Buscar
+          </Button>
+        </div>
+
+        {/* Bottom actions */}
+        <div className="flex items-center justify-between">
+          {foundProduct ? (
+            <p className="text-xs text-emerald-700 font-medium truncate flex-1">
+              ✓ {foundProduct.code} — {foundProduct.name}
+            </p>
+          ) : status === "scanning" ? (
+            <p className="text-xs text-slate-400">Apunta la cámara al código de barras</p>
+          ) : (
+            <p className="text-xs text-slate-400">Busca el producto manualmente</p>
+          )}
+          <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-slate-500 hover:text-red-600"
+            onClick={onClose}>
+            <X className="w-3 h-3 mr-1" /> Cerrar
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── ProductCombobox ───────────────────────────────────────────────────────────
 

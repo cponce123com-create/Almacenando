@@ -30,7 +30,7 @@ const LOCATION_SUGGESTIONS = [
 import {
   WAREHOUSES, NUM_BOXES, EMPTY_PRODUCTS, EMPTY_BALANCES, today, emptyBoxes, sinMovimiento, apiJson, apiForm,
   TARE_PRESETS, getAutoTare, calcNetWeight,
-  ProductCombobox, PhotoViewer, CoverageStats, BoxesDialog, InventarioPrevioBanner,
+  ProductCombobox, BarcodeScanner, PhotoViewer, CoverageStats, BoxesDialog, InventarioPrevioBanner,
   type Product, type InventoryBox, type InventoryRecord, type InventoryStats, type BalanceRecord, type BoxEntry,
 } from './inventory-partials';
 export default function TomaDeInventarioPage() {
@@ -46,6 +46,7 @@ export default function TomaDeInventarioPage() {
   const [viewBoxesRecord, setViewBoxesRecord] = useState<InventoryRecord | null>(null);
   const [filterProduct, setFilterProduct] = useState("all");
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
