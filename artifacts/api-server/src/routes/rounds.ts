@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, inventoryRoundsTable, inventoryRecordsTable, inventoryBoxesTable } from "@workspace/db";
-import { eq, desc, asc, and, sql, count } from "drizzle-orm";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 
@@ -12,82 +12,88 @@ const router = Router();
  */
 router.get("/", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string || "General";
-  const rounds = await db.select({
-    id: inventoryRoundsTable.id,
-    roundNumber: inventoryRoundsTable.roundNumber,
-    warehouse: inventoryRoundsTable.warehouse,
-    balanceDate: inventoryRoundsTable.balanceDate,
-    status: inventoryRoundsTable.status,
-    totalSystemBalance: inventoryRoundsTable.totalSystemBalance,
-    totalPhysical: inventoryRoundsTable.totalPhysical,
-    difference: inventoryRoundsTable.difference,
-    recordCount: inventoryRoundsTable.recordCount,
-    startedAt: inventoryRoundsTable.startedAt,
-    closedAt: inventoryRoundsTable.closedAt,
-  })
-    .from(inventoryRoundsTable)
-    .where(eq(inventoryRoundsTable.warehouse, warehouse))
-    .orderBy(desc(inventoryRoundsTable.roundNumber))
-    .limit(50);
+  const result = await db.execute(sql`
+    SELECT id, round_number, warehouse, balance_date, status,
+           total_system_balance, total_physical, difference, record_count,
+           started_at, closed_at
+    FROM inventory_rounds
+    WHERE warehouse = ${warehouse}
+    ORDER BY round_number DESC
+    LIMIT 50
+  `);
+  res.json(result.rows);
+}));
 
-  res.json(rounds);
+/**
+ * GET /api/rounds/active?warehouse=QA
+ * Devuelve la ronda activa para un almac\u00e9n
+ */
+router.get("/active", requireAuth, asyncHandler(async (req, res) => {
+  const warehouse = req.query.warehouse as string || "General";
+  const result = await db.execute(sql`
+    SELECT id, round_number, warehouse, balance_date, status,
+           total_system_balance, total_physical, difference, record_count,
+           started_at, closed_at
+    FROM inventory_rounds
+    WHERE warehouse = ${warehouse} AND status = 'active'
+    LIMIT 1
+  `);
+  res.json(result.rows[0] || null);
 }));
 
 /**
  * GET /api/rounds/:id
  * Detalle completo de una ronda: registros de inventario + boxes
  */
-
-/**
- * GET /api/rounds/active?warehouse=QA
- * Devuelve la ronda activa para un almacén
- */
-router.get("/active", requireAuth, asyncHandler(async (req, res) => {
-  const warehouse = req.query.warehouse as string || "General";
-  const [round] = await db.select()
-    .from(inventoryRoundsTable)
-    .where(and(eq(inventoryRoundsTable.warehouse, warehouse), eq(inventoryRoundsTable.status, "active")))
-    .limit(1);
-  res.json(round || null);
-}));
-
 router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const [round] = await db.select()
-    .from(inventoryRoundsTable)
-    .where(eq(inventoryRoundsTable.id, id as string))
-    .limit(1);
+  const roundResult = await db.execute(sql`
+    SELECT id, round_number, warehouse, balance_date, status,
+           total_system_balance, total_physical, difference, record_count,
+           started_at, closed_at
+    FROM inventory_rounds
+    WHERE id = ${id as string}
+    LIMIT 1
+  `);
 
-  if (!round) {
+  if (roundResult.rows.length === 0) {
     res.status(404).json({ error: "Ronda no encontrada" });
     return;
   }
 
+  const round = roundResult.rows[0];
+
   // Obtener todos los registros de esta ronda
-  const records = await db.select()
-    .from(inventoryRecordsTable)
-    .where(eq(inventoryRecordsTable.roundId, id as string))
-    .orderBy(asc(inventoryRecordsTable.recordDate), asc(inventoryRecordsTable.createdAt));
+  const recordsResult = await db.execute(sql`
+    SELECT id, product_id, record_date, physical_count, location, notes, missing_label
+    FROM inventory_records
+    WHERE round_id = ${id as string}
+    ORDER BY record_date ASC, created_at ASC
+  `);
+  const records = recordsResult.rows;
 
   // Obtener las cajas de esos registros
-  const recordIds = records.map(r => r.id);
-  const boxes = recordIds.length > 0
-    ? await db.select().from(inventoryBoxesTable)
-      .where(sql`${inventoryBoxesTable.inventoryRecordId} = ANY(${recordIds})`)
-      .orderBy(inventoryBoxesTable.inventoryRecordId, inventoryBoxesTable.boxNumber)
-    : [];
+  const recordIds = records.map((r: any) => r.id);
+  const boxesResult = recordIds.length > 0
+    ? await db.execute(sql`
+        SELECT id, inventory_record_id, box_number, weight, tare, lot
+        FROM inventory_boxes
+        WHERE inventory_record_id = ANY(${recordIds})
+        ORDER BY inventory_record_id, box_number
+      `)
+    : { rows: [] };
 
   // Agrupar cajas por recordId
-  const boxesByRecord = new Map<string, typeof boxes>();
-  for (const box of boxes) {
-    if (!boxesByRecord.has(box.inventoryRecordId)) boxesByRecord.set(box.inventoryRecordId, []);
-    boxesByRecord.get(box.inventoryRecordId)!.push(box);
+  const boxesByRecord = new Map<string, any[]>();
+  for (const box of boxesResult.rows as any[]) {
+    if (!boxesByRecord.has(box.inventory_record_id)) boxesByRecord.set(box.inventory_record_id, []);
+    boxesByRecord.get(box.inventory_record_id)!.push(box);
   }
 
   res.json({
     round,
-    records: records.map(r => ({
+    records: records.map((r: any) => ({
       ...r,
       boxes: boxesByRecord.get(r.id) ?? [],
     })),

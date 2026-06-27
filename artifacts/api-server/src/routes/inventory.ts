@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { parseExcelBuffer, normalizeHeaders } from "../lib/excel-parser.js";
 import { db } from "@workspace/db";
-import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable, inventoryRoundsTable } from "@workspace/db";
+import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable } from "@workspace/db";
 import { eq, desc, asc, sql, and, inArray, count, max } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
@@ -326,14 +326,12 @@ router.post(
     let created: (typeof inventoryRecordsTable.$inferSelect) | undefined;
     let boxes: (typeof inventoryBoxesTable.$inferSelect)[] = [];
 
-    // Obtener ronda activa para asignar round_id
+    // Obtener ronda activa para asignar round_id (raw SQL para evitar dependencias)
     let activeRoundId: string | null = null;
     try {
-      const [activeRound] = await db.select({ id: inventoryRoundsTable.id })
-        .from(inventoryRoundsTable)
-        .where(and(eq(inventoryRoundsTable.warehouse, parsed.data.warehouse), eq(inventoryRoundsTable.status, "active")))
-        .limit(1);
-      if (activeRound) activeRoundId = activeRound.id;
+      const result = await db.execute(sql`SELECT id FROM inventory_rounds WHERE warehouse = ${parsed.data.warehouse} AND status = "active" LIMIT 1`);
+      const rows = result.rows as Array<{ id: string }> | undefined;
+      if (rows && rows.length > 0) activeRoundId = rows[0]!.id;
     } catch { /* si no hay ronda activa, se guarda sin round_id */ }
 
     await db.transaction(async (tx) => {
