@@ -21,6 +21,7 @@ export const inventoryRecordsTable = pgTable(
     responsible: text("responsible"),
     location: text("location"),
     locationId: text("location_id").references(() => locationsTable.id),
+    roundId: text("round_id"),
     missingLabel: boolean("missing_label").default(false),
     notes: text("notes"),
     registeredBy: text("registered_by").notNull().references(() => usersTable.id),

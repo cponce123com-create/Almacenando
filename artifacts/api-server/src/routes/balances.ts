@@ -2,10 +2,9 @@ import { Router } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
 import { db } from "@workspace/db";
-import { balanceRecordsTable } from "@workspace/db";
+import { balanceRecordsTable, inventoryRoundsTable } from "@workspace/db";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
-import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import { destructiveActionLimiter } from "../lib/rate-limit.js";
@@ -184,6 +183,53 @@ router.post(
         const code = String(row.codigo ?? "").trim() || `fila ${rowNum}`;
         errors.push({ row: rowNum, code, error: msg });
       }
+    }
+    // Cerrar ronda anterior y crear nueva al importar saldos
+    try {
+      const warehouses = [...new Set(normalizedRows.map(r => String(r.almacen ?? "General").trim()))];
+      for (const w of warehouses) {
+        // Cerrar ronda activa anterior
+        const [activeRound] = await db.select({ id: inventoryRoundsTable.id })
+          .from(inventoryRoundsTable)
+          .where(and(eq(inventoryRoundsTable.warehouse, w), eq(inventoryRoundsTable.status, "active")))
+          .limit(1);
+        if (activeRound) {
+          // Calcular totales
+          const [stats] = await db.execute(sql`
+            SELECT
+              COALESCE(SUM(ir.physical_count), 0) AS total_physical,
+              COUNT(ir.id)::int AS record_count
+            FROM inventory_records ir
+            WHERE ir.round_id = ${activeRound.id}
+          `);
+          const row = stats.rows[0] || {};
+          await db.update(inventoryRoundsTable)
+            .set({
+              status: "closed",
+              closedAt: new Date(),
+              closedBy: req.userId,
+              totalPhysical: Number(row.total_physical) || 0,
+              recordCount: Number(row.record_count) || 0,
+            })
+            .where(eq(inventoryRoundsTable.id, activeRound.id));
+        }
+        // Obtener siguiente número de ronda
+        const [lastRound] = await db.select({ maxNum: sql`COALESCE(MAX(round_number), 0)` })
+          .from(inventoryRoundsTable)
+          .where(eq(inventoryRoundsTable.warehouse, w));
+        const nextNum = Number(lastRound?.maxNum ?? 0) + 1;
+        // Crear nueva ronda
+        await db.insert(inventoryRoundsTable).values({
+          id: generateId(),
+          warehouse: w,
+          roundNumber: nextNum,
+          balanceDate: new Date().toISOString().slice(0, 10),
+          status: "active",
+          startedAt: new Date(),
+        });
+      }
+    } catch (err) {
+      console.error("Error al crear ronda:", err);
     }
     res.json({ inserted, updated, errors, total: normalizedRows.length, batchId });
   })

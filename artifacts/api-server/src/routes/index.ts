@@ -28,6 +28,7 @@ import reorganizationRouter from "./reorganization.js";
 import searchRouter from "./search.js";
 import analyticsRouter from "./analytics.js";
 import inventoryCyclesRouter from "./inventory-cycles.js";
+import roundsRouter from "./rounds.js";
 
 // ---------------------------------------------------------------------------
 // v1 API — versión actual del API.
@@ -67,6 +68,7 @@ v1Router.use("/reorganization", reorganizationRouter);
 v1Router.use("/search", searchRouter);
 v1Router.use("/analytics", analyticsRouter);
 v1Router.use("/inventory-cycles", inventoryCyclesRouter);
+v1Router.use("/rounds", roundsRouter);
 
 // Legacy alias — mismo router para compatibilidad hacia atrás
 const router: IRouter = v1Router;
