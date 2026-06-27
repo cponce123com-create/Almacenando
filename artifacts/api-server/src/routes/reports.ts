@@ -4,7 +4,7 @@ import { db } from "@workspace/db";
 import {
   productsTable, inventoryRecordsTable, immobilizedProductsTable,
   samplesTable, finalDispositionTable, eppMasterTable, eppDeliveriesTable, personnelTable, usersTable,
-  inventoryCyclesTable, inventoryCycleProductsTable,
+  inventoryCyclesTable, inventoryCycleProductsTable, inventoryBoxesTable,
 } from "@workspace/db";
 import { count, sql, and, gte, lte, eq, desc, asc, ilike, or, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
@@ -616,6 +616,8 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
     .orderBy(productsTable.code, asc(inventoryRecordsTable.recordDate))
     : [];
 
+  const allRecordIds = allRecords.map(r => r.record.id); const allBoxes = allRecordIds.length > 0 ? await db.select().from(inventoryBoxesTable) .where(inArray(inventoryBoxesTable.inventoryRecordId, allRecordIds)) .orderBy(inventoryBoxesTable.inventoryRecordId, inventoryBoxesTable.boxNumber) : []; const boxesByRecordId = new Map(); for (const box of allBoxes) { if (!boxesByRecordId.has(box.inventoryRecordId)) boxesByRecordId.set(box.inventoryRecordId, []); boxesByRecordId.get(box.inventoryRecordId).push(box); }
+
   // ── Sheet 1: Resumen Consolidado ──
   // UNA fila por producto — datos consolidados de TODOS los ciclos seleccionados
   // Saldo Inicial = del primer ciclo (el más antiguo)
@@ -783,6 +785,10 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
       "Saldo Sistema": saldoSistema,                   // number
       "Cantidad Física": saldoFisico,                  // number | null
       "Diferencia": diferencia,                         // number | null
+      "Peso Bruto": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const total = boxes.reduce((s, b) => s + (Number(b.weight) || 0), 0); return total > 0 ? total : null; })(),
+      "Tara": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const total = boxes.reduce((s, b) => s + (Number(b.tare) || 0), 0); return total > 0 ? total : null; })(),
+      "Peso Neto": (() => { const boxes = boxesByRecordId.get(r.record.id) || []; const gross = boxes.reduce((s, b) => s + (Number(b.weight) || 0), 0); const tare = boxes.reduce((s, b) => s + (Number(b.tare) || 0), 0); return (gross - tare) > 0 ? Math.round((gross - tare) * 1000) / 1000 : null; })(),
+      "Falta Etiqueta": r.record.missingLabel ? "Sí" : "No",
       "Ubicación": r.record.location ?? "",
       "Observaciones": r.record.notes ?? "",
     };
