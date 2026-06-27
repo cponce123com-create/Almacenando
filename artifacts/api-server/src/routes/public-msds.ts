@@ -3,6 +3,7 @@ import { db, productsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { downloadDriveFileAsBuffer } from "../lib/google-drive.js";
 import { logger } from "../lib/logger.js";
+import { lookupLimiter } from "../lib/rate-limit.js";
 
 const router = Router();
 
@@ -17,7 +18,7 @@ const router = Router();
  * el usuario llega aquí y obtiene el PDF directamente, sin pasar por la
  * pantalla de autorización de Google Drive.
  */
-router.get("/:productId", async (req, res) => {
+router.get("/:productId", lookupLimiter, async (req, res) => {
   try {
     const { productId } = req.params;
 

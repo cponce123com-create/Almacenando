@@ -4,7 +4,7 @@ import { db, usersTable, revokedTokensTable } from "@workspace/db";
 import { eq, and, ne, count } from "drizzle-orm";
 import { hashPassword, comparePassword, signAccessToken, signRefreshToken, requireAuth, revokeToken, verifyRefreshToken, cleanupExpiredTokens, type AuthenticatedRequest } from "../lib/auth.js";
 import { z } from "zod/v4";
-import { authLoginLimiter, passwordResetLimiter } from "../lib/rate-limit.js";
+import { authLoginLimiter, passwordResetLimiter, refreshTokenLimiter } from "../lib/rate-limit.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { passwordSchema } from "../lib/password-schema.js";
@@ -55,6 +55,14 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
   const token = signAccessToken({ userId: user.id, email: user.email, role });
   const refreshToken = signRefreshToken({ userId: user.id, email: user.email, role });
   void writeAuditLog({ userId: user.id, action: "login", resource: "session", resourceId: user.id, ipAddress: req.ip as string });
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/api/auth",
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+  });
+
   res.json({
     user: {
       id: user.id,
@@ -65,7 +73,6 @@ router.post("/login", authLoginLimiter, asyncHandler(async (req, res) => {
       createdAt: user.createdAt.toISOString(),
     },
     token,
-    refreshToken,
   });
 }));
 
@@ -79,14 +86,14 @@ const refreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
-router.post("/refresh", asyncHandler(async (req, res) => {
-  const parsed = refreshSchema.safeParse(req.body);
-  if (!parsed.success) {
+router.post("/refresh", refreshTokenLimiter, asyncHandler(async (req, res) => {
+  // Leer refresh token de la cookie HttpOnly (prioritario) o del body (fallback)
+  const refreshToken = req.cookies?.refreshToken ?? req.body?.refreshToken;
+  if (!refreshToken) {
     res.status(400).json({ error: "refreshToken requerido" });
     return;
   }
 
-  const { refreshToken } = parsed.data;
   const payload = verifyRefreshToken(refreshToken);
   if (!payload) {
     res.status(401).json({ error: "Refresh token inválido o expirado" });
@@ -125,7 +132,15 @@ router.post("/refresh", asyncHandler(async (req, res) => {
   const newToken = signAccessToken({ userId: payload.userId, email: payload.email, role });
   const newRefreshToken = signRefreshToken({ userId: payload.userId, email: payload.email, role });
 
-  res.json({ token: newToken, refreshToken: newRefreshToken });
+  res.cookie("refreshToken", newRefreshToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/api/auth",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+
+  res.json({ token: newToken });
 }));
 
 router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
@@ -133,6 +148,14 @@ router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
   const { userId, jti, tokenExp } = authedReq;
 
   await revokeToken(jti, new Date(tokenExp * 1000));
+
+  res.cookie("refreshToken", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/api/auth",
+    maxAge: 0,
+  });
 
   void writeAuditLog({ userId, action: "logout", resource: "session", resourceId: userId, ipAddress: req.ip });
   res.json({ message: "Sesión cerrada correctamente" });
