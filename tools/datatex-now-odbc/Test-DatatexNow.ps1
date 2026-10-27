@@ -134,7 +134,7 @@ try {
     $accessSql = @"
 SELECT
     F.SUBCODE01, F.SUBCODE02, F.LONGDESCRIPTION, F.SHORTDESCRIPTION,
-    H.LOGICALWAREHOUSECODE, H.DECOSUBCODE01, H.DECOSUBCODE02,
+    H.LOGICALWAREHOUSECODE, H.DECOSUBCODE01 AS BALANCE_SUBCODE01, H.DECOSUBCODE02 AS BALANCE_SUBCODE02,
     H.WAREHOUSELOCATIONCODE, H.WHSLOCATIONWAREHOUSEZONECODE,
     H.BASEPRIMARYQUANTITYUNIT, H.ITEMTYPECODE, H.BASEPRIMARYUNITCODE
 FROM NOW.BALANCE H, NOW.PRODUCT F
@@ -162,7 +162,7 @@ FROM NOW.BALANCE H, NOW.PRODUCT F
 WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
   AND F.SUBCODE01 = H.DECOSUBCODE01
   AND F.SUBCODE02 = H.DECOSUBCODE02
-  AND F.ITEMTYPECODE = 'Q'
+  AND H.ITEMTYPECODE = 'Q'
   AND ROWNUM <= $safeLimit
 "@
     $rs = Invoke-ReadQuery -Connection $connection -Sql $sampleSql
@@ -172,10 +172,7 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
         while (-not $rs.EOF) {
             $sampleCount++
             if ($examples.Count -lt 5) {
-                $code = "$(Get-FieldValue -Record $rs -Name 'DECO SUBCODE01')-$(Get-FieldValue -Record $rs -Name 'DECO SUBCODE02')"
-                if ($code -eq "-") {
-                    $code = "$(Get-FieldValue -Record $rs -Name 'SUBCODE01')-$(Get-FieldValue -Record $rs -Name 'SUBCODE02')"
-                }
+                $code = "$(Get-FieldValue -Record $rs -Name 'BALANCE_SUBCODE01')-$(Get-FieldValue -Record $rs -Name 'BALANCE_SUBCODE02')"
                 $warehouse = Get-FieldValue -Record $rs -Name "LOGICALWAREHOUSECODE"
                 $examples += "$warehouse / $(Mask-Code $code)"
             }
