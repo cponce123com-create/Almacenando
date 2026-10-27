@@ -29,6 +29,10 @@ services:
       - key: DATABASE_URL
         sync: false          # PostgreSQL Internal URL del dashboard de Render
 
+      # Token exclusivo del conector local Datatex NOW; configura el mismo valor en la PC autorizada.
+      - key: DATATEX_CONNECTOR_TOKEN
+        sync: false
+
       # ⚠️ CRITICO: USA sync:false Y PON UN VALOR FIJO EN EL DASHBOARD
       # Si usas generateValue:true, Render cambia el secret en cada deploy
       # y bota a todos los usuarios de sesión. Genera uno con:
