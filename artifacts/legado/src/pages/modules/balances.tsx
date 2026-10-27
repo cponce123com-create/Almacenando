@@ -68,7 +68,7 @@ interface NowPreview {
   id: string;
   recordCount: number;
   summary: { total: number; QA: number; Q1: number; QP: number; QL: number; QC: number; productsWithMultipleUnits: number } | null;
-  rows: Array<{ warehouse: string; code: string; productDescription: string; shortDescription?: string; unit: string; quantity: string; locationSummary?: string; zoneSummary?: string }>;
+  rows: Array<{ warehouse: string; code: string; productDescription: string; shortDescription?: string; unit: string; quantity: string; locationSummary?: string; zoneSummary?: string; ultimoConsumo?: string | null }>;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -462,10 +462,10 @@ export default function BalancesPage() {
                   <p className="font-medium mb-2">Vista previa — verifica antes de guardar</p>
                   <div className="overflow-x-auto border rounded-md">
                     <table className="w-full text-xs">
-                      <thead className="bg-slate-50"><tr><th className="text-left p-2">Almacén</th><th className="text-left p-2">Código</th><th className="text-left p-2">Producto</th><th className="text-right p-2">Saldo</th><th className="text-left p-2">UM</th><th className="text-left p-2">Ubicación / zona</th></tr></thead>
+                      <thead className="bg-slate-50"><tr><th className="text-left p-2">Almacén</th><th className="text-left p-2">Código</th><th className="text-left p-2">Producto</th><th className="text-right p-2">Saldo</th><th className="text-left p-2">UM</th><th className="text-left p-2">Ubicación / zona</th><th className="text-left p-2">Últ. Consumo</th></tr></thead>
                       <tbody>{nowPreview.rows.slice(0, 5).map((row, index) => (
                         <tr key={`${row.warehouse}-${row.code}-${row.unit}-${index}`} className="border-t">
-                          <td className="p-2">{row.warehouse}</td><td className="p-2 font-mono">{row.code}</td><td className="p-2">{row.productDescription}</td><td className="p-2 text-right font-mono">{row.quantity}</td><td className="p-2">{row.unit}</td><td className="p-2">{[row.locationSummary, row.zoneSummary].filter(Boolean).join(" · ") || "—"}</td>
+                          <td className="p-2">{row.warehouse}</td><td className="p-2 font-mono">{row.code}</td><td className="p-2">{row.productDescription}</td><td className="p-2 text-right font-mono">{row.quantity}</td><td className="p-2">{row.unit}</td><td className="p-2">{[row.locationSummary, row.zoneSummary].filter(Boolean).join(" · ") || "—"}</td><td className="p-2 whitespace-nowrap">{row.ultimoConsumo || "—"}</td>
                         </tr>
                       ))}</tbody>
                     </table>
