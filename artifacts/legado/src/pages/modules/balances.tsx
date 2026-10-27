@@ -67,7 +67,7 @@ interface NowSyncStatus {
 interface NowPreview {
   id: string;
   recordCount: number;
-  summary: { total: number; QA: number; Q1: number; productsWithMultipleUnits: number } | null;
+  summary: { total: number; QA: number; Q1: number; QP: number; QL: number; QC: number; productsWithMultipleUnits: number } | null;
   rows: Array<{ warehouse: string; code: string; productDescription: string; shortDescription?: string; unit: string; quantity: string; locationSummary?: string; zoneSummary?: string }>;
 }
 
