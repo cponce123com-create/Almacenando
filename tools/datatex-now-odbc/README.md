@@ -59,3 +59,34 @@ No envíes a soporte una captura que muestre códigos reales de producto. Compar
 Esta herramienta no modifica Oracle ni ALMACENANDO, no transmite saldos, no calcula consolidaciones y no prueba el esquema de sincronización web. La consulta de muestra conserva los campos y filtros confirmados en la macro de referencia; la semántica exacta de cantidad/unidad y la cardinalidad del JOIN deberán validarse antes de calcular sumas. No se afirma una conexión real hasta que se ejecute en la PC autorizada.
 
 La integración con el backend y el módulo de Saldos queda para una fase posterior, una vez validada esta conexión y confirmada la autorización de transmitir datos operativos a la infraestructura de ALMACENANDO.
+
+
+## Sincronización desde la pantalla de Saldos
+
+La conexión ya fue comprobada desde la PC. Para usar **Solicitar actualización** en ALMACENANDO, el conector local debe estar ejecutándose; este mantiene una conexión saliente HTTPS y consulta Oracle solo cuando la web crea una solicitud. No abre puertos entrantes ni necesita Excel.
+
+### Configuración pendiente en Render
+
+1. Tras revisar y aprobar el PR, configura una credencial aleatoria exclusiva en la variable secreta `DATATEX_CONNECTOR_TOKEN` del servicio de Render.
+2. No reutilices la contraseña de Oracle como token. Guarda el token en el gestor aprobado por la empresa.
+3. Antes de transmitir saldos hacia Render, confirma que la empresa autoriza ese flujo de datos.
+
+### Inicio del conector en Windows
+
+Abre CMD y ejecuta PowerShell de 32 bits. Reemplaza la ruta si guardaste el archivo en otra carpeta:
+
+```bat
+"%WINDIR%\SysWOW64\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "$env:ALMACENANDO_API_URL='https://almacenando.onrender.com/api/balances/now'; & '%USERPROFILE%\Downloads\Run-DatatexConnector.ps1'"
+```
+
+El programa solicita el token del conector y las credenciales Oracle autorizadas al iniciar. Las mantiene en memoria durante esa sesión y no las escribe en archivos ni logs. Deja la ventana abierta. El conector consulta la cola cada 10 segundos y solo abre Oracle cuando hay una solicitud pendiente.
+
+En la web, entra a **Saldo Actualizado → Sincronización Datatex NOW → Solicitar actualización**. Cuando llegue la vista previa, revisa los productos y confirma o descarta. La confirmación crea una nueva captura histórica; no reemplaza saldos anteriores. Los registros manuales se identifican como EXCEL y los de esta integración como NOW.
+
+Si el conector no se ha visto en los últimos 90 segundos, el botón permanece deshabilitado. Si la consulta encuentra códigos repetidos en NOW.PRODUCT, filas incompletas, cantidades nulas o datos fuera de los límites, la extracción se detiene y no guarda una vista previa parcial.
+
+### Alcance y validación
+
+El conector consulta solo QA/Q1 y tipo Q. Consolida por almacén, código completo y unidad, y conserva el resumen de ubicaciones y zonas. Antes de una primera importación real, compara la vista previa con el saldo producido por la macro para confirmar que `BASEPRIMARYQUANTITYUNIT` corresponde a la cantidad que ALMACENANDO debe almacenar.
+
+Esta rama agrega una migración PostgreSQL, rutas protegidas, controles de vista previa y la interfaz. La migración se aplica automáticamente por el comando de despliegue de Render al integrar el cambio; por eso no se debe desplegar ni configurar el token de producción hasta que el PR y la autorización de transmisión sean revisados.
