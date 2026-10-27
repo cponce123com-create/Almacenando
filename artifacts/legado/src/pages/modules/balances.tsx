@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Scale, Plus, Pencil, Trash2, Loader2, AlertCircle, Download, Upload, Search, FileSpreadsheet, CheckCircle2, XCircle } from "lucide-react";
+import { Scale, Plus, Pencil, Trash2, Loader2, AlertCircle, Download, Upload, Search, FileSpreadsheet, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -29,6 +29,9 @@ interface BalanceRecord {
   registeredBy: string;
   createdAt: string;
   ultimoConsumo?: string | null;
+  source?: string | null;
+  locationSummary?: string | null;
+  zoneSummary?: string | null;
 }
 
 interface ImportResult {
@@ -44,6 +47,28 @@ const apiJson = async (path: string, opts?: RequestInit) => {
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Error en el servidor"); }
   return res.json();
 };
+
+interface NowSyncStatus {
+  connectorOnline: boolean;
+  connectorLastSeenAt: string | null;
+  latest: null | {
+    id: string;
+    status: string;
+    requestedAt: string;
+    extractedAt: string | null;
+    completedAt: string | null;
+    recordCount: number;
+    errorMessage: string | null;
+    summary: { total: number; QA: number; Q1: number; productsWithMultipleUnits: number } | null;
+  };
+}
+
+interface NowPreview {
+  id: string;
+  recordCount: number;
+  summary: { total: number; QA: number; Q1: number; productsWithMultipleUnits: number } | null;
+  rows: Array<{ warehouse: string; code: string; productDescription: string; unit: string; quantity: string; locationSummary?: string; zoneSummary?: string }>;
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -201,7 +226,7 @@ export default function BalancesPage() {
     },
   });
 
-  const { data: dates = [] } = useQuery<{ balanceDate: string; batchId: string; warehouse: string }[]>({
+  const { data: nowSyncStatus, isError: nowStatusError } = useQuery<NowSyncStatus>({\n    queryKey: ["balances-now-status"],\n    queryFn: () => apiJson(`${BASE}/api/balances/now/status`),\n    refetchInterval: 10000,\n  });\n\n  const { data: nowPreview } = useQuery<NowPreview>({\n    queryKey: ["balances-now-preview", nowSyncStatus?.latest?.id],\n    queryFn: () => apiJson(`${BASE}/api/balances/now/${nowSyncStatus!.latest!.id}/preview`),\n    enabled: nowSyncStatus?.latest?.status === "preview",\n    refetchInterval: false,\n  });\n\n  const requestNowMutation = useMutation({\n    mutationFn: () => apiJson(`${BASE}/api/balances/now/request`, { method: "POST" }),\n    onSuccess: () => {\n      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });\n      toast({ title: "Solicitud enviada", description: "El conector de la PC del trabajo consultará NOW." });\n    },\n    onError: (e: Error) => toast({ title: "No se pudo solicitar la consulta", description: e.message, variant: "destructive" }),\n  });\n\n  const confirmNowMutation = useMutation({\n    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/confirm`, { method: "POST" }),\n    onSuccess: () => {\n      queryClient.invalidateQueries({ queryKey: ["balances"] });\n      queryClient.invalidateQueries({ queryKey: ["balance-dates"] });\n      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });\n      toast({ title: "Saldos de NOW guardados", description: "La extracción quedó registrada en el historial." });\n    },\n    onError: (e: Error) => toast({ title: "No se pudo confirmar la extracción", description: e.message, variant: "destructive" }),\n  });\n\n  const rejectNowMutation = useMutation({\n    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/reject`, { method: "POST" }),\n    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["balances-now-status"] }),\n    onError: (e: Error) => toast({ title: "No se pudo descartar la extracción", description: e.message, variant: "destructive" }),\n  });\n\n  const { data: dates = [] } = useQuery<{ balanceDate: string; batchId: string; warehouse: string }[]>({
     queryKey: ["balance-dates", warehouse],
     queryFn: () => apiJson(`${BASE}/api/balances/dates${warehouseParam}`),
   });
@@ -393,7 +418,7 @@ export default function BalancesPage() {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Código</TableHead>
                     <TableHead>Descripción</TableHead>
-                    <TableHead>UM</TableHead>
+                    <TableHead>UM</TableHead>\n            <TableHead>Origen</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead>Fecha SA</TableHead>
                     <TableHead>Últ. Consumo</TableHead>
@@ -403,7 +428,7 @@ export default function BalancesPage() {
                 <TableBody>
                   {filtered.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-12 text-slate-400">
+                      <TableCell colSpan={10} className="text-center py-12 text-slate-400">
                         <Scale className="w-10 h-10 mx-auto mb-2 opacity-30" />
                         <p>No hay saldos registrados{search ? " que coincidan con la búsqueda" : ""}</p>
                       </TableCell>
@@ -416,7 +441,7 @@ export default function BalancesPage() {
                       <TableCell className="text-slate-600">{r.type || "—"}</TableCell>
                       <TableCell className="font-mono text-sm font-medium">{r.code}</TableCell>
                       <TableCell>{r.productDescription}</TableCell>
-                      <TableCell className="text-slate-500">{r.unit}</TableCell>
+                      <TableCell className="text-slate-500">{r.unit}</TableCell>\n              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
                       <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
