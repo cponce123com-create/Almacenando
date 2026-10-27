@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { db, balanceConnectorStateTable, balanceRecordsTable, balanceSyncRunsTable } from "@workspace/db";
-import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, notLike } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -67,7 +67,9 @@ router.get("/status", requireAuth, asyncHandler(async (_req, res) => {
     recordCount: balanceSyncRunsTable.recordCount,
     errorMessage: balanceSyncRunsTable.errorMessage,
     summary: balanceSyncRunsTable.summary,
-  }).from(balanceSyncRunsTable).orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(1);
+  }).from(balanceSyncRunsTable)
+    .where(notLike(balanceSyncRunsTable.id, "product-%"))
+    .orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(1);
 
 
   res.json({
@@ -96,7 +98,9 @@ router.get("/history", requireAuth, asyncHandler(async (_req, res) => {
     completedAt: balanceSyncRunsTable.completedAt,
     recordCount: balanceSyncRunsTable.recordCount,
     errorMessage: balanceSyncRunsTable.errorMessage,
-  }).from(balanceSyncRunsTable).orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(30);
+  }).from(balanceSyncRunsTable)
+    .where(notLike(balanceSyncRunsTable.id, "product-%"))
+    .orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(30);
   res.json(runs);
 }));
 
@@ -140,7 +144,8 @@ router.get("/connector/next", requireConnector, asyncHandler(async (_req, res) =
   await db.update(balanceSyncRunsTable)
     .set({ status: "extracting", claimedAt: new Date(), errorMessage: null })
     .where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "requested")));
-  res.json({ request: { id: run.id } });
+  const productMatch = run.id.match(/^product-(QA|Q1|QP|QL|QC)-/);
+  res.json({ request: { id: run.id, kind: productMatch ? "products" : "balances", warehouse: productMatch?.[1] ?? null } });
 }));
 
 router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req, res) => {
