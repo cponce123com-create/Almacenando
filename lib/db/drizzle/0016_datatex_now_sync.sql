@@ -22,6 +22,8 @@ CREATE INDEX IF NOT EXISTS "balance_sync_runs_status_requested_idx"
 CREATE INDEX IF NOT EXISTS "balance_sync_runs_requested_by_idx"
   ON "balance_sync_runs" ("requested_by", "requested_at");
 
+ALTER TABLE "balance_sync_runs" ADD COLUMN IF NOT EXISTS "claimed_at" timestamp;
+
 CREATE TABLE IF NOT EXISTS "balance_connector_state" (
   "id" text PRIMARY KEY,
   "last_seen_at" timestamp,
