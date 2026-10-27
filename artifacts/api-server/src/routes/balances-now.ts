@@ -12,7 +12,7 @@ const router = Router();
 const activeStatuses = ["requested", "extracting", "preview", "confirming"] as const;
 
 const itemSchema = z.object({
-  warehouse: z.enum(["QA", "Q1"]),
+  warehouse: z.enum(["QA", "Q1", "QP", "QL", "QC"]),
   type: z.literal("Q"),
   code: z.string().trim().min(1).max(120),
   productDescription: z.string().trim().min(1).max(500),
@@ -169,6 +169,9 @@ router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req,
     total: parsed.data.rows.length,
     QA: parsed.data.rows.filter(row => row.warehouse === "QA").length,
     Q1: parsed.data.rows.filter(row => row.warehouse === "Q1").length,
+    QP: parsed.data.rows.filter(row => row.warehouse === "QP").length,
+    QL: parsed.data.rows.filter(row => row.warehouse === "QL").length,
+    QC: parsed.data.rows.filter(row => row.warehouse === "QC").length,
     productsWithMultipleUnits: incompatibleUnits,
   };
   const [updated] = await db.update(balanceSyncRunsTable).set({
