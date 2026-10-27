@@ -80,7 +80,6 @@ router.get("/status", requireAuth, asyncHandler(async (_req, res) => {
       completedAt: latest.completedAt,
       recordCount: latest.recordCount,
       errorMessage: latest.errorMessage,
-      preview: latest.status === "preview" ? payload?.rows ?? [] : undefined,
       summary: payload?.summary ?? null,
     } : null,
   });
@@ -180,6 +179,23 @@ router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req,
     return;
   }
   res.json({ status: "preview", summary });
+}));
+
+router.get("/:id/preview", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
+  const [run] = await db.select({
+    id: balanceSyncRunsTable.id,
+    status: balanceSyncRunsTable.status,
+    recordCount: balanceSyncRunsTable.recordCount,
+    payload: balanceSyncRunsTable.payload,
+  }).from(balanceSyncRunsTable)
+    .where(and(eq(balanceSyncRunsTable.id, req.params.id as string), eq(balanceSyncRunsTable.status, "preview")))
+    .limit(1);
+  if (!run) {
+    res.status(404).json({ error: "No existe una vista previa pendiente." });
+    return;
+  }
+  const payload = run.payload as { rows?: unknown[]; summary?: unknown } | null;
+  res.json({ id: run.id, recordCount: run.recordCount, summary: payload?.summary ?? null, rows: payload?.rows ?? [] });
 }));
 
 router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {
