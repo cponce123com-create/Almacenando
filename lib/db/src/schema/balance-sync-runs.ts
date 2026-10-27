@@ -6,6 +6,7 @@ export const balanceSyncRunsTable = pgTable("balance_sync_runs", {
   status: text("status").notNull().default("requested"),
   requestedBy: text("requested_by").notNull().references(() => usersTable.id),
   requestedAt: timestamp("requested_at").notNull().defaultNow(),
+  claimedAt: timestamp("claimed_at"),
   extractedAt: timestamp("extracted_at"),
   completedAt: timestamp("completed_at"),
   recordCount: integer("record_count").notNull().default(0),
