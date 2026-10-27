@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
-export const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QD"] as const;
+export const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QC", "QD"] as const;
 export type Warehouse = typeof WAREHOUSES[number] | "all";
 
 interface WarehouseContextValue {
