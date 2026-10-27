@@ -231,6 +231,7 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
         Invoke-RestMethod -Method Post -Uri "$apiRoot/connector/$RequestId/preview" -Headers $headers -ContentType "application/json; charset=utf-8" -Body $json | Out-Null
         Write-Host "Extracción enviada a la vista previa de ALMACENANDO: $($items.Count) productos consolidados ($rawCount filas Oracle)."
     } catch {
+        $caughtError = $_
         $safeMessage = switch ($stage) {
             "conexión Oracle" { "No se pudo abrir la conexión Oracle. Revisa el DSN y la cuenta autorizada." }
             "verificación de productos" {
@@ -245,17 +246,17 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
                         }
                     }
                 } catch {}
-                $exceptionText = [string]$_.Exception.Message
+                $exceptionText = [string]$caughtError.Exception.Message
                 if (-not [string]::IsNullOrWhiteSpace($exceptionText)) { $detailParts += $exceptionText }
                 if ($detailParts.Count -eq 0) {
-                    $fallback = [string]$_.ToString()
-                    if ([string]::IsNullOrWhiteSpace($fallback)) { $fallback = "PowerShell error id: $($_.FullyQualifiedErrorId); HRESULT: $($_.Exception.HResult)" }
+                    $fallback = [string]$caughtError.ToString()
+                    if ([string]::IsNullOrWhiteSpace($fallback)) { $fallback = "PowerShell error id: $($caughtError.FullyQualifiedErrorId); HRESULT: $($caughtError.Exception.HResult)" }
                     $detailParts += $fallback
                 }
                 Write-Host "Detalle técnico local (no se envía a ALMACENANDO): $($detailParts -join ' | ')"
                 "Falló la validación de productos en la base Oracle."
             }
-            "lectura de saldos" { $_.Exception.Message }
+            "lectura de saldos" { $caughtError.Exception.Message }
             default { "No se pudo transmitir la extracción por HTTPS." }
         }
         Write-Host "Extracción detenida en etapa: $stage."
