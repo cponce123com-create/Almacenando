@@ -76,12 +76,12 @@ router.get("/template", requireAuth, asyncHandler(async (req, res) => {
 
   // Fetch latest SA per warehouse+code (including stored ultimo_consumo)
   const latestRows = await db.execute(sql`
-    SELECT DISTINCT ON (br.warehouse, br.code)
+    SELECT DISTINCT ON (br.warehouse, br.code, br.unit)
       br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
       br.ultimo_consumo
     FROM balance_records br
     ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
-    ORDER BY br.warehouse, br.code, br.balance_date DESC, br.created_at DESC
+    ORDER BY br.warehouse, br.code, br.unit, br.balance_date DESC, br.created_at DESC
   `);
 
   const wb = XLSX.utils.book_new();
@@ -162,20 +162,21 @@ router.post(
           .where(and(
             eq(balanceRecordsTable.warehouse, warehouse),
             eq(balanceRecordsTable.code, code),
-            eq(balanceRecordsTable.balanceDate, balanceDate)
+            eq(balanceRecordsTable.balanceDate, balanceDate),
+            eq(balanceRecordsTable.source, "EXCEL")
           ))
           .limit(1);
 
         if (existing.length > 0) {
           await db.update(balanceRecordsTable)
-            .set({ productDescription, unit, quantity, type, ultimoConsumo, batchId, registeredBy: userId, updatedAt: new Date() })
+            .set({ productDescription, unit, quantity, type, ultimoConsumo, batchId, source: "EXCEL", sourceRunId: null, locationSummary: null, zoneSummary: null, registeredBy: userId, updatedAt: new Date() })
             .where(eq(balanceRecordsTable.id, existing[0]!.id));
           updated++;
         } else {
           const id = generateId();
           await db.insert(balanceRecordsTable).values({
             id, warehouse, type, code, productDescription, unit, quantity,
-            balanceDate, ultimoConsumo, batchId, registeredBy: userId,
+            balanceDate, ultimoConsumo, batchId, source: "EXCEL", registeredBy: userId,
           });
           inserted++;
         }
@@ -240,13 +241,13 @@ router.get("/latest", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
 
   const rows = await db.execute(sql`
-    SELECT DISTINCT ON (br.warehouse, br.code)
+    SELECT DISTINCT ON (br.warehouse, br.code, br.unit)
       br.id, br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
       br.balance_date, br.batch_id, br.notes, br.registered_by, br.created_at, br.updated_at,
-      br.ultimo_consumo AS "ultimoConsumo"
+      br.ultimo_consumo AS "ultimoConsumo", br.source, br.location_summary AS "locationSummary", br.zone_summary AS "zoneSummary"
     FROM balance_records br
     ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
-    ORDER BY br.warehouse, br.code, br.balance_date DESC, br.created_at DESC
+    ORDER BY br.warehouse, br.code, br.unit, br.balance_date DESC, br.created_at DESC
   `);
   res.json(rows.rows);
 }));
