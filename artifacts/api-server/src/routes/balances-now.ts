@@ -22,7 +22,7 @@ const itemSchema = z.object({
   quantity: z.string().trim().max(40).regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/, "Cantidad decimal inválida"),
   locationSummary: z.string().max(1000).optional().default(""),
   zoneSummary: z.string().max(1000).optional().default(""),
-  ultimoConsumo: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/).nullable().optional(),
+  ultimoConsumo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
 const previewSchema = z.object({
   extractedAt: z.string().datetime({ offset: true }),
