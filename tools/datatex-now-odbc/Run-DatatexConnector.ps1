@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 $apiRoot = $env:ALMACENANDO_API_URL
 $tokenSecure = $null
 $token = $null
+$script:oracleUserName = $null
+$script:oracleSecurePassword = $null
 
 if ([IntPtr]::Size -ne 4) {
     throw "Ejecuta este conector con Windows PowerShell de 32 bits (SysWOW64)."
@@ -26,6 +28,11 @@ finally {
     $tokenSecure.Dispose()
 }
 if ([string]::IsNullOrWhiteSpace($token)) { throw "El token no puede estar vacío." }
+
+$script:oracleUserName = Read-Host "Usuario Oracle autorizado"
+if ([string]::IsNullOrWhiteSpace($script:oracleUserName)) { throw "El usuario Oracle no puede estar vacío." }
+$script:oracleSecurePassword = Read-Host "Contraseña Oracle autorizada" -AsSecureString
+if ($script:oracleSecurePassword.Length -eq 0) { throw "La contraseña Oracle no puede estar vacía." }
 
 $headers = @{ "x-datatex-token" = $token }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -61,22 +68,16 @@ function Invoke-Extraction {
     $connectionString = $null
     $stage = "conexión Oracle"
     try {
-        $userName = Read-Host "Usuario Oracle autorizado"
-        $securePassword = Read-Host "Contraseña Oracle autorizada" -AsSecureString
-        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($script:oracleSecurePassword)
         try { $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
-        finally {
-            [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-            $securePassword.Dispose()
-        }
-        $connectionString = "DSN=$Dsn;UID=$userName;PWD=$password"
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+        $connectionString = "DSN=$Dsn;UID=$script:oracleUserName;PWD=$password"
         $connection = New-Object -ComObject ADODB.Connection
         $connection.ConnectionTimeout = 15
         $connection.CommandTimeout = 120
         $connection.Open($connectionString)
         $connectionString = $null
         $password = $null
-        $userName = $null
         $stage = "verificación de productos"
         $duplicateSql = @"
 SELECT SUBCODE01, SUBCODE02, COUNT(*) AS DUPLICATE_COUNT
