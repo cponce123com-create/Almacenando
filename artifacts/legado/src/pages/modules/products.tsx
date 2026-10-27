@@ -64,6 +64,7 @@ import {
   downloadTemplate, exportProducts, importProducts,
   ImportResultsModal, StatusBadge, HazardBadge, ProductForm,
 } from "./products-partials";
+import { ProductsNowSync } from "./products-now-sync";
 export default function MaestrodeProductosPage() {
   const { user } = useAuth();
   const { warehouse } = useWarehouse();
@@ -292,6 +293,15 @@ export default function MaestrodeProductosPage() {
             )}
           </div>
         </div>
+
+        <ProductsNowSync
+          warehouse={warehouse}
+          canSync={Boolean(user?.role && ["admin", "supervisor"].includes(user.role))}
+          onImported={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/reports/summary"] });
+          }}
+        />
 
         {/* Stats row */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
