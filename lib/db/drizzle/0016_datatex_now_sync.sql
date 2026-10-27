@@ -1,5 +1,6 @@
 ALTER TABLE "balance_records"
   ADD COLUMN IF NOT EXISTS "source" text NOT NULL DEFAULT 'EXCEL',
+  ADD COLUMN IF NOT EXISTS "short_description" text,
   ADD COLUMN IF NOT EXISTS "source_run_id" text,
   ADD COLUMN IF NOT EXISTS "location_summary" text,
   ADD COLUMN IF NOT EXISTS "zone_summary" text;
