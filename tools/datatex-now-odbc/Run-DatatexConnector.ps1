@@ -93,44 +93,6 @@ function Invoke-Extraction {
         $connection.Open($connectionString)
         $connectionString = $null
         $password = $null
-        $stage = "verificación de productos"
-        $duplicateSql = @"
-SELECT F.SUBCODE01, F.SUBCODE02, COUNT(*) AS DUPLICATE_COUNT
-FROM NOW.PRODUCT F
-WHERE EXISTS (
-    SELECT 1
-    FROM NOW.BALANCE H
-    WHERE H.DECOSUBCODE01 = F.SUBCODE01
-      AND H.DECOSUBCODE02 = F.SUBCODE02
-      AND H.LOGICALWAREHOUSECODE IN ('QA','Q1')
-      AND H.ITEMTYPECODE = 'Q'
-)
-GROUP BY F.SUBCODE01, F.SUBCODE02
-HAVING COUNT(*) > 1
-"@
-        $recordset = $connection.Execute($duplicateSql)
-        $duplicateCount = 0
-        $duplicateCodes = @()
-        try {
-            while (-not $recordset.EOF) {
-                $duplicateCount++
-                $code01 = [string]$recordset.Fields.Item("SUBCODE01").Value
-                $code02 = [string]$recordset.Fields.Item("SUBCODE02").Value
-                $rowCount = [string]$recordset.Fields.Item("DUPLICATE_COUNT").Value
-                $duplicateCodes += "$code01-$code02 (filas: $rowCount)"
-                $recordset.MoveNext()
-            }
-        } finally {
-            if ($recordset.State -ne 0) { $recordset.Close() }
-            [void][Runtime.InteropServices.Marshal]::ReleaseComObject($recordset)
-            $recordset = $null
-        }
-        if ($duplicateCount -gt 0) {
-            Write-Host "Claves duplicadas detectadas (solo visibles en esta PC):"
-            foreach ($duplicateCode in $duplicateCodes) { Write-Host "  - $duplicateCode" }
-            throw "Hay $duplicateCount códigos tipo Q repetidos en NOW.PRODUCT; se cancela la extracción para evitar inflar saldos por el JOIN."
-        }
-
         $stage = "lectura de saldos"
         $sql = @"
 SELECT
@@ -146,10 +108,14 @@ SELECT
     H.BASEPRIMARYQUANTITYUNIT AS BALANCE_QUANTITY,
     H.ITEMTYPECODE,
     H.BASEPRIMARYUNITCODE
-FROM NOW.BALANCE H, NOW.PRODUCT F
-WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
-  AND F.SUBCODE01 = H.DECOSUBCODE01
-  AND F.SUBCODE02 = H.DECOSUBCODE02
+FROM NOW.BALANCE H
+JOIN (
+    SELECT DISTINCT SUBCODE01, SUBCODE02, LONGDESCRIPTION, SHORTDESCRIPTION
+    FROM NOW.PRODUCT
+) F
+  ON F.SUBCODE01 = H.DECOSUBCODE01
+ AND F.SUBCODE02 = H.DECOSUBCODE02
+WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
   AND H.ITEMTYPECODE = 'Q'
 "@
         $recordset = $connection.Execute($sql)
@@ -169,7 +135,7 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
                 $description = Get-TextField $recordset "LONGDESCRIPTION"
                 $shortDescription = Get-TextField $recordset "SHORTDESCRIPTION"
                 $quantityValue = Get-Field $recordset "BALANCE_QUANTITY"
-                if ($warehouse -notin @("QA", "Q1") -or $code01 -eq "" -or $code02 -eq "" -or $description -eq "" -or $unit -eq "") {
+                if ($warehouse -notin @("QA", "Q1", "QP", "QL", "QC") -or $code01 -eq "" -or $code02 -eq "" -or $description -eq "" -or $unit -eq "") {
                     throw "La consulta devolvió una fila incompleta; no se convertirá en un saldo cero."
                 }
                 if ($null -eq $quantityValue -or $quantityValue -is [DBNull]) {
@@ -196,8 +162,8 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
                     }
                 }
                 $group = $groups[$key]
-                if ($group.productDescription -ne $description) {
-                    throw "Hay descripciones diferentes para el mismo almacén, código y unidad; la extracción se rechaza."
+                if ($group.productDescription -ne $description -or $group.shortDescription -ne $shortDescription) {
+                    throw "Hay descripciones diferentes para el mismo almacén, código y unidad; la extracción se rechaza para no consolidar cantidades ambiguas."
                 }
                 $group.quantity += $quantity
                 $location = Get-TextField $recordset "WAREHOUSELOCATIONCODE"
@@ -212,7 +178,7 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
             $recordset = $null
         }
         if ($rawCount -eq 0 -or $groups.Count -eq 0) {
-            throw "La consulta no devolvió saldos tipo Q para QA/Q1; no se enviará una extracción vacía."
+            throw "La consulta no devolvió saldos tipo Q para QA, Q1, QP, QL o QC; no se enviará una extracción vacía."
         }
 
         $items = @($groups.Values | Sort-Object warehouse, code, unit | ForEach-Object {
