@@ -214,6 +214,45 @@ export default function BalancesPage() {
 
   const warehouseParam = warehouse === "all" ? "" : `?warehouse=${warehouse}`;
 
+  const { data: nowSyncStatus, isError: nowStatusError } = useQuery<NowSyncStatus>({
+    queryKey: ["balances-now-status"],
+    queryFn: () => apiJson(`${BASE}/api/balances/now/status`),
+    refetchInterval: 10000,
+  });
+
+  const { data: nowPreview } = useQuery<NowPreview>({
+    queryKey: ["balances-now-preview", nowSyncStatus?.latest?.id],
+    queryFn: () => apiJson(`${BASE}/api/balances/now/${nowSyncStatus!.latest!.id}/preview`),
+    enabled: nowSyncStatus?.latest?.status === "preview",
+    refetchInterval: false,
+  });
+
+  const requestNowMutation = useMutation({
+    mutationFn: () => apiJson(`${BASE}/api/balances/now/request`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
+      toast({ title: "Solicitud enviada", description: "El conector Windows consultará NOW." });
+    },
+    onError: (e: Error) => toast({ title: "No se pudo solicitar la consulta", description: e.message, variant: "destructive" }),
+  });
+
+  const confirmNowMutation = useMutation({
+    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/confirm`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["balances"] });
+      queryClient.invalidateQueries({ queryKey: ["balance-dates"] });
+      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
+      toast({ title: "Saldos de NOW guardados", description: "La extracción quedó registrada en el historial." });
+    },
+    onError: (e: Error) => toast({ title: "No se pudo confirmar la extracción", description: e.message, variant: "destructive" }),
+  });
+
+  const rejectNowMutation = useMutation({
+    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/reject`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["balances-now-status"] }),
+    onError: (e: Error) => toast({ title: "No se pudo descartar la extracción", description: e.message, variant: "destructive" }),
+  });
+
   const { data: records = [], isLoading, error } = useQuery<BalanceRecord[]>({
     queryKey: ["balances", warehouse, filterDate],
     queryFn: () => {
@@ -366,6 +405,80 @@ export default function BalancesPage() {
           </div>
         </div>
 
+
+        <section className="rounded-xl border border-teal-200 bg-gradient-to-r from-teal-50 to-white p-4 sm:p-5 space-y-4" aria-labelledby="now-sync-heading">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div>
+              <h2 id="now-sync-heading" className="font-semibold text-slate-900 flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 text-teal-700" /> Sincronización Datatex NOW
+              </h2>
+              <p className="text-sm text-slate-600 mt-1">Consulta los saldos de QA y Q1 desde el conector de la computadora del trabajo.</p>
+              <p className="text-xs text-slate-500 mt-2">
+                {nowSyncStatus?.connectorOnline
+                  ? `Conector conectado · última señal ${new Date(nowSyncStatus.connectorLastSeenAt!).toLocaleString("es-PE")}`
+                  : "Conector desconectado. Inicia el conector Windows para habilitar la consulta."}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="bg-teal-700 hover:bg-teal-800"
+              disabled={!nowSyncStatus?.connectorOnline || requestNowMutation.isPending || ["requested", "extracting", "preview"].includes(nowSyncStatus?.latest?.status ?? "")}
+              onClick={() => requestNowMutation.mutate()}
+            >
+              {requestNowMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
+              Solicitar actualización
+            </Button>
+          </div>
+
+          {nowStatusError && <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-3">El servicio de sincronización no está disponible en esta versión del servidor.</p>}
+
+          {nowSyncStatus?.latest && (
+            <div className="rounded-lg bg-white/80 border border-slate-200 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <span className="font-medium">Estado: {({
+                  requested: "Solicitud pendiente",
+                  extracting: "Consultando NOW",
+                  preview: "Pendiente de confirmación",
+                  completed: "Completada",
+                  rejected: "Descartada",
+                  failed: "Fallida",
+                } as Record<string, string>)[nowSyncStatus.latest.status] ?? nowSyncStatus.latest.status}</span>
+                {nowSyncStatus.latest.extractedAt && <span className="text-slate-500">Extraído: {new Date(nowSyncStatus.latest.extractedAt).toLocaleString("es-PE")}</span>}
+                {nowSyncStatus.latest.completedAt && <span className="text-slate-500">Guardado: {new Date(nowSyncStatus.latest.completedAt).toLocaleString("es-PE")}</span>}
+              </div>
+              {nowSyncStatus.latest.errorMessage && <p className="text-red-700 mt-2">{nowSyncStatus.latest.errorMessage}</p>}
+              {nowSyncStatus.latest.summary && (
+                <p className="text-slate-600 mt-2">
+                  {nowSyncStatus.latest.summary.total} productos · QA: {nowSyncStatus.latest.summary.QA} · Q1: {nowSyncStatus.latest.summary.Q1}
+                  {nowSyncStatus.latest.summary.productsWithMultipleUnits > 0 && <span className="text-amber-700"> · {nowSyncStatus.latest.summary.productsWithMultipleUnits} códigos con más de una unidad</span>}
+                </p>
+              )}
+              {nowSyncStatus.latest.status === "preview" && nowPreview && (
+                <div className="mt-3">
+                  <p className="font-medium mb-2">Vista previa — verifica antes de guardar</p>
+                  <div className="overflow-x-auto border rounded-md">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50"><tr><th className="text-left p-2">Almacén</th><th className="text-left p-2">Código</th><th className="text-left p-2">Producto</th><th className="text-right p-2">Saldo</th><th className="text-left p-2">UM</th></tr></thead>
+                      <tbody>{nowPreview.rows.slice(0, 5).map((row, index) => (
+                        <tr key={`${row.warehouse}-${row.code}-${row.unit}-${index}`} className="border-t">
+                          <td className="p-2">{row.warehouse}</td><td className="p-2 font-mono">{row.code}</td><td className="p-2">{row.productDescription}</td><td className="p-2 text-right font-mono">{row.quantity}</td><td className="p-2">{row.unit}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">Se muestran hasta 5 de {nowPreview.recordCount} productos. La extracción completa se guardará como un nuevo historial.</p>
+                  <div className="flex gap-2 mt-3">
+                    <Button size="sm" onClick={() => confirmNowMutation.mutate(nowPreview.id)} disabled={confirmNowMutation.isPending}>
+                      {confirmNowMutation.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}Confirmar e importar
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => rejectNowMutation.mutate(nowPreview.id)} disabled={rejectNowMutation.isPending}>Descartar</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -418,7 +531,8 @@ export default function BalancesPage() {
                     <TableHead>Tipo</TableHead>
                     <TableHead>Código</TableHead>
                     <TableHead>Descripción</TableHead>
-                    <TableHead>UM</TableHead>\n            <TableHead>Origen</TableHead>
+                    <TableHead>UM</TableHead>
+            <TableHead>Origen</TableHead>\n            <TableHead>Origen</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead>Fecha SA</TableHead>
                     <TableHead>Últ. Consumo</TableHead>
@@ -441,7 +555,8 @@ export default function BalancesPage() {
                       <TableCell className="text-slate-600">{r.type || "—"}</TableCell>
                       <TableCell className="font-mono text-sm font-medium">{r.code}</TableCell>
                       <TableCell>{r.productDescription}</TableCell>
-                      <TableCell className="text-slate-500">{r.unit}</TableCell>\n              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
+                      <TableCell className="text-slate-500">{r.unit}</TableCell>
+              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>\n              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
                       <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
