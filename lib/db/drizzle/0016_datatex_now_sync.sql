@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS "balance_sync_runs" (
   "completed_at" timestamp,
   "record_count" integer NOT NULL DEFAULT 0,
   "payload" jsonb,
+  "summary" jsonb,
   "error_message" text
 );
 
