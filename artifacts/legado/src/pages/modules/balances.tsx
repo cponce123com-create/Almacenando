@@ -49,6 +49,7 @@ const apiJson = async (path: string, opts?: RequestInit) => {
 };
 
 interface NowSyncStatus {
+  connectorConfigured: boolean;
   connectorOnline: boolean;
   connectorLastSeenAt: string | null;
   latest: null | {
