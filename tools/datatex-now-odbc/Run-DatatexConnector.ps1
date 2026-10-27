@@ -27,7 +27,8 @@ if (Test-Path $configPath) {
     Write-Host "Configuración inicial (solo la primera vez)."
     Write-Host "Usará el DSN PRO de NOW; después no volverá a pedir estos datos."
     $tokenSecure = Read-Host "Token configurado una sola vez en Render" -AsSecureString
-    $script:oracleUserName = Read-Host "Usuario Oracle (el de la macro, por ejemplo excel)"
+    $oracleUserInput = Read-Host "Usuario Oracle [excel] (Enter para usar excel)"
+    $script:oracleUserName = if ([string]::IsNullOrWhiteSpace($oracleUserInput)) { "excel" } else { $oracleUserInput.Trim() }
     $script:oracleSecurePassword = Read-Host "Contraseña Oracle (la de la macro)" -AsSecureString
     if ($tokenSecure.Length -eq 0 -or [string]::IsNullOrWhiteSpace($script:oracleUserName) -or $script:oracleSecurePassword.Length -eq 0) {
         throw "La configuración inicial está incompleta."
