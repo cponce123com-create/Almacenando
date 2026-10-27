@@ -122,8 +122,8 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
                 <thead><tr className="border-b text-left text-slate-500"><th className="p-2">Almacén</th><th className="p-2">Código</th><th className="p-2">Descripción</th><th className="p-2">UM</th><th className="p-2">Ubicaciones</th></tr></thead>
                 <tbody>
                   {(preview?.rows ?? []).slice(0, 12).map(row => (
-                    <tr key={row.code} className="border-b last:border-0">
-                      <td className="p-2 font-mono">{row.code}</td><td className="p-2">{row.name}</td><td className="p-2">{row.unit}</td><td className="p-2">{row.location || "—"}</td>
+                    <tr key={`${row.warehouse}-${row.code}`} className="border-b last:border-0">
+                      <td className="p-2">{row.warehouse}</td><td className="p-2 font-mono">{row.code}</td><td className="p-2">{row.name}</td><td className="p-2">{row.unit}</td><td className="p-2">{row.location || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
