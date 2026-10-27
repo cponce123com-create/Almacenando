@@ -119,7 +119,7 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
           {previewQuery.isLoading ? <p className="text-sm">Cargando vista previa…</p> : (
             <div className="max-h-52 overflow-auto rounded border bg-white">
               <table className="w-full text-sm">
-                <thead><tr className="border-b text-left text-slate-500"><th className="p-2">Código</th><th className="p-2">Descripción</th><th className="p-2">UM</th><th className="p-2">Ubicaciones</th></tr></thead>
+                <thead><tr className="border-b text-left text-slate-500"><th className="p-2">Almacén</th><th className="p-2">Código</th><th className="p-2">Descripción</th><th className="p-2">UM</th><th className="p-2">Ubicaciones</th></tr></thead>
                 <tbody>
                   {(preview?.rows ?? []).slice(0, 12).map(row => (
                     <tr key={row.code} className="border-b last:border-0">
