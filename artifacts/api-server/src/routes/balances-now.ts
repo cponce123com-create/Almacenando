@@ -153,9 +153,9 @@ router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req,
   const keySet = new Set<string>();
   const unitSet = new Map<string, Set<string>>();
   for (const row of parsed.data.rows) {
-    const key = [row.warehouse, row.code, row.unit].join("\u0000");
+    const key = [row.warehouse, row.code, row.unit, row.locationSummary, row.zoneSummary].join("\u0000");
     if (keySet.has(key)) {
-      res.status(400).json({ error: "La extracción contiene códigos duplicados sin consolidar por almacén, producto y unidad." });
+      res.status(400).json({ error: "La extracción contiene filas duplicadas para el mismo almacén, producto, unidad, ubicación y zona." });
       return;
     }
     keySet.add(key);
