@@ -17,6 +17,7 @@ const rowSchema = z.object({
   code: z.string().trim().min(1).max(120),
   name: z.string().trim().min(1).max(500),
   unit: z.string().trim().min(1).max(40),
+  location: z.string().max(1000).optional().default(""),
 });
 const previewSchema = z.object({
   extractedAt: z.string().datetime({ offset: true }),
