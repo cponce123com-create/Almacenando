@@ -80,9 +80,17 @@ function Invoke-Extraction {
         $password = $null
         $stage = "verificación de productos"
         $duplicateSql = @"
-SELECT SUBCODE01, SUBCODE02, COUNT(*) AS DUPLICATE_COUNT
-FROM NOW.PRODUCT
-GROUP BY SUBCODE01, SUBCODE02
+SELECT F.SUBCODE01, F.SUBCODE02, COUNT(*) AS DUPLICATE_COUNT
+FROM NOW.PRODUCT F
+WHERE EXISTS (
+    SELECT 1
+    FROM NOW.BALANCE H
+    WHERE H.DECOSUBCODE01 = F.SUBCODE01
+      AND H.DECOSUBCODE02 = F.SUBCODE02
+      AND H.LOGICALWAREHOUSECODE IN ('QA','Q1')
+      AND H.ITEMTYPECODE = 'Q'
+)
+GROUP BY F.SUBCODE01, F.SUBCODE02
 HAVING COUNT(*) > 1
 "@
         $recordset = $connection.Execute($duplicateSql)
