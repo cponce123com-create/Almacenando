@@ -65,10 +65,10 @@ router.get("/status", requireAuth, asyncHandler(async (_req, res) => {
     completedAt: balanceSyncRunsTable.completedAt,
     recordCount: balanceSyncRunsTable.recordCount,
     errorMessage: balanceSyncRunsTable.errorMessage,
-    payload: balanceSyncRunsTable.payload,
+    summary: balanceSyncRunsTable.summary,
   }).from(balanceSyncRunsTable).orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(1);
 
-  const payload = latest?.payload as { rows?: unknown[]; summary?: unknown } | null | undefined;
+
   res.json({
     connectorConfigured: Boolean(process.env.DATATEX_CONNECTOR_TOKEN),
     connectorOnline: Boolean(process.env.DATATEX_CONNECTOR_TOKEN && connector?.lastSeenAt && Date.now() - connector.lastSeenAt.getTime() < 90_000),
@@ -81,7 +81,7 @@ router.get("/status", requireAuth, asyncHandler(async (_req, res) => {
       completedAt: latest.completedAt,
       recordCount: latest.recordCount,
       errorMessage: latest.errorMessage,
-      summary: payload?.summary ?? null,
+      summary: latest?.summary ?? null,
     } : null,
   });
 }));
@@ -169,7 +169,8 @@ router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req,
     status: "preview",
     extractedAt: new Date(parsed.data.extractedAt),
     recordCount: parsed.data.rows.length,
-    payload: { balanceDate: parsed.data.balanceDate, rows: parsed.data.rows, summary },
+    payload: { balanceDate: parsed.data.balanceDate, rows: parsed.data.rows },
+    summary,
     errorMessage: null,
   }).where(and(
     eq(balanceSyncRunsTable.id, req.params.id as string),
@@ -249,6 +250,7 @@ router.post("/:id/reject", requireAuth, requireRole("supervisor", "admin"), asyn
     status: "rejected",
     completedAt: new Date(),
     payload: null,
+    summary: null,
   }).where(and(eq(balanceSyncRunsTable.id, req.params.id as string), eq(balanceSyncRunsTable.status, "preview")))
     .returning({ id: balanceSyncRunsTable.id });
   if (!updated) {
