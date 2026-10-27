@@ -137,7 +137,7 @@ router.get("/connector/next", requireConnector, asyncHandler(async (_req, res) =
     return;
   }
   await db.update(balanceSyncRunsTable)
-    .set({ status: "extracting", errorMessage: null })
+    .set({ status: "extracting", claimedAt: new Date(), errorMessage: null })
     .where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "requested")));
   res.json({ request: { id: run.id } });
 }));
@@ -172,6 +172,7 @@ router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req,
   };
   const [updated] = await db.update(balanceSyncRunsTable).set({
     status: "preview",
+    claimedAt: null,
     extractedAt: new Date(parsed.data.extractedAt),
     recordCount: parsed.data.rows.length,
     payload: { balanceDate: parsed.data.balanceDate, rows: parsed.data.rows },
@@ -283,6 +284,7 @@ router.post("/connector/:id/fail", requireConnector, asyncHandler(async (req, re
   const errorMessage = message.success ? message.data : "Error de extracción no especificado.";
   await db.update(balanceSyncRunsTable).set({
     status: "failed",
+    claimedAt: null,
     completedAt: new Date(),
     errorMessage,
   }).where(and(eq(balanceSyncRunsTable.id, req.params.id as string), inArray(balanceSyncRunsTable.status, ["requested", "extracting"])));
