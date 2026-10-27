@@ -110,9 +110,14 @@ HAVING COUNT(*) > 1
 "@
         $recordset = $connection.Execute($duplicateSql)
         $duplicateCount = 0
+        $duplicateCodes = @()
         try {
             while (-not $recordset.EOF) {
                 $duplicateCount++
+                $code01 = [string]$recordset.Fields.Item("SUBCODE01").Value
+                $code02 = [string]$recordset.Fields.Item("SUBCODE02").Value
+                $rowCount = [string]$recordset.Fields.Item("DUPLICATE_COUNT").Value
+                $duplicateCodes += "$code01-$code02 (filas: $rowCount)"
                 $recordset.MoveNext()
             }
         } finally {
@@ -121,6 +126,8 @@ HAVING COUNT(*) > 1
             $recordset = $null
         }
         if ($duplicateCount -gt 0) {
+            Write-Host "Claves duplicadas detectadas (solo visibles en esta PC):"
+            foreach ($duplicateCode in $duplicateCodes) { Write-Host "  - $duplicateCode" }
             throw "Hay $duplicateCount códigos tipo Q repetidos en NOW.PRODUCT; se cancela la extracción para evitar inflar saldos por el JOIN."
         }
 
