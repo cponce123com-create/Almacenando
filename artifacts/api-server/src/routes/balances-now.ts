@@ -18,7 +18,7 @@ const itemSchema = z.object({
   productDescription: z.string().trim().min(1).max(500),
   shortDescription: z.string().trim().max(500).optional().default(""),
   unit: z.string().trim().min(1).max(40),
-  quantity: z.string().trim().regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/, "Cantidad decimal inválida"),
+  quantity: z.string().trim().max(40).regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/, "Cantidad decimal inválida"),
   locationSummary: z.string().max(1000).optional().default(""),
   zoneSummary: z.string().max(1000).optional().default(""),
 });
@@ -210,6 +210,11 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
   const payload = run.payload as { balanceDate: string; rows: z.infer<typeof itemSchema>[] };
   if (!payload || !Array.isArray(payload.rows) || payload.rows.length !== run.recordCount) {
     res.status(409).json({ error: "La vista previa no supera la validación de integridad." });
+    return;
+  }
+
+  if (payload.rows.some(row => !Number.isFinite(Number(row.quantity)))) {
+    res.status(400).json({ error: "La extracción contiene cantidades fuera del rango numérico permitido." });
     return;
   }
 
