@@ -122,10 +122,10 @@ router.post("/request", requireAuth, requireRole("supervisor", "admin"), asyncHa
 
 router.get("/connector/next", requireConnector, asyncHandler(async (_req, res) => {
   await touchConnector();
-  await db.update(balanceSyncRunsTable).set({ status: "requested" })
+  await db.update(balanceSyncRunsTable).set({ status: "requested", claimedAt: null })
     .where(and(
       eq(balanceSyncRunsTable.status, "extracting"),
-      lte(balanceSyncRunsTable.requestedAt, new Date(Date.now() - 10 * 60_000)),
+      lte(balanceSyncRunsTable.claimedAt, new Date(Date.now() - 10 * 60_000)),
     ));
   const [run] = await db.select({ id: balanceSyncRunsTable.id })
     .from(balanceSyncRunsTable)
