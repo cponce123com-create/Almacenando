@@ -234,7 +234,25 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
         $safeMessage = switch ($stage) {
             "conexión Oracle" { "No se pudo abrir la conexión Oracle. Revisa el DSN y la cuenta autorizada." }
             "verificación de productos" {
-                Write-Host "Detalle Oracle (solo visible en esta PC): $($_.Exception.Message)"
+                $detailParts = @()
+                try {
+                    if ($connection -and $connection.Errors.Count -gt 0) {
+                        foreach ($adoError in $connection.Errors) {
+                            $description = [string]$adoError.Description
+                            if (-not [string]::IsNullOrWhiteSpace($description)) {
+                                $detailParts += "ADO Number=$($adoError.Number); SQLState=$($adoError.SQLState); NativeError=$($adoError.NativeError); $description"
+                            }
+                        }
+                    }
+                } catch {}
+                $exceptionText = [string]$_.Exception.Message
+                if (-not [string]::IsNullOrWhiteSpace($exceptionText)) { $detailParts += $exceptionText }
+                if ($detailParts.Count -eq 0) {
+                    $fallback = [string]$_.ToString()
+                    if ([string]::IsNullOrWhiteSpace($fallback)) { $fallback = "PowerShell error id: $($_.FullyQualifiedErrorId); HRESULT: $($_.Exception.HResult)" }
+                    $detailParts += $fallback
+                }
+                Write-Host "Detalle técnico local (no se envía a ALMACENANDO): $($detailParts -join ' | ')"
                 "Falló la validación de productos en la base Oracle."
             }
             "lectura de saldos" { $_.Exception.Message }
