@@ -235,7 +235,8 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
 
 Write-Host "Conector Datatex NOW iniciado en modo de consulta. Presiona Ctrl+C para detener."
 Write-Host "No se conecta a Oracle hasta que ALMACENANDO tenga una solicitud pendiente."
-while ($true) {
+try {
+  while ($true) {
     try {
         $response = Invoke-RestMethod -Method Get -Uri "$apiRoot/connector/next" -Headers $headers -TimeoutSec 20
         if ($response.request -and $response.request.id) {
@@ -246,4 +247,11 @@ while ($true) {
         Write-Host "No se pudo consultar ALMACENANDO por HTTPS; se reintentará."
     }
     Start-Sleep -Seconds ([Math]::Max(5, $PollSeconds))
+  }
+} finally {
+  if ($script:oracleSecurePassword) { $script:oracleSecurePassword.Dispose() }
+  $script:oracleSecurePassword = $null
+  $script:oracleUserName = $null
+  $token = $null
+  $headers = $null
 }
