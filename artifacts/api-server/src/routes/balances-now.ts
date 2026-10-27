@@ -196,6 +196,7 @@ router.get("/:id/preview", requireAuth, requireRole("supervisor", "admin"), asyn
     status: balanceSyncRunsTable.status,
     recordCount: balanceSyncRunsTable.recordCount,
     payload: balanceSyncRunsTable.payload,
+    summary: balanceSyncRunsTable.summary,
   }).from(balanceSyncRunsTable)
     .where(and(eq(balanceSyncRunsTable.id, req.params.id as string), eq(balanceSyncRunsTable.status, "preview")))
     .limit(1);
@@ -203,8 +204,8 @@ router.get("/:id/preview", requireAuth, requireRole("supervisor", "admin"), asyn
     res.status(404).json({ error: "No existe una vista previa pendiente." });
     return;
   }
-  const payload = run.payload as { rows?: unknown[]; summary?: unknown } | null;
-  res.json({ id: run.id, recordCount: run.recordCount, summary: payload?.summary ?? null, rows: payload?.rows ?? [] });
+  const payload = run.payload as { rows?: unknown[] } | null;
+  res.json({ id: run.id, recordCount: run.recordCount, summary: run.summary ?? null, rows: payload?.rows ?? [] });
 }));
 
 router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {
