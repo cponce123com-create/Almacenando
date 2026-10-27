@@ -109,12 +109,12 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
     if (!claimed) { conflict = true; return; }
     await tx.insert(productsTable).values(payload.rows.map(row => ({
       id: generateId(), warehouse: row.warehouse, type: "Q", code: row.code, name: row.name,
-      category: "Químicos", unit: row.unit, minimumStock: 0,
+      category: "Químicos", unit: row.unit, location: row.location, minimumStock: 0,
     }))).onConflictDoUpdate({
       target: [productsTable.warehouse, productsTable.code],
       set: {
         type: sql.raw("excluded.type"), name: sql.raw("excluded.name"),
-        unit: sql.raw("excluded.unit"), updatedAt: new Date(),
+        unit: sql.raw("excluded.unit"), location: sql.raw("excluded.location"), updatedAt: new Date(),
       },
     });
     await tx.update(balanceSyncRunsTable).set({ status: "completed", completedAt: new Date() })
