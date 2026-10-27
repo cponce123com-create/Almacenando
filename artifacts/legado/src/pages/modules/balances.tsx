@@ -60,7 +60,7 @@ interface NowSyncStatus {
     completedAt: string | null;
     recordCount: number;
     errorMessage: string | null;
-    summary: { total: number; QA: number; Q1: number; productsWithMultipleUnits: number } | null;
+    summary: { total: number; QA: number; Q1: number; QP: number; QL: number; QC: number; productsWithMultipleUnits: number } | null;
   };
 }
 
@@ -413,7 +413,7 @@ export default function BalancesPage() {
               <h2 id="now-sync-heading" className="font-semibold text-slate-900 flex items-center gap-2">
                 <RefreshCw className="w-4 h-4 text-teal-700" /> Sincronización con base de datos Oracle
               </h2>
-              <p className="text-sm text-slate-600 mt-1">Consulta saldos de QA y Q1 por ODBC usando el DSN PRO de la computadora del trabajo.</p>
+              <p className="text-sm text-slate-600 mt-1">Consulta saldos de QA, Q1, QP, QL y QC por ODBC usando el DSN PRO de la computadora del trabajo.</p>
               <p className="text-xs text-slate-500 mt-2">
                 {nowSyncStatus?.connectorOnline
                   ? `Conector conectado · última señal ${new Date(nowSyncStatus.connectorLastSeenAt!).toLocaleString("es-PE")}`
@@ -453,7 +453,7 @@ export default function BalancesPage() {
               {nowSyncStatus.latest.errorMessage && <p className="text-red-700 mt-2">{nowSyncStatus.latest.errorMessage}</p>}
               {nowSyncStatus.latest.summary && (
                 <p className="text-slate-600 mt-2">
-                  {nowSyncStatus.latest.summary.total} productos · QA: {nowSyncStatus.latest.summary.QA} · Q1: {nowSyncStatus.latest.summary.Q1}
+                  {nowSyncStatus.latest.summary.total} productos · QA: {nowSyncStatus.latest.summary.QA} · Q1: {nowSyncStatus.latest.summary.Q1} · QP: {nowSyncStatus.latest.summary.QP} · QL: {nowSyncStatus.latest.summary.QL} · QC: {nowSyncStatus.latest.summary.QC}
                   {nowSyncStatus.latest.summary.productsWithMultipleUnits > 0 && <span className="text-amber-700"> · {nowSyncStatus.latest.summary.productsWithMultipleUnits} códigos con más de una unidad</span>}
                 </p>
               )}
