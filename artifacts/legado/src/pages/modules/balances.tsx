@@ -68,7 +68,7 @@ interface NowPreview {
   id: string;
   recordCount: number;
   summary: { total: number; QA: number; Q1: number; productsWithMultipleUnits: number } | null;
-  rows: Array<{ warehouse: string; code: string; productDescription: string; unit: string; quantity: string; locationSummary?: string; zoneSummary?: string }>;
+  rows: Array<{ warehouse: string; code: string; productDescription: string; shortDescription?: string; unit: string; quantity: string; locationSummary?: string; zoneSummary?: string }>;
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -459,10 +459,10 @@ export default function BalancesPage() {
                   <p className="font-medium mb-2">Vista previa — verifica antes de guardar</p>
                   <div className="overflow-x-auto border rounded-md">
                     <table className="w-full text-xs">
-                      <thead className="bg-slate-50"><tr><th className="text-left p-2">Almacén</th><th className="text-left p-2">Código</th><th className="text-left p-2">Producto</th><th className="text-right p-2">Saldo</th><th className="text-left p-2">UM</th></tr></thead>
+                      <thead className="bg-slate-50"><tr><th className="text-left p-2">Almacén</th><th className="text-left p-2">Código</th><th className="text-left p-2">Producto</th><th className="text-right p-2">Saldo</th><th className="text-left p-2">UM</th><th className="text-left p-2">Ubicación / zona</th></tr></thead>
                       <tbody>{nowPreview.rows.slice(0, 5).map((row, index) => (
                         <tr key={`${row.warehouse}-${row.code}-${row.unit}-${index}`} className="border-t">
-                          <td className="p-2">{row.warehouse}</td><td className="p-2 font-mono">{row.code}</td><td className="p-2">{row.productDescription}</td><td className="p-2 text-right font-mono">{row.quantity}</td><td className="p-2">{row.unit}</td>
+                          <td className="p-2">{row.warehouse}</td><td className="p-2 font-mono">{row.code}</td><td className="p-2">{row.productDescription}</td><td className="p-2 text-right font-mono">{row.quantity}</td><td className="p-2">{row.unit}</td><td className="p-2">{[row.locationSummary, row.zoneSummary].filter(Boolean).join(" · ") || "—"}</td>
                         </tr>
                       ))}</tbody>
                     </table>
@@ -533,7 +533,7 @@ export default function BalancesPage() {
                     <TableHead>Código</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>UM</TableHead>
-            <TableHead>Origen</TableHead>\n            <TableHead>Origen</TableHead>
+            <TableHead>Ubicación / zona</TableHead><TableHead>Origen</TableHead>\n            <TableHead>Origen</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead>Fecha SA</TableHead>
                     <TableHead>Últ. Consumo</TableHead>
@@ -543,7 +543,7 @@ export default function BalancesPage() {
                 <TableBody>
                   {filtered.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-12 text-slate-400">
+                      <TableCell colSpan={11} className="text-center py-12 text-slate-400">
                         <Scale className="w-10 h-10 mx-auto mb-2 opacity-30" />
                         <p>No hay saldos registrados{search ? " que coincidan con la búsqueda" : ""}</p>
                       </TableCell>
@@ -557,6 +557,7 @@ export default function BalancesPage() {
                       <TableCell className="font-mono text-sm font-medium">{r.code}</TableCell>
                       <TableCell>{r.productDescription}</TableCell>
                       <TableCell className="text-slate-500">{r.unit}</TableCell>
+              <TableCell className="text-xs text-slate-500">{[r.locationSummary, r.zoneSummary].filter(Boolean).join(" · ") || "—"}</TableCell>
               <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>\n              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
                       <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
