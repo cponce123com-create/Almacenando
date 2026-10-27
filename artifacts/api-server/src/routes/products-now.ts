@@ -37,7 +37,7 @@ function requireConnector(req: Request, res: Response, next: NextFunction) {
 }
 
 router.post("/request", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {
-  const parsed = z.object({ warehouse: z.enum(warehouses) }).safeParse(req.body);
+  const parsed = z.object({ warehouse: z.enum(["QA", "Q1", "QP", "QL", "QC", "all"]) }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Selecciona un almacén válido." }); return; }
   const [active] = await db.select({ id: balanceSyncRunsTable.id }).from(balanceSyncRunsTable)
     .where(inArray(balanceSyncRunsTable.status, [...activeStatuses])).limit(1);
