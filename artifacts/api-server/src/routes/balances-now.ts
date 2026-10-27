@@ -25,7 +25,7 @@ const itemSchema = z.object({
 const previewSchema = z.object({
   extractedAt: z.string().datetime({ offset: true }),
   balanceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  rows: z.array(itemSchema).min(1).max(20000),
+  rows: z.array(itemSchema).min(1).max(5000),
 });
 
 function requireConnector(req: Request, res: Response, next: NextFunction) {
@@ -70,7 +70,8 @@ router.get("/status", requireAuth, asyncHandler(async (_req, res) => {
 
   const payload = latest?.payload as { rows?: unknown[]; summary?: unknown } | null | undefined;
   res.json({
-    connectorOnline: Boolean(connector?.lastSeenAt && Date.now() - connector.lastSeenAt.getTime() < 90_000),
+    connectorConfigured: Boolean(process.env.DATATEX_CONNECTOR_TOKEN),
+    connectorOnline: Boolean(process.env.DATATEX_CONNECTOR_TOKEN && connector?.lastSeenAt && Date.now() - connector.lastSeenAt.getTime() < 90_000),
     connectorLastSeenAt: connector?.lastSeenAt ?? null,
     latest: latest ? {
       id: latest.id,
