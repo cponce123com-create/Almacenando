@@ -232,7 +232,7 @@ export default function BalancesPage() {
     mutationFn: () => apiJson(`${BASE}/api/balances/now/request`, { method: "POST" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
-      toast({ title: "Solicitud enviada", description: "El conector Windows consultará NOW." });
+      toast({ title: "Solicitud enviada", description: "El conector de la PC del trabajo consultará NOW." });
     },
     onError: (e: Error) => toast({ title: "No se pudo solicitar la consulta", description: e.message, variant: "destructive" }),
   });
@@ -264,45 +264,6 @@ export default function BalancesPage() {
       const qs = params.toString();
       return apiJson(qs ? `${url}?${qs}` : url);
     },
-  });
-
-  const { data: nowSyncStatus, isError: nowStatusError } = useQuery<NowSyncStatus>({
-    queryKey: ["balances-now-status"],
-    queryFn: () => apiJson(`${BASE}/api/balances/now/status`),
-    refetchInterval: 10000,
-  });
-
-  const { data: nowPreview } = useQuery<NowPreview>({
-    queryKey: ["balances-now-preview", nowSyncStatus?.latest?.id],
-    queryFn: () => apiJson(`${BASE}/api/balances/now/${nowSyncStatus!.latest!.id}/preview`),
-    enabled: nowSyncStatus?.latest?.status === "preview",
-    refetchInterval: false,
-  });
-
-  const requestNowMutation = useMutation({
-    mutationFn: () => apiJson(`${BASE}/api/balances/now/request`, { method: "POST" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
-      toast({ title: "Solicitud enviada", description: "El conector de la PC del trabajo consultará NOW." });
-    },
-    onError: (e: Error) => toast({ title: "No se pudo solicitar la consulta", description: e.message, variant: "destructive" }),
-  });
-
-  const confirmNowMutation = useMutation({
-    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/confirm`, { method: "POST" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["balances"] });
-      queryClient.invalidateQueries({ queryKey: ["balance-dates"] });
-      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
-      toast({ title: "Saldos de NOW guardados", description: "La extracción quedó registrada en el historial." });
-    },
-    onError: (e: Error) => toast({ title: "No se pudo confirmar la extracción", description: e.message, variant: "destructive" }),
-  });
-
-  const rejectNowMutation = useMutation({
-    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/reject`, { method: "POST" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["balances-now-status"] }),
-    onError: (e: Error) => toast({ title: "No se pudo descartar la extracción", description: e.message, variant: "destructive" }),
   });
 
   const { data: dates = [] } = useQuery<{ balanceDate: string; batchId: string; warehouse: string }[]>({
