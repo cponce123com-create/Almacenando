@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
-import express from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 
 const { dbMock } = vi.hoisted(() => ({
   dbMock: {
@@ -33,11 +33,11 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 vi.mock("../lib/auth.js", () => ({
-  requireAuth: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    (req as express.Request & { userId?: string }).userId = "test-user";
+  requireAuth: (req: Request, _res: Response, next: NextFunction) => {
+    (req as Request & { userId?: string }).userId = "test-user";
     next();
   },
-  requireRole: () => (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireRole: () => (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 
 vi.mock("../lib/audit.js", () => ({ writeAuditLog: vi.fn().mockResolvedValue(undefined) }));
