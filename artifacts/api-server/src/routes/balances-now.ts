@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { db, balanceConnectorStateTable, balanceRecordsTable, balanceSyncRunsTable } from "@workspace/db";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -9,7 +9,7 @@ import { generateId } from "../lib/id.js";
 import { writeAuditLog } from "../lib/audit.js";
 
 const router = Router();
-const activeStatuses = ["requested", "extracting", "preview"] as const;
+const activeStatuses = ["requested", "extracting", "preview", "confirming"] as const;
 
 const itemSchema = z.object({
   warehouse: z.enum(["QA", "Q1"]),
@@ -219,7 +219,15 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
     return;
   }
 
+  let conflict = false;
   await db.transaction(async (tx) => {
+    const [claimed] = await tx.update(balanceSyncRunsTable).set({ status: "confirming" })
+      .where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "preview")))
+      .returning({ id: balanceSyncRunsTable.id });
+    if (!claimed) {
+      conflict = true;
+      return;
+    }
     await tx.insert(balanceRecordsTable).values(payload.rows.map(row => ({
       id: generateId(),
       warehouse: row.warehouse,
@@ -239,8 +247,12 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
     await tx.update(balanceSyncRunsTable).set({
       status: "completed",
       completedAt: new Date(),
-    }).where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "preview")));
+    }).where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "confirming")));
   });
+  if (conflict) {
+    res.status(409).json({ error: "La extracción ya fue confirmada o cambió de estado." });
+    return;
+  }
   void writeAuditLog({ userId: req.userId, action: "create", resource: "datatex_balance_sync_confirm", resourceId: run.id, ipAddress: req.ip as string });
   res.json({ id: run.id, imported: run.recordCount, status: "completed" });
 }));
