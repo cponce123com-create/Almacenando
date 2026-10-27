@@ -144,7 +144,7 @@ router.get("/connector/next", requireConnector, asyncHandler(async (_req, res) =
   await db.update(balanceSyncRunsTable)
     .set({ status: "extracting", claimedAt: new Date(), errorMessage: null })
     .where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "requested")));
-  const productMatch = run.id.match(/^product-(QA|Q1|QP|QL|QC)-/);
+  const productMatch = run.id.match(/^product-(QA|Q1|QP|QL|QC|all)-/);
   res.json({ request: { id: run.id, kind: productMatch ? "products" : "balances", warehouse: productMatch?.[1] ?? null } });
 }));
 
