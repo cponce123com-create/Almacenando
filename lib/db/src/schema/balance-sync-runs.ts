@@ -10,6 +10,7 @@ export const balanceSyncRunsTable = pgTable("balance_sync_runs", {
   completedAt: timestamp("completed_at"),
   recordCount: integer("record_count").notNull().default(0),
   payload: jsonb("payload"),
+  summary: jsonb("summary"),
   errorMessage: text("error_message"),
 }, (table) => [
   index("balance_sync_runs_status_requested_idx").on(table.status, table.requestedAt),
