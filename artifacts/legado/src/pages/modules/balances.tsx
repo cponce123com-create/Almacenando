@@ -464,7 +464,7 @@ export default function BalancesPage() {
             <Button
               size="sm"
               className="bg-teal-700 hover:bg-teal-800"
-              disabled={!nowSyncStatus?.connectorOnline || requestNowMutation.isPending || ["requested", "extracting", "preview"].includes(nowSyncStatus?.latest?.status ?? "")}
+              disabled={!(user?.role === "admin" || user?.role === "supervisor") || !nowSyncStatus?.connectorOnline || requestNowMutation.isPending || ["requested", "extracting", "preview", "confirming"].includes(nowSyncStatus?.latest?.status ?? "")}
               onClick={() => requestNowMutation.mutate()}
             >
               {requestNowMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
@@ -480,6 +480,7 @@ export default function BalancesPage() {
                 <span className="font-medium">Estado: {({
                   requested: "Solicitud pendiente",
                   extracting: "Consultando NOW",
+                  confirming: "Guardando saldos",
                   preview: "Pendiente de confirmación",
                   completed: "Completada",
                   rejected: "Descartada",
