@@ -9,6 +9,7 @@ export const balanceRecordsTable = pgTable("balance_records", {
   type: text("type"),
   code: text("code").notNull(),
   productDescription: text("product_description").notNull(),
+  shortDescription: text("short_description"),
   unit: text("unit").notNull(),
   quantity: doublePrecision("quantity").notNull().default(0),
   balanceDate: date("balance_date").notNull(),
