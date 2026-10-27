@@ -7,32 +7,46 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$apiRoot = $env:ALMACENANDO_API_URL
-$tokenSecure = $null
+$apiRoot = "https://almacenando.onrender.com/api/balances/now"
 $token = $null
 $script:oracleUserName = $null
 $script:oracleSecurePassword = $null
+$configDirectory = Join-Path $env:LOCALAPPDATA "Almacenando\DatatexNow"
+$configPath = Join-Path $configDirectory "connector.json"
 
 if ([IntPtr]::Size -ne 4) {
     throw "Ejecuta este conector con Windows PowerShell de 32 bits (SysWOW64)."
 }
-if ([string]::IsNullOrWhiteSpace($apiRoot) -or -not $apiRoot.StartsWith("https://")) {
-    throw "Configura ALMACENANDO_API_URL con la URL HTTPS aprobada de ALMACENANDO."
+
+if (Test-Path $configPath) {
+    $savedConfig = Get-Content -Path $configPath -Raw | ConvertFrom-Json
+    $tokenSecure = ConvertTo-SecureString $savedConfig.tokenProtected
+    $script:oracleSecurePassword = ConvertTo-SecureString $savedConfig.oraclePasswordProtected
+    $script:oracleUserName = [string]$savedConfig.oracleUserName
+} else {
+    Write-Host "Configuración inicial (solo la primera vez)."
+    Write-Host "Usará el DSN PRO de NOW; después no volverá a pedir estos datos."
+    $tokenSecure = Read-Host "Token configurado una sola vez en Render" -AsSecureString
+    $script:oracleUserName = Read-Host "Usuario Oracle (el de la macro, por ejemplo excel)"
+    $script:oracleSecurePassword = Read-Host "Contraseña Oracle (la de la macro)" -AsSecureString
+    if ($tokenSecure.Length -eq 0 -or [string]::IsNullOrWhiteSpace($script:oracleUserName) -or $script:oracleSecurePassword.Length -eq 0) {
+        throw "La configuración inicial está incompleta."
+    }
+    New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
+    $savedConfig = @{
+        tokenProtected = ConvertFrom-SecureString $tokenSecure
+        oracleUserName = $script:oracleUserName
+        oraclePasswordProtected = ConvertFrom-SecureString $script:oracleSecurePassword
+    }
+    $savedConfig | ConvertTo-Json | Set-Content -Path $configPath -Encoding UTF8
 }
-$apiRoot = $apiRoot.TrimEnd("/")
-$tokenSecure = Read-Host "Token del conector configurado por el administrador de ALMACENANDO" -AsSecureString
+
 $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
 try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer) }
 finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
     $tokenSecure.Dispose()
 }
-if ([string]::IsNullOrWhiteSpace($token)) { throw "El token no puede estar vacío." }
-
-$script:oracleUserName = Read-Host "Usuario Oracle autorizado"
-if ([string]::IsNullOrWhiteSpace($script:oracleUserName)) { throw "El usuario Oracle no puede estar vacío." }
-$script:oracleSecurePassword = Read-Host "Contraseña Oracle autorizada" -AsSecureString
-if ($script:oracleSecurePassword.Length -eq 0) { throw "La contraseña Oracle no puede estar vacía." }
 
 $headers = @{ "x-datatex-token" = $token }
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
