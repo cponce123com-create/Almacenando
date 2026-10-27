@@ -232,7 +232,7 @@ export default function BalancesPage() {
     mutationFn: () => apiJson(`${BASE}/api/balances/now/request`, { method: "POST" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
-      toast({ title: "Solicitud enviada", description: "El conector de la PC del trabajo consultará NOW." });
+      toast({ title: "Solicitud enviada", description: "El conector de la PC del trabajo consultará la base Oracle." });
     },
     onError: (e: Error) => toast({ title: "No se pudo solicitar la consulta", description: e.message, variant: "destructive" }),
   });
@@ -411,9 +411,9 @@ export default function BalancesPage() {
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div>
               <h2 id="now-sync-heading" className="font-semibold text-slate-900 flex items-center gap-2">
-                <RefreshCw className="w-4 h-4 text-teal-700" /> Sincronización Datatex NOW
+                <RefreshCw className="w-4 h-4 text-teal-700" /> Sincronización con base de datos Oracle
               </h2>
-              <p className="text-sm text-slate-600 mt-1">Consulta los saldos de QA y Q1 desde el conector de la computadora del trabajo.</p>
+              <p className="text-sm text-slate-600 mt-1">Consulta saldos de QA y Q1 por ODBC usando el DSN PRO de la computadora del trabajo.</p>
               <p className="text-xs text-slate-500 mt-2">
                 {nowSyncStatus?.connectorOnline
                   ? `Conector conectado · última señal ${new Date(nowSyncStatus.connectorLastSeenAt!).toLocaleString("es-PE")}`
