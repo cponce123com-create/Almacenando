@@ -233,7 +233,10 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1')
     } catch {
         $safeMessage = switch ($stage) {
             "conexión Oracle" { "No se pudo abrir la conexión Oracle. Revisa el DSN y la cuenta autorizada." }
-            "verificación de productos" { "No se pudo validar la unicidad de los productos en NOW.PRODUCT." }
+            "verificación de productos" {
+                Write-Host "Detalle Oracle (solo visible en esta PC): $($_.Exception.Message)"
+                "Falló la validación de productos en la base Oracle."
+            }
             "lectura de saldos" { $_.Exception.Message }
             default { "No se pudo transmitir la extracción por HTTPS." }
         }
