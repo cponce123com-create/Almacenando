@@ -266,7 +266,46 @@ export default function BalancesPage() {
     },
   });
 
-  const { data: nowSyncStatus, isError: nowStatusError } = useQuery<NowSyncStatus>({\n    queryKey: ["balances-now-status"],\n    queryFn: () => apiJson(`${BASE}/api/balances/now/status`),\n    refetchInterval: 10000,\n  });\n\n  const { data: nowPreview } = useQuery<NowPreview>({\n    queryKey: ["balances-now-preview", nowSyncStatus?.latest?.id],\n    queryFn: () => apiJson(`${BASE}/api/balances/now/${nowSyncStatus!.latest!.id}/preview`),\n    enabled: nowSyncStatus?.latest?.status === "preview",\n    refetchInterval: false,\n  });\n\n  const requestNowMutation = useMutation({\n    mutationFn: () => apiJson(`${BASE}/api/balances/now/request`, { method: "POST" }),\n    onSuccess: () => {\n      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });\n      toast({ title: "Solicitud enviada", description: "El conector de la PC del trabajo consultará NOW." });\n    },\n    onError: (e: Error) => toast({ title: "No se pudo solicitar la consulta", description: e.message, variant: "destructive" }),\n  });\n\n  const confirmNowMutation = useMutation({\n    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/confirm`, { method: "POST" }),\n    onSuccess: () => {\n      queryClient.invalidateQueries({ queryKey: ["balances"] });\n      queryClient.invalidateQueries({ queryKey: ["balance-dates"] });\n      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });\n      toast({ title: "Saldos de NOW guardados", description: "La extracción quedó registrada en el historial." });\n    },\n    onError: (e: Error) => toast({ title: "No se pudo confirmar la extracción", description: e.message, variant: "destructive" }),\n  });\n\n  const rejectNowMutation = useMutation({\n    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/reject`, { method: "POST" }),\n    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["balances-now-status"] }),\n    onError: (e: Error) => toast({ title: "No se pudo descartar la extracción", description: e.message, variant: "destructive" }),\n  });\n\n  const { data: dates = [] } = useQuery<{ balanceDate: string; batchId: string; warehouse: string }[]>({
+  const { data: nowSyncStatus, isError: nowStatusError } = useQuery<NowSyncStatus>({
+    queryKey: ["balances-now-status"],
+    queryFn: () => apiJson(`${BASE}/api/balances/now/status`),
+    refetchInterval: 10000,
+  });
+
+  const { data: nowPreview } = useQuery<NowPreview>({
+    queryKey: ["balances-now-preview", nowSyncStatus?.latest?.id],
+    queryFn: () => apiJson(`${BASE}/api/balances/now/${nowSyncStatus!.latest!.id}/preview`),
+    enabled: nowSyncStatus?.latest?.status === "preview",
+    refetchInterval: false,
+  });
+
+  const requestNowMutation = useMutation({
+    mutationFn: () => apiJson(`${BASE}/api/balances/now/request`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
+      toast({ title: "Solicitud enviada", description: "El conector de la PC del trabajo consultará NOW." });
+    },
+    onError: (e: Error) => toast({ title: "No se pudo solicitar la consulta", description: e.message, variant: "destructive" }),
+  });
+
+  const confirmNowMutation = useMutation({
+    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/confirm`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["balances"] });
+      queryClient.invalidateQueries({ queryKey: ["balance-dates"] });
+      queryClient.invalidateQueries({ queryKey: ["balances-now-status"] });
+      toast({ title: "Saldos de NOW guardados", description: "La extracción quedó registrada en el historial." });
+    },
+    onError: (e: Error) => toast({ title: "No se pudo confirmar la extracción", description: e.message, variant: "destructive" }),
+  });
+
+  const rejectNowMutation = useMutation({
+    mutationFn: (id: string) => apiJson(`${BASE}/api/balances/now/${id}/reject`, { method: "POST" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["balances-now-status"] }),
+    onError: (e: Error) => toast({ title: "No se pudo descartar la extracción", description: e.message, variant: "destructive" }),
+  });
+
+  const { data: dates = [] } = useQuery<{ balanceDate: string; batchId: string; warehouse: string }[]>({
     queryKey: ["balance-dates", warehouse],
     queryFn: () => apiJson(`${BASE}/api/balances/dates${warehouseParam}`),
   });
@@ -417,7 +456,9 @@ export default function BalancesPage() {
               <p className="text-xs text-slate-500 mt-2">
                 {nowSyncStatus?.connectorOnline
                   ? `Conector conectado · última señal ${new Date(nowSyncStatus.connectorLastSeenAt!).toLocaleString("es-PE")}`
-                  : nowSyncStatus?.connectorConfigured === false\n                    ? "Conector no configurado en el servidor. Se activará después de configurar la credencial."\n                    : "Conector desconectado. Inicia el conector Windows para habilitar la consulta."}
+                  : nowSyncStatus?.connectorConfigured === false
+                    ? "Conector no configurado en el servidor. Se activará después de configurar la credencial."
+                    : "Conector desconectado. Inicia el conector Windows para habilitar la consulta."}
               </p>
             </div>
             <Button
@@ -533,7 +574,8 @@ export default function BalancesPage() {
                     <TableHead>Código</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>UM</TableHead>
-            <TableHead>Ubicación / zona</TableHead><TableHead>Origen</TableHead>\n            <TableHead>Origen</TableHead>
+            <TableHead>Ubicación / zona</TableHead><TableHead>Origen</TableHead>
+            <TableHead>Origen</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead>Fecha SA</TableHead>
                     <TableHead>Últ. Consumo</TableHead>
@@ -558,7 +600,8 @@ export default function BalancesPage() {
                       <TableCell>{r.productDescription}</TableCell>
                       <TableCell className="text-slate-500">{r.unit}</TableCell>
               <TableCell className="text-xs text-slate-500">{[r.locationSummary, r.zoneSummary].filter(Boolean).join(" · ") || "—"}</TableCell>
-              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>\n              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
+              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
+              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
                       <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
                       <TableCell className="text-sm whitespace-nowrap">
