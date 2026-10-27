@@ -574,8 +574,8 @@ export default function BalancesPage() {
                     <TableHead>Código</TableHead>
                     <TableHead>Descripción</TableHead>
                     <TableHead>UM</TableHead>
-            <TableHead>Ubicación / zona</TableHead><TableHead>Origen</TableHead>
-            <TableHead>Origen</TableHead>
+                    <TableHead>Ubicación / zona</TableHead>
+                    <TableHead>Origen</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead>Fecha SA</TableHead>
                     <TableHead>Últ. Consumo</TableHead>
@@ -600,7 +600,6 @@ export default function BalancesPage() {
                       <TableCell>{r.productDescription}</TableCell>
                       <TableCell className="text-slate-500">{r.unit}</TableCell>
               <TableCell className="text-xs text-slate-500">{[r.locationSummary, r.zoneSummary].filter(Boolean).join(" · ") || "—"}</TableCell>
-              <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
               <TableCell><span className={r.source === "NOW" ? "rounded bg-teal-100 px-2 py-0.5 text-xs text-teal-800" : "rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600"}>{r.source === "NOW" ? "NOW" : "EXCEL"}</span></TableCell>
                       <TableCell className="text-right font-semibold font-mono">{parseFloat(r.quantity).toFixed(2)}</TableCell>
                       <TableCell className="text-slate-500">{r.balanceDate}</TableCell>
