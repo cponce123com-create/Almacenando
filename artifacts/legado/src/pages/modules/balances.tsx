@@ -416,7 +416,7 @@ export default function BalancesPage() {
               <p className="text-xs text-slate-500 mt-2">
                 {nowSyncStatus?.connectorOnline
                   ? `Conector conectado · última señal ${new Date(nowSyncStatus.connectorLastSeenAt!).toLocaleString("es-PE")}`
-                  : "Conector desconectado. Inicia el conector Windows para habilitar la consulta."}
+                  : nowSyncStatus?.connectorConfigured === false\n                    ? "Conector no configurado en el servidor. Se activará después de configurar la credencial."\n                    : "Conector desconectado. Inicia el conector Windows para habilitar la consulta."}
               </p>
             </div>
             <Button
