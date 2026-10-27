@@ -26,7 +26,7 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
 }) {
   const [runId, setRunId] = useState<string | null>(null);
   const { toast } = useToast();
-  const validWarehouse = ["QA", "Q1", "QP", "QL", "QC"].includes(warehouse);
+  const validWarehouse = ["QA", "Q1", "QP", "QL", "QC", "all"].includes(warehouse);
 
   const requestMutation = useMutation({
     mutationFn: () => apiRequest<{ id: string }>("/api/balances/now/products/request", {
@@ -85,7 +85,7 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
         size="sm"
         className="gap-1.5 border-teal-200 text-teal-700 hover:bg-teal-50"
         disabled={!canSync || !validWarehouse || busy || Boolean(runId)}
-        title={!validWarehouse ? "Selecciona QA, Q1, QP, QL o QC en el selector de almacén." : undefined}
+        title={!validWarehouse ? "Selecciona QA, Q1, QP, QL, QC o Todos los almacenes." : undefined}
         onClick={() => requestMutation.mutate()}
       >
         {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -93,7 +93,7 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
       </Button>
 
       {!validWarehouse && (
-        <p className="text-xs text-slate-500">Selecciona un almacén (QA, Q1, QP, QL o QC) para sincronizar su maestra.</p>
+        <p className="text-xs text-slate-500">Selecciona un almacén o Todos los almacenes para sincronizar la maestra.</p>
       )}
 
       {busy && (
