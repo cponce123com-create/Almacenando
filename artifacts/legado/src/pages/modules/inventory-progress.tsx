@@ -410,19 +410,21 @@ export default function InventoryProgressPage() {
       year: "numeric",
     }).format(now);
     const rangeLabel = inactivityFilterOptions.find(option => option.value === recommendationFilter)?.label ?? "Todos";
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 10;
     const columns = [
-      { title: "Código", width: 22 },
-      { title: "Descripción", width: 62 },
+      { title: "Código", width: 24 },
+      { title: "Descripción", width: 67 },
       { title: "Último\nconsumo", width: 32 },
-      { title: "Saldo\nsistema", width: 34 },
-      { title: "Peso\nfísico", width: 40 },
+      { title: "Saldo\nsistema", width: 32 },
+      { title: "Lote\n(20 dígitos)", width: 54 },
+      { title: "Falta\netiqueta", width: 25 },
+      { title: "Peso\nfísico", width: 43 },
     ];
-    const headerY = 48;
+    const headerY = 42;
     const headerHeight = 12;
-    const rowHeight = 20;
+    const rowHeight = 14;
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(17);
@@ -434,7 +436,7 @@ export default function InventoryProgressPage() {
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`Selección: ${rangeLabel}  ·  ${products.length} productos priorizados`, margin, 33);
-    doc.text("Anote el peso físico medido en la última columna.", margin, 39);
+    doc.text("Marque si falta la etiqueta; anote el lote y el peso físico medido.", margin, 39);
 
     let x = margin;
     for (const column of columns) {
@@ -465,6 +467,8 @@ export default function InventoryProgressPage() {
           ? "Sin saldo"
           : `${product.currentQuantity.toLocaleString("es-PE", { maximumFractionDigits: 3 })} ${product.unit}`,
         "",
+        "",
+        "",
       ];
       let cellX = margin;
       doc.setDrawColor(180, 190, 200);
@@ -476,8 +480,18 @@ export default function InventoryProgressPage() {
         doc.rect(cellX, y, column.width, rowHeight, "FD");
         if (columnIndex < 4) {
           const value = cells[columnIndex] ?? "";
-          const lines = doc.splitTextToSize(value, column.width - 4).slice(0, 3);
-          doc.text(lines, cellX + 2, y + 6);
+          const lines = doc.splitTextToSize(value, column.width - 4).slice(0, 2);
+          doc.text(lines, cellX + 2, y + 4.5);
+        } else if (columnIndex === 5) {
+          const checkboxSize = 4;
+          doc.setDrawColor(71, 85, 105);
+          doc.rect(
+            cellX + (column.width - checkboxSize) / 2,
+            y + (rowHeight - checkboxSize) / 2,
+            checkboxSize,
+            checkboxSize,
+            "S",
+          );
         }
         cellX += column.width;
       });
