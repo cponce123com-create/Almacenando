@@ -121,7 +121,6 @@ router.post("/connector/:id/result", (req, res, next) => {
     return;
   }
   next();
-  next();
 }, asyncHandler(async (req, res) => {
   const parsed = resultSchema.safeParse(req.body);
   if (!parsed.success) {
