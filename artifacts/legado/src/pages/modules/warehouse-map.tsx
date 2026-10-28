@@ -80,6 +80,8 @@ export default function MapaDelAlmacenPage() {
   const [newZoneName, setNewZoneName] = useState("");
   const [showNewZone, setShowNewZone] = useState(false);
   const [confirmRemoveArea, setConfirmRemoveArea] = useState(false);
+  const [editingAreaLabel, setEditingAreaLabel] = useState(false);
+  const [areaLabelDraft, setAreaLabelDraft] = useState("");
   const warehouse = "Q1";
   const canEdit = user?.role === "admin" || user?.role === "supervisor";
 
@@ -164,6 +166,18 @@ export default function MapaDelAlmacenPage() {
       toast({ title: "Elemento quitado del plano", description: "Se conservaron la ubicación física y sus productos vinculados." });
     },
     onError: (error: Error) => toast({ title: "No se pudo quitar del plano", description: error.message, variant: "destructive" }),
+  });
+  const updateAreaLabel = useMutation({
+    mutationFn: ({ id, label, layout }: { id: string; label: string; layout: Layout }) => api(`/api/locations/${id}/map-layout`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mapX: layout.x, mapY: layout.y, mapWidth: layout.width, mapHeight: layout.height, mapLabel: label }),
+    }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/locations", warehouse] });
+      setEditingAreaLabel(false);
+      toast({ title: "Descripción actualizada", description: "Se cambió el texto que aparece en el plano." });
+    },
+    onError: (error: Error) => toast({ title: "No se pudo cambiar la descripción", description: error.message, variant: "destructive" }),
   });
   const associateCode = useMutation({
     mutationFn: () => {
@@ -257,6 +271,7 @@ export default function MapaDelAlmacenPage() {
           {canEdit && <div className="flex gap-2">
             <Button size="sm" variant={editing ? "default" : "outline"} onClick={() => { setEditing(!editing); setShowNewZone(false); }} className="gap-2"><Pencil className="h-4 w-4" />{editing ? "Terminar edición" : "Editar plano"}</Button>
             {editing && <Button size="sm" variant="outline" onClick={() => setShowNewZone(true)} className="gap-2"><Plus className="h-4 w-4" />Nueva zona</Button>}
+            {selectedArea?.kind === "storage" && <Button size="sm" variant="destructive" onClick={() => setConfirmRemoveArea(true)} disabled={removeArea.isPending} className="gap-2"><Trash2 className="h-4 w-4" />Quitar selección</Button>}
           </div>}
         </div>
 
@@ -288,7 +303,11 @@ export default function MapaDelAlmacenPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="font-bold text-slate-800">{selectedArea?.label ?? "Detalle del plano"}</h2>
             {selectedArea ? <><p className="mt-1 text-xs text-slate-500">{selectedArea.description} · {selectedArea.zone || "Sin zona asignada"}{selectedArea.rack ? ` · ${selectedArea.rack}` : ""}</p>
-              {editing && canEdit && selectedArea.kind === "storage" && <Button className="mt-3" size="sm" variant="destructive" onClick={() => setConfirmRemoveArea(true)} disabled={removeArea.isPending}><Trash2 className="mr-2 h-4 w-4" />Quitar {selectedArea.description?.toLocaleLowerCase("es") ?? "zona"} del plano</Button>}
+              {canEdit && selectedArea.kind === "storage" && (editingAreaLabel ? <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="min-w-56 flex-1 text-sm font-medium text-slate-700">Descripción visible en el plano<Input className="mt-1" value={areaLabelDraft} onChange={(event) => setAreaLabelDraft(event.target.value)} maxLength={120} autoFocus /></label>
+                <Button size="sm" onClick={() => updateAreaLabel.mutate({ id: selectedArea.locationId, label: areaLabelDraft.trim(), layout: drafts[selectedArea.id] ?? selectedArea })} disabled={updateAreaLabel.isPending || !areaLabelDraft.trim()}>{updateAreaLabel.isPending ? "Guardando..." : "Guardar"}</Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditingAreaLabel(false)} disabled={updateAreaLabel.isPending}>Cancelar</Button>
+              </div> : <Button className="mt-3" size="sm" variant="outline" onClick={() => { setAreaLabelDraft(selectedArea.label); setEditingAreaLabel(true); }}>Cambiar descripción</Button>)}
               {areaBalances.length ? <div className="mt-3 divide-y">{areaBalances.slice(0,20).map((balance) => <div key={balance.id} className="flex justify-between gap-3 py-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{balance.productDescription}</p><p className="font-mono text-xs text-slate-500">{balance.code} · {balance.locationSummary}</p></div><b className="shrink-0 text-sm">{qty(balance.quantity)} {balance.unit}</b></div>)}</div> : <p className="mt-3 rounded bg-slate-50 p-3 text-sm text-slate-500">No hay productos vinculados a esta zona todavía.</p>}
             </> : <p className="mt-2 text-sm text-slate-600">Elige un bloque del plano para ver su detalle. {section === "colorantes" ? "Los cinco racks tienen cuatro niveles." : "Auxiliares A tiene tres niveles y nueve ubicaciones por nivel."}</p>}
           </section>
@@ -305,7 +324,7 @@ export default function MapaDelAlmacenPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Quitar “{selectedArea?.label}” del plano?</AlertDialogTitle>
             <AlertDialogDescription>
-              El bloque dejará de aparecer en este plano. Se conservarán la ubicación física y los productos o registros vinculados; esta acción no los elimina de la base de datos.
+              El bloque dejará de aparecer en este plano, incluso si aún no tiene productos vinculados. Se conservarán la ubicación física y los registros de la base de datos.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

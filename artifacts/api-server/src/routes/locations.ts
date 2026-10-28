@@ -40,6 +40,7 @@ const mapLayoutSchema = z.object({
   mapY: z.number().min(0).max(95),
   mapWidth: z.number().min(5).max(100),
   mapHeight: z.number().min(5).max(100),
+  mapLabel: z.string().trim().min(1).max(120).optional(),
 });
 
 /**
