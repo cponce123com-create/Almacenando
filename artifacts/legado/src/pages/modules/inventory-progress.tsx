@@ -40,23 +40,10 @@ interface CycleProduct {
   currentQuantity: number | null; currentBalanceDate: string | null; currentUltimoConsumo: string | null;
 }
 
-interface Recommendation {
-  id: string; productId: string; code: string; productName: string;
-  unit: string; location?: string | null; category?: string | null;
-  priority: number; initialQuantity: number | null;
-  initialUltimoConsumo: string | null; status: string;
-}
-
 interface ProgressResponse {
   cycle: Cycle;
   stats: { pending: number; counted: number; verified: number; consumptionAlert: number; withoutMovement: number; skipped: number; total: number };
   products: CycleProduct[];
-}
-
-interface RecommendationResponse {
-  recommendations: Recommendation[];
-  totalPending: number;
-  suggestedCount: number;
 }
 
 interface CycleHistoryItem {
@@ -109,9 +96,39 @@ function statusBadge(status: string) {
   );
 }
 
+type InactivityFilter = "all" | "3-6" | "6-9" | "9-12" | "12+" | "unknown";
+type InactivityBucket = Exclude<InactivityFilter, "all"> | "under3";
+
+const inactivityFilterOptions: Array<{ value: InactivityFilter; label: string }> = [
+  { value: "all", label: "Todos" },
+  { value: "3-6", label: "3–6 meses" },
+  { value: "6-9", label: "6–9 meses" },
+  { value: "9-12", label: "9–12 meses" },
+  { value: "12+", label: "12+ meses" },
+  { value: "unknown", label: "Sin fecha" },
+];
+
+function daysSinceConsumption(lastConsumption: string | null | undefined): number | null {
+  // NOW usa 2013-01-01 como fecha provisional cuando no hay consumo confiable.
+  if (!lastConsumption || lastConsumption <= "2013-01-01") return null;
+  const timestamp = Date.parse(`${lastConsumption}T00:00:00Z`);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
+}
+
+function inactivityBucket(lastConsumption: string | null | undefined): InactivityBucket {
+  const days = daysSinceConsumption(lastConsumption);
+  if (days === null) return "unknown";
+  if (days >= 365) return "12+";
+  if (days >= 270) return "9-12";
+  if (days >= 180) return "6-9";
+  if (days >= 90) return "3-6";
+  return "under3";
+}
+
 function inactivityBand(lastConsumption: string | null | undefined) {
-  if (!lastConsumption) return "Sin fecha confiable";
-  const days = Math.max(0, Math.floor((Date.now() - new Date(`${lastConsumption}T00:00:00`).getTime()) / 86_400_000));
+  const days = daysSinceConsumption(lastConsumption);
+  if (days === null) return "Sin fecha confiable";
   if (days >= 365) return `12+ meses · ${days} días`;
   if (days >= 270) return `9–12 meses · ${days} días`;
   if (days >= 180) return `6–9 meses · ${days} días`;
@@ -119,10 +136,8 @@ function inactivityBand(lastConsumption: string | null | undefined) {
   return `Menos de 3 meses · ${days} días`;
 }
 
-function RecommendationCard({ rec, onUse }: { rec: Recommendation; onUse: (rec: Recommendation) => void }) {
-  const daysSinceConsumo = rec.initialUltimoConsumo
-    ? Math.floor((new Date().getTime() - new Date(rec.initialUltimoConsumo).getTime()) / 86400000)
-    : null;
+function RecommendationCard({ rec, onUse }: { rec: CycleProduct; onUse: (rec: CycleProduct) => void }) {
+  const daysSinceConsumo = daysSinceConsumption(rec.currentUltimoConsumo);
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
@@ -141,9 +156,9 @@ function RecommendationCard({ rec, onUse }: { rec: Recommendation; onUse: (rec: 
           <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-500">
             <span>{rec.unit}</span>
             {rec.location && <span>{rec.location}</span>}
-            {rec.initialQuantity !== null && (
+            {rec.currentQuantity !== null && (
               <span className="font-mono">
-                Saldo: {rec.initialQuantity.toFixed(2)}
+                Saldo NOW: {rec.currentQuantity.toFixed(2)}
               </span>
             )}
           </div>
@@ -152,17 +167,15 @@ function RecommendationCard({ rec, onUse }: { rec: Recommendation; onUse: (rec: 
           <Target className="w-3.5 h-3.5 mr-1" /> Contar
         </Button>
       </div>
-      {rec.initialUltimoConsumo && (
-        <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-400">
-          <Clock className="w-3 h-3" />
-          Últ. consumo: {rec.initialUltimoConsumo}
-          {daysSinceConsumo !== null && (
-            <span className={daysSinceConsumo > 365 ? "text-red-500 font-medium" : ""}>
-              ({Math.floor(daysSinceConsumo / 30.44)} meses)
-            </span>
-          )}
-        </div>
-      )}
+      <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2 text-xs text-slate-400">
+        <Clock className="w-3 h-3" />
+        Últ. consumo: {rec.currentUltimoConsumo && rec.currentUltimoConsumo > "2013-01-01" ? rec.currentUltimoConsumo : "Sin fecha confiable"}
+        {daysSinceConsumo !== null && (
+          <span className={daysSinceConsumo >= 365 ? "text-red-500 font-medium" : ""}>
+            ({Math.floor(daysSinceConsumo / 30.44)} meses)
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -192,6 +205,7 @@ export default function InventoryProgressPage() {
   const [selectedProduct, setSelectedProduct] = useState<CycleProduct | null>(null);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [resetConfirmation, setResetConfirmation] = useState("");
+  const [recommendationFilter, setRecommendationFilter] = useState<InactivityFilter>("all");
 
   const warehouseParam = `?warehouse=${warehouse}&type=Q`;
 
@@ -230,10 +244,10 @@ export default function InventoryProgressPage() {
     enabled: !!activeCycle,
   });
 
-  // Get recommendations
-  const { data: recommendations } = useQuery<RecommendationResponse>({
-    queryKey: ["cycle-recommendations", activeCycle?.id],
-    queryFn: () => apiJson(`${BASE}/api/inventory-cycles/${activeCycle!.id}/recommendations?limit=5`),
+  // Keep recommendations independent from the Kanban board's search/status filters.
+  const { data: pendingProgress } = useQuery<ProgressResponse>({
+    queryKey: ["cycle-pending-progress", activeCycle?.id],
+    queryFn: () => apiJson(`${BASE}/api/inventory-cycles/${activeCycle!.id}/progress?status=pending`),
     enabled: !!activeCycle,
     refetchInterval: 30000,
   });
@@ -281,7 +295,7 @@ export default function InventoryProgressPage() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["active-cycle"] });
       qc.invalidateQueries({ queryKey: ["cycle-progress"] });
-      qc.invalidateQueries({ queryKey: ["cycle-recommendations"] });
+      qc.invalidateQueries({ queryKey: ["cycle-pending-progress"] });
       qc.invalidateQueries({ queryKey: ["cycle-history"] });
       qc.invalidateQueries({ queryKey: ["inventory-live-progress"] });
       setShowResetDialog(false);
@@ -316,7 +330,7 @@ export default function InventoryProgressPage() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["active-cycle"] });
       qc.invalidateQueries({ queryKey: ["cycle-progress"] });
-      qc.invalidateQueries({ queryKey: ["cycle-recommendations"] });
+      qc.invalidateQueries({ queryKey: ["cycle-pending-progress"] });
       setDetectResult(data);
       toast({ title: "Detección completada", description: data.message });
     },
@@ -329,7 +343,7 @@ export default function InventoryProgressPage() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["active-cycle"] });
       qc.invalidateQueries({ queryKey: ["cycle-progress"] });
-      qc.invalidateQueries({ queryKey: ["cycle-recommendations"] });
+      qc.invalidateQueries({ queryKey: ["cycle-pending-progress"] });
       qc.invalidateQueries({ queryKey: ["inventory-live-progress"] });
       toast({
         title: "Ciclo sincronizado",
@@ -351,6 +365,27 @@ export default function InventoryProgressPage() {
   });
 
   const progress = progressQuery.data;
+  const pendingRecommendationProducts = pendingProgress?.products ?? [];
+  const recommendationCounts = useMemo(() => {
+    const counts: Record<InactivityFilter, number> = {
+      all: pendingRecommendationProducts.length,
+      "3-6": 0,
+      "6-9": 0,
+      "9-12": 0,
+      "12+": 0,
+      unknown: 0,
+    };
+    for (const product of pendingRecommendationProducts) {
+      const bucket = inactivityBucket(product.currentUltimoConsumo);
+      if (bucket !== "under3") counts[bucket] += 1;
+    }
+    return counts;
+  }, [pendingProgress?.products]);
+  const filteredRecommendations = useMemo(() => pendingRecommendationProducts
+    .filter(product => recommendationFilter === "all" || inactivityBucket(product.currentUltimoConsumo) === recommendationFilter)
+    .sort((a, b) => b.priority - a.priority || a.code.localeCompare(b.code))
+    .slice(0, 5),
+  [pendingProgress?.products, recommendationFilter]);
   const stats = progress?.stats ?? { pending: 0, counted: 0, verified: 0, consumptionAlert: 0, withoutMovement: 0, skipped: 0, total: 0 };
   const totalDone = stats.counted + stats.verified + stats.withoutMovement + stats.skipped;
   const pctComplete = stats.total > 0 ? Math.round((totalDone / stats.total) * 100) : 0;
@@ -502,22 +537,39 @@ export default function InventoryProgressPage() {
         )}
 
         {/* Recommendations */}
-        {activeCycle && recommendations && recommendations.recommendations.length > 0 && (
+        {activeCycle && pendingProgress && pendingRecommendationProducts.length > 0 && (
           <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-4">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <Lightbulb className="w-5 h-5 text-blue-600" />
               <h2 className="text-sm font-bold text-blue-800">Recomendaciones inteligentes</h2>
-              <span className="text-xs text-blue-500 ml-auto">
-                {recommendations.totalPending} productos pendientes — te sugerimos contar estos {recommendations.suggestedCount}:
+              <span className="text-xs text-blue-500 sm:ml-auto">
+                {recommendationCounts[recommendationFilter]} pendientes en esta selección; muestra hasta {filteredRecommendations.length} para contar.
               </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-              {recommendations.recommendations.map(rec => (
-                <RecommendationCard key={rec.id} rec={rec} onUse={(r) => {
-                  setLocation(`/inventory?productId=${encodeURIComponent(r.productId)}&warehouse=Q1`);
-                }} />
+            <div className="mb-4 flex flex-wrap gap-2">
+              {inactivityFilterOptions.map(option => (
+                <Button key={option.value} type="button" size="sm"
+                  variant={recommendationFilter === option.value ? "default" : "outline"}
+                  aria-pressed={recommendationFilter === option.value}
+                  onClick={() => setRecommendationFilter(option.value)}
+                  className={recommendationFilter === option.value ? "bg-blue-700 hover:bg-blue-800" : "bg-white"}>
+                  {option.label} <span className="ml-1 opacity-75">({recommendationCounts[option.value]})</span>
+                </Button>
               ))}
             </div>
+            {filteredRecommendations.length === 0 ? (
+              <p className="rounded-lg bg-white/80 px-3 py-5 text-center text-sm text-slate-500">
+                No hay productos pendientes en este rango de inactividad.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                {filteredRecommendations.map(product => (
+                  <RecommendationCard key={product.id} rec={product} onUse={(r) => {
+                    setLocation(`/inventory?productId=${encodeURIComponent(r.productId)}&warehouse=Q1`);
+                  }} />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
