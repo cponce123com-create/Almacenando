@@ -266,6 +266,11 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
       conflict = true;
       return;
     }
+    // NOW balances are a current snapshot, not an append-only history. Replace
+    // the previous connector snapshot only after this extraction has passed
+    // validation and is being confirmed. Keep Excel/manual balances untouched.
+    await tx.delete(balanceRecordsTable)
+      .where(eq(balanceRecordsTable.source, "NOW"));
     await tx.insert(balanceRecordsTable).values(payload.rows.map(row => ({
       id: generateId(),
       warehouse: row.warehouse,
