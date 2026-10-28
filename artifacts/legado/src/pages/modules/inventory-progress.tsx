@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
@@ -167,6 +168,7 @@ function RecommendationCard({ rec, onUse }: { rec: Recommendation; onUse: (rec: 
 }
 
 export default function InventoryProgressPage() {
+  const [, setLocation] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -512,7 +514,7 @@ export default function InventoryProgressPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
               {recommendations.recommendations.map(rec => (
                 <RecommendationCard key={rec.id} rec={rec} onUse={(r) => {
-                  window.open(`${BASE}/inventory?productId=${r.productId}`, "_self");
+                  setLocation(`/inventory?productId=${encodeURIComponent(r.productId)}&warehouse=Q1`);
                 }} />
               ))}
             </div>
@@ -790,7 +792,7 @@ export default function InventoryProgressPage() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setSelectedProduct(null)}>Cerrar</Button>
-                <Button onClick={() => window.open(`${BASE}/inventory?productId=${encodeURIComponent(selectedProduct.productId)}&warehouse=Q1`, "_self")}>
+                <Button onClick={() => setLocation(`/inventory?productId=${encodeURIComponent(selectedProduct.productId)}&warehouse=Q1`)}>
                   <Target className="mr-2 h-4 w-4" /> {selectedProduct.physicalCount === null || selectedProduct.status === "consumption_alert" ? "Inventariar ahora" : "Volver a inventariar"}
                 </Button>
               </DialogFooter>
