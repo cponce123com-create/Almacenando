@@ -107,7 +107,13 @@ router.get("/history", requireAuth, asyncHandler(async (_req, res) => {
 router.post("/request", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {
   const active = await db.select({ id: balanceSyncRunsTable.id, status: balanceSyncRunsTable.status })
     .from(balanceSyncRunsTable)
-    .where(inArray(balanceSyncRunsTable.status, [...activeStatuses]))
+    // The connector queue is shared, but each module should only block a
+    // duplicate request of its own kind. Other kinds are processed in order.
+    .where(and(
+      notLike(balanceSyncRunsTable.id, "product-%"),
+      notLike(balanceSyncRunsTable.id, "availability-%"),
+      inArray(balanceSyncRunsTable.status, [...activeStatuses]),
+    ))
     .orderBy(asc(balanceSyncRunsTable.requestedAt))
     .limit(1);
   if (active[0]) {

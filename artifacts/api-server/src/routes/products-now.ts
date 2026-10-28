@@ -40,7 +40,8 @@ router.post("/request", requireAuth, requireRole("supervisor", "admin"), asyncHa
   const parsed = z.object({ warehouse: z.enum(["QA", "Q1", "QP", "QL", "QC", "all"]) }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Selecciona un almacén válido." }); return; }
   const [active] = await db.select({ id: balanceSyncRunsTable.id }).from(balanceSyncRunsTable)
-    .where(inArray(balanceSyncRunsTable.status, [...activeStatuses])).limit(1);
+    .where(and(like(balanceSyncRunsTable.id, "product-%"), inArray(balanceSyncRunsTable.status, [...activeStatuses])))
+    .limit(1);
   if (active) { res.status(409).json({ error: "Ya existe una sincronización en curso.", requestId: active.id }); return; }
   const id = "product-" + parsed.data.warehouse + "-" + generateId();
   await db.insert(balanceSyncRunsTable).values({ id, status: "requested", requestedBy: req.userId, requestedAt: new Date() });
