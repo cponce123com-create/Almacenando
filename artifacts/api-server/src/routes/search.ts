@@ -5,9 +5,9 @@
  */
 
 import { Router } from "express";
-import { db, productsTable, locationsTable, suppliesTable, samplesTable, personnelTable, dyeLotsTable } from "@workspace/db";
-import { or, ilike, sql, count } from "drizzle-orm";
-import { requireAuth } from "../lib/auth.js";
+import { db, productsTable, locationsTable, suppliesTable, samplesTable, personnelTable, dyeLotsTable, userPermissionsTable } from "@workspace/db";
+import { or, ilike, sql, eq } from "drizzle-orm";
+import { requireAuth, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 
 const router = Router();
@@ -22,6 +22,25 @@ const TOTAL_LIMIT = 20;
  * Resultados agrupados por categoría con link al módulo correspondiente.
  */
 router.get("/", requireAuth, asyncHandler(async (req, res) => {
+  const { userRole } = req as AuthenticatedRequest;
+  const permissions = userRole === "admin"
+    ? []
+    : await db.select({ pageId: userPermissionsTable.pageId, canView: userPermissionsTable.canView })
+      .from(userPermissionsTable)
+      .where(eq(userPermissionsTable.role, userRole));
+  const allowed = new Set(userRole === "admin"
+    ? ["products", "locations", "supplies", "samples", "personnel", "dye_lots"]
+    : permissions.filter(permission => permission.canView).map(permission => permission.pageId));
+
+  const canSearch = {
+    products: allowed.has("products"),
+    locations: allowed.has("locations"),
+    supplies: allowed.has("supplies"),
+    samples: allowed.has("samples"),
+    personnel: allowed.has("personnel"),
+    lots: allowed.has("dye_lots"),
+  };
+
   const q = (req.query.q as string ?? "").trim();
   if (!q || q.length < 2) {
     res.json({ query: q, results: [] });
@@ -32,7 +51,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
 
   const [products, locations, supplies, samples, personnel, lots] = await Promise.all([
     // ── Products ──────────────────────────────────────────────────────────
-    db
+    canSearch.products ? db
       .select({
         id: productsTable.id,
         label: sql<string>`${productsTable.code} || ' — ' || ${productsTable.name}`,
@@ -49,10 +68,10 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
           ilike(productsTable.casNumber, term),
         ),
       )
-      .limit(SEARCH_LIMIT_PER_CATEGORY),
+      .limit(SEARCH_LIMIT_PER_CATEGORY) : Promise.resolve([]),
 
     // ── Locations ─────────────────────────────────────────────────────────
-    db
+    canSearch.locations ? db
       .select({
         id: locationsTable.id,
         label: sql<string>`${locationsTable.warehouse} || ' / ' || COALESCE(${locationsTable.zone}, '') || ' / ' || COALESCE(${locationsTable.rack}, '') || ' / ' || COALESCE(${locationsTable.shelf}, '')`,
@@ -70,10 +89,10 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
           ilike(locationsTable.barcode, term),
         ),
       )
-      .limit(SEARCH_LIMIT_PER_CATEGORY),
+      .limit(SEARCH_LIMIT_PER_CATEGORY) : Promise.resolve([]),
 
     // ── Supplies ──────────────────────────────────────────────────────────
-    db
+    canSearch.supplies ? db
       .select({
         id: suppliesTable.id,
         label: sql<string>`${suppliesTable.code} || ' — ' || ${suppliesTable.description}`,
@@ -88,10 +107,10 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
           ilike(suppliesTable.description, term),
         ),
       )
-      .limit(SEARCH_LIMIT_PER_CATEGORY),
+      .limit(SEARCH_LIMIT_PER_CATEGORY) : Promise.resolve([]),
 
     // ── Samples ───────────────────────────────────────────────────────────
-    db
+    canSearch.samples ? db
       .select({
         id: samplesTable.id,
         label: sql<string>`${samplesTable.sampleCode} || ' — ' || COALESCE(${samplesTable.productName}, '')`,
@@ -106,10 +125,10 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
           ilike(samplesTable.productName, term),
         ),
       )
-      .limit(SEARCH_LIMIT_PER_CATEGORY),
+      .limit(SEARCH_LIMIT_PER_CATEGORY) : Promise.resolve([]),
 
     // ── Personnel ─────────────────────────────────────────────────────────
-    db
+    canSearch.personnel ? db
       .select({
         id: personnelTable.id,
         label: personnelTable.name,
@@ -124,10 +143,10 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
           ilike(personnelTable.position, term),
         ),
       )
-      .limit(SEARCH_LIMIT_PER_CATEGORY),
+      .limit(SEARCH_LIMIT_PER_CATEGORY) : Promise.resolve([]),
 
     // ── Dye lots ──────────────────────────────────────────────────────────
-    db
+    canSearch.lots ? db
       .select({
         id: dyeLotsTable.id,
         label: dyeLotsTable.lotNumber,
@@ -137,7 +156,7 @@ router.get("/", requireAuth, asyncHandler(async (req, res) => {
       })
       .from(dyeLotsTable)
       .where(ilike(dyeLotsTable.lotNumber, term))
-      .limit(SEARCH_LIMIT_PER_CATEGORY),
+      .limit(SEARCH_LIMIT_PER_CATEGORY) : Promise.resolve([]),
   ]);
 
   // Armar respuesta agrupada (solo categorías con resultados)
