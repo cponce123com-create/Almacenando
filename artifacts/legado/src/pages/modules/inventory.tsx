@@ -188,7 +188,7 @@ export default function TomaDeInventarioPage() {
     refetchOnMount: true,
   });
   // Sync active round
-  useEffect(() => { if (activeRoundData) setActiveRound(activeRoundData); }, [activeRoundData]);
+  useEffect(() => { setActiveRound(activeRoundData ?? null); }, [activeRoundData]);
 
   const { data: latestBalances = EMPTY_BALANCES } = useQuery<BalanceRecord[]>({
     queryKey: ["/api/balances/latest", selectedWarehouse],
@@ -258,7 +258,7 @@ export default function TomaDeInventarioPage() {
       });
     }
     return list;
-  }, [records, filterProduct, debouncedSearch, productMap]);
+  }, [records, filterProduct, debouncedSearch, productMap, showCurrentRoundOnly, activeRound]);
 
   const getDiff = (r: InventoryRecord) => {
     const sys = parseFloat(r.previousBalance) || 0;
