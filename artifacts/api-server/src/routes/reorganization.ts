@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { eq, and, gte, sql, inArray, isNotNull, desc, asc } from "drizzle-orm";
+import { eq, and, gte, sql, inArray, desc, asc } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
-  balanceRecordsTable,
+  inventoryRecordsTable,
   productsTable,
   locationsTable,
   immobilizedProductsTable,
@@ -36,23 +36,23 @@ router.post(
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const consumptionConditions = [
-      eq(balanceRecordsTable.type, "output"),
-      gte(balanceRecordsTable.balanceDate, thirtyDaysAgo.toISOString().slice(0, 10)),
+      gte(inventoryRecordsTable.recordDate, thirtyDaysAgo.toISOString().slice(0, 10)),
     ];
-    if (warehouse) consumptionConditions.push(eq(balanceRecordsTable.warehouse, warehouse));
+    if (warehouse) consumptionConditions.push(eq(productsTable.warehouse, warehouse));
 
     const consumptionRows = await db
       .select({
-        code: balanceRecordsTable.code,
-        totalOutput: sql<number>`COALESCE(SUM(${balanceRecordsTable.quantity}), 0)`,
+        productId: inventoryRecordsTable.productId,
+        totalOutput: sql<number>`COALESCE(SUM(${inventoryRecordsTable.outputs}), 0)`,
       })
-      .from(balanceRecordsTable)
+      .from(inventoryRecordsTable)
+      .innerJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
       .where(and(...consumptionConditions))
-      .groupBy(balanceRecordsTable.code);
+      .groupBy(inventoryRecordsTable.productId);
 
     const consumptionMap = new Map<string, number>();
     for (const row of consumptionRows) {
-      consumptionMap.set(row.code, row.totalOutput);
+      consumptionMap.set(row.productId, row.totalOutput);
     }
 
     // ── 2. Get non-immobilized products with stock and location ──────────
@@ -72,6 +72,7 @@ router.post(
         id: productsTable.id,
         code: productsTable.code,
         name: productsTable.name,
+        type: productsTable.type,
         stock: productsTable.stock,
         warehouse: productsTable.warehouse,
         locationId: productsTable.locationId,
@@ -100,7 +101,7 @@ router.post(
 
     // ── 3. Calculate rotation index ──────────────────────────────────────
     const rotationData = nonImmobilized.map((p) => {
-      const consumption = consumptionMap.get(p.code) ?? 0;
+      const consumption = consumptionMap.get(p.id) ?? 0;
       const stock = p.stock ?? 0;
       const rotationIndex = stock > 0 ? consumption / stock : 0;
       const loc = p.locationId ? locationMap.get(p.locationId) : undefined;
@@ -167,7 +168,7 @@ router.post(
     const usedNearScaleIds = new Set<string>();
 
     for (const product of topRotation) {
-      const available = nearScaleLocations.find((l) => !usedNearScaleIds.has(l.id));
+      const available = nearScaleLocations.find((l) => l.warehouse === product.warehouse && !usedNearScaleIds.has(l.id));
       if (!available) break;
 
       const suggestedLoc = `${available.warehouse} / ${available.zone ?? ""} / ${available.rack ?? ""} / ${available.shelf ?? ""} / ${available.position ?? ""}`;

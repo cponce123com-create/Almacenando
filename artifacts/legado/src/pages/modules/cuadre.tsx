@@ -18,7 +18,7 @@ import {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-interface Product { id: string; code: string; name: string; unit: string; warehouse: string; }
+interface Product { id: string; code: string; name: string; unit: string; warehouse: string; type?: string | null; }
 interface BalanceRecord { warehouse: string; type?: string | null; code: string; quantity: string; ultimoConsumo?: string | null; }
 
 function sinMovimiento(dateStr: string | null | undefined): { label: string; color: string } {
@@ -37,7 +37,7 @@ function sinMovimiento(dateStr: string | null | undefined): { label: string; col
 }
 interface InventoryRecord { productId: string; physicalCount?: string | null; recordDate: string; }
 interface CuadreItem {
-  id: string; cuadreId: string; code: string; productDescription: string; unit: string;
+  id: string; cuadreId: string; type?: string | null; code: string; productDescription: string; unit: string;
   systemBalance: number; physicalCount: number; difference: number; notes?: string | null;
   lastConsumptionDate?: string | null;
 }
@@ -123,6 +123,7 @@ function ProductCombobox({ products, value, onChange }: {
               className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 flex items-baseline gap-2 border-b border-slate-50 last:border-0">
               <span className="font-mono text-xs text-slate-400 shrink-0">{p.code}</span>
               <span className="text-slate-800 truncate">{p.name}</span>
+              {p.type && <span className="text-[10px] text-slate-500 shrink-0">{p.type}</span>}
               <span className="ml-auto text-xs text-slate-400 shrink-0">{p.unit}</span>
             </button>
           ))}
@@ -252,6 +253,7 @@ export default function CuadrePage() {
           notes: observations,
           status: "pending",
           items: [{
+            type: product.type ?? null,
             code: product.code,
             productDescription: product.name,
             unit: product.unit,
@@ -414,7 +416,7 @@ export default function CuadrePage() {
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
                           {(() => {
-                            const itemProduct = products.find(p => p.code === item?.code && p.warehouse === r.warehouse);
+                            const itemProduct = products.find(p => p.code === item?.code && p.warehouse === r.warehouse && (p.type ?? null) === (item?.type ?? null));
                             const uc = itemProduct ? balanceByCode[`${itemProduct.warehouse}::${itemProduct.type ?? ""}::${itemProduct.code}`]?.ultimoConsumo : null;
                             return uc
                               ? <span className="text-slate-700 font-medium">{uc}</span>
@@ -423,7 +425,7 @@ export default function CuadrePage() {
                         </TableCell>
                         <TableCell className="text-center whitespace-nowrap">
                           {(() => {
-                            const itemProduct = products.find(p => p.code === item?.code && p.warehouse === r.warehouse);
+                            const itemProduct = products.find(p => p.code === item?.code && p.warehouse === r.warehouse && (p.type ?? null) === (item?.type ?? null));
                             const uc = itemProduct ? balanceByCode[`${itemProduct.warehouse}::${itemProduct.type ?? ""}::${itemProduct.code}`]?.ultimoConsumo : null;
                             const sm = sinMovimiento(uc);
                             return <span className={`text-xs font-semibold ${sm.color}`}>{sm.label}</span>;

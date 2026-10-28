@@ -6,7 +6,7 @@ import { locationsTable } from "./locations";
 export const productsTable = pgTable("products", {
   id: text("id").primaryKey(),
   warehouse: text("warehouse").notNull().default("General"),
-  type: text("type"),
+  type: text("type").notNull().default(""),
   code: text("code").notNull(),
   name: text("name").notNull(),
   casNumber: text("cas_number"),
@@ -45,7 +45,7 @@ export const productsTable = pgTable("products", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("products_warehouse_code_uniq").on(table.warehouse, table.code),
+  uniqueIndex("products_warehouse_type_code_uniq").on(table.warehouse, table.type, table.code),
 ]);
 
 export const insertProductSchema = createInsertSchema(productsTable).omit({

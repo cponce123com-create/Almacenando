@@ -4,12 +4,13 @@ import express from "express";
 import jwt from "jsonwebtoken";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
-const { dbSelectMock, dbInsertMock, dbUpdateMock, dbDeleteMock, auditLogMock, uploadDriveMock } =
+const { dbSelectMock, dbInsertMock, dbUpdateMock, dbDeleteMock, dbTransactionMock, auditLogMock, uploadDriveMock } =
   vi.hoisted(() => ({
     dbSelectMock: vi.fn(),
     dbInsertMock: vi.fn(),
     dbUpdateMock: vi.fn(),
     dbDeleteMock: vi.fn(),
+    dbTransactionMock: vi.fn(),
     auditLogMock: vi.fn().mockResolvedValue(undefined),
     uploadDriveMock: vi.fn().mockResolvedValue({
       url: "https://drive.google.com/file/d/abc/view",
@@ -24,6 +25,7 @@ vi.mock("@workspace/db", () => ({
     update: dbUpdateMock,
     delete: dbDeleteMock,
     execute: dbSelectMock, // Alias: execute se comporta como select en tests
+    transaction: dbTransactionMock,
   },
   inventoryRecordsTable: {
     id: { name: "id" },
@@ -59,6 +61,8 @@ vi.mock("@workspace/db", () => ({
     code: { name: "code" },
     name: { name: "name" },
   },
+  inventoryCyclesTable: { id: { name: "id" }, warehouse: { name: "warehouse" }, status: { name: "status" }, createdAt: { name: "created_at" } },
+  inventoryCycleProductsTable: { id: { name: "id" }, cycleId: { name: "cycle_id" }, productId: { name: "product_id" }, initialQuantity: { name: "initial_quantity" }, status: { name: "status" } },
   usersTable: {
     id: { name: "id" },
     email: { name: "email" },
@@ -181,6 +185,11 @@ describe("Inventory Routes", () => {
     // vi.resetAllMocks clears both call history AND mockReturnValueOnce queues,
     // preventing stale queued values from leaking between tests.
     vi.resetAllMocks();
+    dbSelectMock.mockImplementation(() => makeSelectChain([]));
+    dbTransactionMock.mockImplementation(async (callback: (tx: any) => Promise<unknown>) => callback({
+      insert: dbInsertMock,
+      select: dbSelectMock,
+    }));
     auditLogMock.mockResolvedValue(undefined);
     uploadDriveMock.mockResolvedValue({
       url: "https://drive.google.com/file/d/abc/view",
@@ -202,13 +211,13 @@ describe("Inventory Routes", () => {
       // 1) count query, 2) records, 3) boxes, 4) lastConsumption
       dbSelectMock
         .mockReturnValueOnce(makeSelectChain([{ total: "3" }]))          // count
-        .mockReturnValueOnce(makeSelectChain([{
+        .mockReturnValueOnce(makeSelectChain([{ inventory_records: {
           id: "rec-1", warehouse: "General", productId: "prod-1",
           recordDate: "2024-06-01", previousBalance: "100", inputs: "50",
           outputs: "20", finalBalance: "130", physicalCount: null,
           photoUrl: null, responsible: "Luis", notes: null,
           registeredBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
-        }]))                                                               // records
+        } }]))                                                            // records
         .mockReturnValueOnce(makeSelectChain([]))                         // boxes
         .mockReturnValueOnce(makeSelectChain([{
           productId: "prod-1", lastConsumptionDate: "2024-06-01",
@@ -269,7 +278,7 @@ describe("Inventory Routes", () => {
         registeredBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
       };
 
-      // Handler calls: product lookup, then insert record, then select boxes
+      // Handler calls: product lookup, then transactionally inserts record and reads boxes
       dbSelectMock
         .mockReturnValueOnce(makeSelectChain([{ code: "PROD-01", name: "Producto A" }]))  // product
         .mockReturnValueOnce(makeSelectChain([]));                                          // boxes after insert

@@ -183,7 +183,7 @@ describe("Admin Users Routes", () => {
     const newUserPayload = {
       email: "nuevo@almacen.com",
       name: "Nuevo Usuario",
-      password: "Password1",
+      password: "Password1!Secure",
       role: "operator",
     };
 

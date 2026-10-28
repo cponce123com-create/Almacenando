@@ -19,6 +19,13 @@ import { z } from "zod/v4";
 
 const router = Router();
 
+function sameProductFamily(product: Pick<Product, "code" | "type">) {
+  return and(
+    eq(productsTable.code, product.code),
+    eq(productsTable.type, product.type),
+  );
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function guardDriveConfig(res: import("express").Response): boolean {
@@ -203,10 +210,10 @@ router.post("/link", requireAuth, requireRole("admin", "supervisor", "operator")
     updatedAt: now,
   };
 
-  // Update all products with the same code across all warehouses
+  // Share the MSDS only with the same product type and code across warehouses.
   await db.update(productsTable)
     .set(msdsData)
-    .where(eq(productsTable.code, product.code));
+    .where(sameProductFamily(product));
 
   const [updated] = await db
     .select()
@@ -252,12 +259,14 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
   const now = new Date();
 
   // Track codes already processed to avoid duplicate work for same-code products
-  // (products with same code share the same MSDS — match once, apply to all by code)
+  // Products with the same type and code share an MSDS across warehouses.
+  const productFamilyKey = (product: Pick<Product, "code" | "type">) => `${product.type ?? ""}::${product.code}`;
   const processedCodes = new Set<string>();
 
   for (const product of products) {
-    // Skip if already processed this code (handled via bulk update by code)
-    if (processedCodes.has(product.code)) {
+    // Skip if this type/code family was already handled across warehouses.
+    const familyKey = productFamilyKey(product);
+    if (processedCodes.has(familyKey)) {
       skipped++;
       continue;
     }
@@ -265,8 +274,8 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
     // Protect manual links: if ANY product with this code was manually confirmed, skip all
     // unless force=true
     if (!force && product.msdsMatchedBy === "manual") {
-      // Mark all products with same code as skipped
-      processedCodes.add(product.code);
+      // Mark this type/code family as skipped.
+      processedCodes.add(familyKey);
       skipped++;
       continue;
     }
@@ -274,7 +283,7 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
     // Also protect if the product has EXACT status from a manual link,
     // even if msdsMatchedBy was not saved as "manual" (legacy records)
     if (!force && product.msdsStatus === "EXACT" && product.msds && product.msdsUrl) {
-      processedCodes.add(product.code);
+      processedCodes.add(familyKey);
       skipped++;
       continue;
     }
@@ -287,7 +296,7 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
     const best = match.best;
     const status = match.status as MsdsMatchStatus;
 
-    // Apply to ALL products with the same code across all warehouses (not just this row)
+    // Apply to this type/code family across warehouses, without touching other item types.
     await db.update(productsTable)
       .set({
         msdsStatus: status,
@@ -310,9 +319,9 @@ router.post("/rescan", requireAuth, requireRole("admin", "supervisor"), asyncHan
               updatedAt: now,
             }),
       })
-      .where(eq(productsTable.code, product.code));
+      .where(sameProductFamily(product));
 
-    processedCodes.add(product.code);
+    processedCodes.add(familyKey);
     updated++;
   }
 
@@ -409,10 +418,10 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
     updatedAt: now,
   };
 
-  // Update all products with the same code across all warehouses
+  // Unlink the same type/code family across warehouses.
   await db.update(productsTable)
     .set(msdsResetData)
-    .where(eq(productsTable.code, product.code));
+    .where(sameProductFamily(product));
 
   const [updated] = await db
     .select()
@@ -420,11 +429,11 @@ router.post("/unlink", requireAuth, requireRole("admin", "supervisor", "operator
     .where(eq(productsTable.id, productId))
     .limit(1);
 
-  // Also return all products with the same code to show the global update
+  // Return the affected type/code family to show the global update.
   const allUpdated = await db
     .select()
     .from(productsTable)
-    .where(eq(productsTable.code, product.code));
+    .where(sameProductFamily(product));
 
   res.json({
     message: "MSDS desvinculado de todos los almacenes con el mismo codigo",
@@ -485,10 +494,10 @@ router.post("/:productId/confirm", requireAuth, requireRole("admin", "supervisor
     updatedAt: now,
   };
 
-  // Update all products with the same code across all warehouses
+  // Confirm the same type/code family across warehouses.
   await db.update(productsTable)
     .set(confirmData)
-    .where(eq(productsTable.code, product.code));
+    .where(sameProductFamily(product));
 
   const [updated] = await db
     .select()

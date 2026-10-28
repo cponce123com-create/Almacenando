@@ -38,7 +38,7 @@ function createApp() {
 const TOKEN = jwt.sign({ userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
 
 describe("Personnel API", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it("returns 401 without auth", async () => {
     expect((await request(createApp()).get("/api/personnel")).status).toBe(401);
@@ -47,7 +47,6 @@ describe("Personnel API", () => {
   it("POST / creates person", async () => {
     dbSelectMock
       .mockReturnValueOnce(makeChain([{ status: "active", role: "admin" }]))
-      .mockReturnValueOnce(makeChain([]))
       .mockReturnValueOnce(makeChain([]));
     dbInsertMock.mockReturnValue({ values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "1", employeeId: "E001", name: "Juan", position: "Operador", department: "Producción", role: "operator", status: "active" }]) }) });
     const r = await request(createApp()).post("/api/personnel").set("Authorization", `Bearer ${TOKEN}`).send({ employeeId: "E001", name: "Juan", position: "Operador", department: "Producción" });
@@ -57,7 +56,6 @@ describe("Personnel API", () => {
   it("DELETE /:id removes person", async () => {
     dbSelectMock
       .mockReturnValueOnce(makeChain([{ status: "active", role: "admin" }]))
-      .mockReturnValueOnce(makeChain([]))
       .mockReturnValueOnce(makeChain([]));
     dbDeleteMock.mockReturnValue({ where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "1" }]) }) });
     const r = await request(createApp()).delete("/api/personnel/1").set("Authorization", `Bearer ${TOKEN}`);

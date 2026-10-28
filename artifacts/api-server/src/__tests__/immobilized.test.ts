@@ -1,5 +1,3 @@
-process.env.SESSION_SECRET = "test-secret-for-ci";
-
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import express from "express";
@@ -21,6 +19,7 @@ import immobilizedRouter from "../routes/immobilized.js";
 
 function mc(r: Record<string, unknown>[]) {
   const chain: Record<string, unknown> = {};
+  (chain as any).then = (resolve: (value: typeof r) => unknown, reject?: (error: unknown) => unknown) => Promise.resolve(r).then(resolve, reject);
   chain.from = () => chain;
   chain.where = () => chain;
   chain.limit = () => Promise.resolve(r);
@@ -39,7 +38,7 @@ function app() { const e = express(); e.use(express.json()); e.use("/api/immobil
 const T = jwt.sign({ userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
 
 describe("Immobilized API", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it("401 without auth", async () => expect((await request(app()).get("/api/immobilized")).status).toBe(401));
 
@@ -52,7 +51,7 @@ describe("Immobilized API", () => {
   it("POST / creates item", async () => {
     auth(1);
     m.dbI.mockReturnValue({ values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "1", productId: "p1", quantity: "5", reason: "Test reason", status: "immobilized", immobilizedDate: "2024-01-01" }]) }) });
-    const r = await request(app()).post("/api/immobilized").set("Authorization", `Bearer ${T}`).send({ productId: "p1", quantity: 5, reason: "Test reason" });
+    const r = await request(app()).post("/api/immobilized").set("Authorization", `Bearer ${T}`).send({ productId: "p1", quantity: 5, reason: "Test reason", immobilizedDate: "2024-01-01" });
     expect(r.status).toBe(201);
   });
 

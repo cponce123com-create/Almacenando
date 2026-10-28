@@ -23,7 +23,10 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 const productSchema = z.object({
   warehouse: z.string().min(1).default("General"),
-  type: z.string().optional(),
+  type: z.preprocess(
+    value => value == null ? "" : String(value).trim(),
+    z.string().max(40).default(""),
+  ),
   code: z.string().min(1),
   name: z.string().min(1),
   casNumber: z.string().optional(),
@@ -240,16 +243,18 @@ router.post(
       await db.transaction(async (tx) => {
         // Load existing products INSIDE the transaction for consistency
         const existing = await tx
-          .select({ id: productsTable.id, code: productsTable.code, warehouse: productsTable.warehouse })
+          .select({ id: productsTable.id, code: productsTable.code, warehouse: productsTable.warehouse, type: productsTable.type })
           .from(productsTable);
 
-        const existingMap = new Map(existing.map((p) => [`${p.warehouse}::${p.code}`, p.id]));
+        const productKey = (p: { warehouse: string; type: string | null | undefined; code: string }) =>
+          `${p.warehouse}::${p.type ?? ""}::${p.code}`;
+        const existingMap = new Map(existing.map((p) => [productKey(p), p.id]));
 
         const toInsert: Array<{ id: string } & ReturnType<typeof rowToProduct>> = [];
         const toUpdate: Array<{ id: string; mapped: ReturnType<typeof rowToProduct> }> = [];
 
         for (const { mapped } of validRows) {
-          const key = `${mapped.warehouse}::${mapped.code}`;
+          const key = productKey(mapped);
           const existingId = existingMap.get(key);
           if (existingId) {
             toUpdate.push({ id: existingId, mapped });
