@@ -296,11 +296,20 @@ router.post(
       try { boxEntries = JSON.parse(parsed.data.boxesData); } catch (err) { logger.warn({ err }, "boxesData JSON inválido — se ignorarán las cajas"); }
     }
     const activeBoxes = boxEntries.filter(b => b.weight && parseFloat(b.weight) > 0);
+    const invalidTare = activeBoxes.some((box) => {
+      const gross = Number(box.weight);
+      const tare = Number(box.tare || 0);
+      return !Number.isFinite(gross) || !Number.isFinite(tare) || gross < 0 || tare < 0 || tare > gross;
+    });
+    if (invalidTare) {
+      res.status(400).json({ error: "La tara no puede ser mayor que el peso bruto de la caja." });
+      return;
+    }
 
     let physicalCount = parsed.data.physicalCount ?? null;
     if (activeBoxes.length > 0) {
-      const total = activeBoxes.reduce((sum, b) => sum + (parseFloat(b.weight) || 0), 0);
-      physicalCount = String(total);
+      const total = activeBoxes.reduce((sum, box) => sum + Number(box.weight) - Number(box.tare || 0), 0);
+      physicalCount = String(Number(total.toFixed(3)));
     }
 
     // Get product info for photo naming
@@ -354,7 +363,7 @@ router.post(
         previousBalance: parsed.data.previousBalance,
         inputs: parsed.data.inputs,
         outputs: parsed.data.outputs,
-        finalBalance: parsed.data.finalBalance ?? physicalCount ?? parsed.data.previousBalance,
+        finalBalance: physicalCount ?? parsed.data.finalBalance ?? parsed.data.previousBalance,
         physicalCount: physicalCount ?? null,
         photoUrl: mainPhotoUrl,
         location: parsed.data.location ?? null,
@@ -544,6 +553,10 @@ router.put(
           return;
         }
         boxEntries = checked.data;
+        if (boxEntries.some(box => box.weight !== "" && Number(box.weight) > 0 && Number(box.tare || 0) > Number(box.weight))) {
+          res.status(400).json({ error: "La tara no puede ser mayor que el peso bruto de la caja." });
+          return;
+        }
       } catch {
         res.status(400).json({ error: "Los datos de cajas no tienen un formato válido." });
         return;
@@ -572,9 +585,9 @@ router.put(
     if (photoUrl) updateData.photoUrl = photoUrl;
     if (boxEntries) {
       const boxesWithWeight = boxEntries.filter(box => box.weight && Number(box.weight) > 0);
-      const sum = boxesWithWeight.reduce((total, box) => total + Number(box.weight), 0);
+      const sum = boxesWithWeight.reduce((total, box) => total + Number(box.weight) - Number(box.tare || 0), 0);
       const physicalCount = boxesWithWeight.length > 0
-        ? String(sum)
+        ? String(Number(sum.toFixed(3)))
         : parsed.data.physicalCount ?? null;
       updateData.physicalCount = physicalCount;
       updateData.finalBalance = physicalCount ?? parsed.data.finalBalance ?? parsed.data.previousBalance ?? existingRecord[0].finalBalance;
