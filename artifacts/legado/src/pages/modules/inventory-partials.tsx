@@ -20,7 +20,7 @@ export interface InventoryRecord {
   id: string; warehouse: string; productId: string; recordDate: string;
   previousBalance: string; inputs: string; outputs: string; finalBalance: string;
   physicalCount?: string | null; photoUrl?: string | null;
-  location?: string | null; notes?: string | null;
+  location?: string | null; locationId?: string | null; notes?: string | null;
   responsible?: string | null; missingLabel?: boolean | null;
   registeredBy: string; createdAt: string; boxes?: InventoryBox[];
   lastConsumptionDate?: string | null;

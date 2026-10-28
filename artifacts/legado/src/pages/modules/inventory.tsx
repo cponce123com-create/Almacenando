@@ -33,6 +33,20 @@ import {
   ProductCombobox, BarcodeScanner, PhotoViewer, CoverageStats, BoxesDialog, InventarioPrevioBanner,
   type Product, type InventoryBox, type InventoryRecord, type InventoryStats, type BalanceRecord, type BoxEntry,
 } from './inventory-partials';
+
+interface InventoryLocation {
+  id: string; warehouse: string; zone: string | null; rack: string | null;
+  shelf: string | null; position: string | null; type: string;
+  parentLocationId: string | null; isActive: boolean; mapLabel?: string | null;
+}
+function inventoryLocationLabel(location: InventoryLocation): string {
+  const parts = [location.zone, location.rack, location.shelf, location.position]
+    .map(value => value?.trim()).filter((value): value is string => Boolean(value));
+  const uniqueParts = parts.filter((part, index) => parts.findIndex(value => value.toLocaleLowerCase() === part.toLocaleLowerCase()) === index);
+  const path = uniqueParts.join(" / ") || location.mapLabel?.trim() || location.type;
+  const typeLabel: Record<string, string> = { warehouse: "Almacén", zone: "Zona", rack: "Rack", shelf: "Nivel", position: "Ubicación", pallet: "Pallet" };
+  return `${path} · ${typeLabel[location.type] ?? "Ubicación"}`;
+}
 export default function TomaDeInventarioPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -69,7 +83,7 @@ export default function TomaDeInventarioPage() {
     productId: "",
     recordDate: today(),
     previousBalance: "",
-    location: "", responsible: "",
+    location: "", locationId: "", responsible: "",
     missingLabel: false, notes: "",
   });
   const [boxes, setBoxes] = useState<BoxEntry[]>(emptyBoxes());
@@ -180,7 +194,7 @@ export default function TomaDeInventarioPage() {
   const resetForm = () => {
     setEditRecordId(null);
     setManualPhysicalCount("");
-    setForm({ productId: "", recordDate: today(), previousBalance: "", location: "", responsible: "", missingLabel: false, notes: "" });
+    setForm({ productId: "", recordDate: today(), previousBalance: "", location: "", locationId: "", responsible: "", missingLabel: false, notes: "" });
     setBoxes(emptyBoxes());
     setBoxPhotos(Array(NUM_BOXES).fill(null));
     setBoxPreviews(Array(NUM_BOXES).fill(null));
@@ -192,6 +206,22 @@ export default function TomaDeInventarioPage() {
     queryKey: ["/api/products", selectedWarehouse],
     queryFn: () => apiJson(`/api/products?warehouse=${selectedWarehouse}&limit=500`).then((r: any) => r.data ?? r),
   });
+
+  const { data: inventoryLocations = [], isLoading: locationsLoading, isError: locationsError } = useQuery<InventoryLocation[]>({
+    queryKey: ["/api/locations", selectedWarehouse],
+    queryFn: async () => {
+      const firstPage = await apiJson(`/api/locations?warehouse=${selectedWarehouse}&limit=500`) as { data?: InventoryLocation[]; total?: number };
+      const results = [...(firstPage.data ?? [])];
+      const total = Number(firstPage.total ?? results.length);
+      for (let page = 2; results.length < total; page++) {
+        const nextPage = await apiJson(`/api/locations?warehouse=${selectedWarehouse}&limit=500&page=${page}`) as { data?: InventoryLocation[] };
+        if (!nextPage.data?.length) break;
+        results.push(...nextPage.data);
+      }
+      return results.filter(location => location.isActive);
+    },
+  });
+  const locationOptions = useMemo(() => inventoryLocations.map(location => ({ id: location.id, label: inventoryLocationLabel(location), type: location.type })), [inventoryLocations]);
 
   // Open the selected product directly when arriving from the Q1 inventory board.
   useEffect(() => {
@@ -326,7 +356,7 @@ export default function TomaDeInventarioPage() {
           // Only restore if there's meaningful data
           const parsedBoxes = JSON.parse(savedBoxes);
           setTimeout(() => {
-            setForm(parsed);
+            setForm({ ...parsed, locationId: parsed.locationId ?? "" });
             setBoxes(parsedBoxes.map((b: any) => ({ weight: b.weight ?? "", lot: b.lot ?? "" })));
             setShowForm(true);
           }, 500);
@@ -362,6 +392,7 @@ export default function TomaDeInventarioPage() {
       fd.append("finalBalance", hasBoxData ? String(totalPhysical) : form.previousBalance || "0");
       fd.append("physicalCount", hasBoxData ? String(totalPhysical) : "");
       fd.append("location", form.location);
+      fd.append("locationId", form.locationId);
       fd.append("responsible", form.responsible || "");
       fd.append("missingLabel", String(form.missingLabel)); fd.append("notes", form.notes);
       fd.append("boxesData", JSON.stringify(boxes.map(box => ({ ...box, tare: box.tare === "otro" ? box.customTare ?? "" : box.tare }))));
@@ -406,6 +437,7 @@ export default function TomaDeInventarioPage() {
       fd.append("recordDate", form.recordDate);
       fd.append("previousBalance", form.previousBalance || "0");
       fd.append("location", form.location);
+      fd.append("locationId", form.locationId);
       fd.append("responsible", form.responsible || "");
       fd.append("missingLabel", String(form.missingLabel));
       fd.append("notes", form.notes);
@@ -445,6 +477,7 @@ export default function TomaDeInventarioPage() {
       recordDate: record.recordDate,
       previousBalance: record.previousBalance ?? "",
       location: record.location ?? "",
+      locationId: record.locationId ?? "",
       responsible: record.responsible ?? "",
       missingLabel: Boolean(record.missingLabel),
       notes: record.notes ?? "",
@@ -846,21 +879,46 @@ export default function TomaDeInventarioPage() {
                 />
               )}
 
-              {/* Ubicación */}
+              {/* Ubicación configurada en el catálogo del almacén */}
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-emerald-600" /> Ubicación
                 </Label>
-                <Input
-                  list="inventory-locations"
-                  placeholder="Ej. Rack Colorantes C1, Lata 2, Zona Abastecimiento…"
-                  value={form.location}
-                  onChange={e => setField("location", e.target.value)}
-                  className="text-sm"
-                />
-                <datalist id="inventory-locations" className="max-h-32">
-                  {LOCATION_SUGGESTIONS.map(l => <option key={l} value={l} />)}
-                </datalist>
+                <select
+                  aria-label="Elegir zona o ubicación del almacén"
+                  value={form.locationId || (form.location ? "manual" : "")}
+                  onChange={event => {
+                    const id = event.target.value;
+                    if (id === "manual") setForm(current => ({ ...current, locationId: "" }));
+                    else {
+                      const option = locationOptions.find(item => item.id === id);
+                      setForm(current => ({ ...current, locationId: id, location: option?.label ?? "" }));
+                    }
+                  }}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Seleccionar zona o ubicación…</option>
+                  {(["zone", "rack", "shelf", "position", "pallet", "warehouse"] as const).map(type => {
+                    const group = locationOptions.filter(option => option.type === type);
+                    const labels = { zone: "Zonas", rack: "Racks", shelf: "Niveles", position: "Ubicaciones", pallet: "Pallets", warehouse: "Almacenes" };
+                    return group.length ? <optgroup key={type} label={labels[type]}>
+                      {group.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                    </optgroup> : null;
+                  })}
+                  <option value="manual">Otra ubicación (escribir manualmente)</option>
+                </select>
+                {form.locationId
+                  ? <p className="text-xs text-slate-500">Ubicación vinculada al catálogo de {selectedWarehouse}.</p>
+                  : <>
+                    {locationsLoading && <p className="text-xs text-slate-500">Cargando zonas y ubicaciones…</p>}
+                    {locationsError && <p className="text-xs text-amber-700">No se pudo cargar el catálogo; puedes escribir la ubicación manualmente.</p>}
+                    <Input
+                      placeholder="Ubicación manual (ej. Rack 1 / Nivel B / Lata 2)"
+                      value={form.location}
+                      onChange={event => setForm(current => ({ ...current, location: event.target.value, locationId: "" }))}
+                      className="text-sm"
+                    />
+                  </>}
               </div>
 
               {/* Tabla de cajas */}
