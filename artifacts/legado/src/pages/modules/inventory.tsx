@@ -46,7 +46,9 @@ export default function TomaDeInventarioPage() {
   const [viewBoxesRecord, setViewBoxesRecord] = useState<InventoryRecord | null>(null);
   const [filterProduct, setFilterProduct] = useState("all");
   const [activeRound, setActiveRound] = useState<{ id: string; roundNumber: number } | null>(null);
-  const [showCurrentRoundOnly, setShowCurrentRoundOnly] = useState(true);
+  // Start with the complete history visible. Users can opt into the current
+  // round/today filter when they need a smaller working set.
+  const [showCurrentRoundOnly, setShowCurrentRoundOnly] = useState(false);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -447,7 +449,20 @@ export default function TomaDeInventarioPage() {
           </Select>
         </div>
 
-              <div className="flex items-center gap-2 mt-2 sm:mt-0">
+              <div className="flex flex-wrap items-center gap-3 mt-2 sm:mt-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setShowCurrentRoundOnly(false);
+                    setFilterProduct("all");
+                    setSearchTerm("");
+                    setDebouncedSearch("");
+                  }}
+                >
+                  Ver historial completo
+                </Button>
                 <label className="flex items-center gap-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"

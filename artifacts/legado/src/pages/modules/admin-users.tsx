@@ -52,6 +52,7 @@ const PAGES_CONFIG = [
   { id: "products",      label: "Productos",            icon: "📦", group: "Inventario" },
   { id: "inventory",     label: "Inventario",           icon: "📊", group: "Inventario" },
   { id: "balances",      label: "Balances",             icon: "⚖️",  group: "Inventario" },
+  { id: "availability",  label: "Disponibilidad",       icon: "📊", group: "Inventario" },
   { id: "cuadre",        label: "Cuadre",               icon: "🔢", group: "Inventario" },
   { id: "immobilized",   label: "Inmovilizados",        icon: "🔒", group: "Inventario" },
   { id: "samples",       label: "Muestras",             icon: "🧪", group: "Calidad" },
@@ -78,7 +79,7 @@ const ACTIONS_CONFIG = [
 const DEFAULT_PERMS: Record<string, { pages: string[]; actions: string[] }> = {
   admin:      { pages: PAGES_CONFIG.map(p => p.id), actions: ACTIONS_CONFIG.map(a => a.id) },
   supervisor: { pages: PAGES_CONFIG.filter(p => p.id !== "admin_users").map(p => p.id), actions: ["import","export","delete","edit"] },
-  operator:   { pages: ["dashboard","products","inventory","balances","cuadre","immobilized","epp","personnel","supplies","surplus","notifications"], actions: ["edit"] },
+  operator:   { pages: ["dashboard","products","inventory","balances","availability","cuadre","immobilized","epp","personnel","supplies","surplus","notifications"], actions: ["edit"] },
   quality:    { pages: ["dashboard","products","samples","dye_lots","lot_evals","disposition","epp","reports","notifications"], actions: ["import","export","edit"] },
   readonly:   { pages: ["dashboard","products","inventory","balances","reports"], actions: [] },
 };

@@ -68,7 +68,7 @@ router.get("/status", requireAuth, asyncHandler(async (_req, res) => {
     errorMessage: balanceSyncRunsTable.errorMessage,
     summary: balanceSyncRunsTable.summary,
   }).from(balanceSyncRunsTable)
-    .where(notLike(balanceSyncRunsTable.id, "product-%"))
+    .where(and(notLike(balanceSyncRunsTable.id, "product-%"), notLike(balanceSyncRunsTable.id, "availability-%")))
     .orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(1);
 
 
@@ -99,7 +99,7 @@ router.get("/history", requireAuth, asyncHandler(async (_req, res) => {
     recordCount: balanceSyncRunsTable.recordCount,
     errorMessage: balanceSyncRunsTable.errorMessage,
   }).from(balanceSyncRunsTable)
-    .where(notLike(balanceSyncRunsTable.id, "product-%"))
+    .where(and(notLike(balanceSyncRunsTable.id, "product-%"), notLike(balanceSyncRunsTable.id, "availability-%")))
     .orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(30);
   res.json(runs);
 }));
@@ -132,7 +132,7 @@ router.get("/connector/next", requireConnector, asyncHandler(async (_req, res) =
       eq(balanceSyncRunsTable.status, "extracting"),
       lte(balanceSyncRunsTable.claimedAt, new Date(Date.now() - 10 * 60_000)),
     ));
-  const [run] = await db.select({ id: balanceSyncRunsTable.id })
+  const [run] = await db.select({ id: balanceSyncRunsTable.id, payload: balanceSyncRunsTable.payload })
     .from(balanceSyncRunsTable)
     .where(eq(balanceSyncRunsTable.status, "requested"))
     .orderBy(asc(balanceSyncRunsTable.requestedAt))
@@ -150,7 +150,14 @@ router.get("/connector/next", requireConnector, asyncHandler(async (_req, res) =
     return;
   }
   const productMatch = run.id.match(/^product-(QA|Q1|QP|QL|QC|all)-/);
-  res.json({ request: { id: run.id, kind: productMatch ? "products" : "balances", warehouse: productMatch?.[1] ?? null } });
+  const availabilityMatch = run.id.startsWith("availability-");
+  const payload = run.payload as Record<string, unknown> | null;
+  res.json({ request: {
+    id: run.id,
+    kind: availabilityMatch ? "availability" : productMatch ? "products" : "balances",
+    warehouse: productMatch?.[1] ?? null,
+    config: availabilityMatch ? payload : null,
+  } });
 }));
 
 router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req, res) => {

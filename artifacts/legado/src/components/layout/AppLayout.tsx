@@ -110,6 +110,7 @@ export const navGroups: NavGroup[] = [
     icon: Warehouse,
     items: [
       { name: "Saldo Actualizado", href: "/balances", icon: Scale },
+      { name: "Disponibilidad", href: "/availability", icon: Mail, roles: ["operator", "supervisor", "admin"] },
       { name: "Inventarios", href: "/inventory", icon: ClipboardList },
       { name: "Cuadre", href: "/cuadre", icon: Warehouse },
       { name: "Rondas", href: "/rounds", icon: History },
