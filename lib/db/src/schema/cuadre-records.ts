@@ -18,6 +18,7 @@ export const cuadreRecordsTable = pgTable("cuadre_records", {
 export const cuadreItemsTable = pgTable("cuadre_items", {
   id: text("id").primaryKey(),
   cuadreId: text("cuadre_id").notNull().references(() => cuadreRecordsTable.id, { onDelete: "cascade" }),
+  type: text("type"),
   code: text("code").notNull(),
   productDescription: text("product_description").notNull(),
   unit: text("unit").notNull(),

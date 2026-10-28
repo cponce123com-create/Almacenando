@@ -518,6 +518,7 @@ router.delete(
 
 const IMPORT_TEMPLATE_HEADERS = [
   "almacen",
+  "tipo",
   "codigo",
   "cantidad_fisica",
   "ubicacion",
@@ -534,7 +535,7 @@ router.get("/template", requireAuth, asyncHandler(async (_req, res) => {
   );
   ws["!cols"] = IMPORT_TEMPLATE_HEADERS.map(() => ({ wch: 22 }));
   // Add a sample row
-  XLSX.utils.sheet_add_aoa(ws, [["General", "ABC-001", "50.5", "Rack A / Nivel 2", "Inventario nocturno", "25.0", "LOTE-001"]], { origin: "A2" });
+  XLSX.utils.sheet_add_aoa(ws, [["General", "Q", "ABC-001", "50.5", "Rack A / Nivel 2", "Inventario nocturno", "25.0", "LOTE-001"]], { origin: "A2" });
   XLSX.utils.book_append_sheet(wb, ws, "Inventario");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -590,12 +591,15 @@ router.post(
     // Pre-load product map
     const allCodes = [...new Set(normalizedRows.map(r => String(r.codigo ?? "").trim()).filter(Boolean))];
     // Load product map for all codes
-    const productMap = new Map<string, { id: string; code: string; name: string; unit: string; warehouse: string }>();
+    const productMap = new Map<string, Array<{ id: string; code: string; name: string; unit: string; warehouse: string; type: string | null }>>();
     if (allCodes.length > 0) {
-      const products = await db.select({ id: productsTable.id, code: productsTable.code, name: productsTable.name, unit: productsTable.unit, warehouse: productsTable.warehouse })
+      const products = await db.select({ id: productsTable.id, code: productsTable.code, name: productsTable.name, unit: productsTable.unit, warehouse: productsTable.warehouse, type: productsTable.type })
         .from(productsTable)
         .where(inArray(productsTable.code, allCodes));
-      for (const p of products) productMap.set(p.code.toLowerCase(), p);
+      for (const p of products) {
+        const key = `${p.warehouse.toLowerCase()}::${p.code.toLowerCase()}`;
+        productMap.set(key, [...(productMap.get(key) ?? []), p]);
+      }
     }
 
     const inserted: Array<{ code: string; productName: string; quantity: string; }> = [];
@@ -609,17 +613,32 @@ router.post(
       const row = normalizedRows[i]!;
       const rowNum = i + 2;
       const code = String(row.codigo ?? "").trim();
+      const rowWarehouse = String(row.almacen ?? "").trim() || defaultWarehouse;
+      const rowType = String(row.tipo ?? "").trim().toUpperCase();
 
       if (!code) {
         errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" });
         continue;
       }
 
-      const product = productMap.get(code.toLowerCase());
-      if (!product) {
-        errors.push({ row: rowNum, code, error: "Producto no encontrado en la base de datos" });
+      if (rowWarehouse === "all") {
+        errors.push({ row: rowNum, code, error: "Indica el almacén en cada fila cuando la vista está en Todos los almacenes" });
         continue;
       }
+
+      const candidates = productMap.get(`${rowWarehouse.toLowerCase()}::${code.toLowerCase()}`) ?? [];
+      const matches = rowType
+        ? candidates.filter(p => (p.type ?? "").toUpperCase() === rowType)
+        : candidates;
+      if (matches.length === 0) {
+        errors.push({ row: rowNum, code, error: `Producto no encontrado en el almacén ${rowWarehouse}${rowType ? ` con tipo ${rowType}` : ""}` });
+        continue;
+      }
+      if (matches.length > 1) {
+        errors.push({ row: rowNum, code, error: "El código está repetido en este almacén; agrega la columna tipo para identificar el producto" });
+        continue;
+      }
+      const product = matches[0]!;
 
       const qtyStr = String(row.cantidad_fisica ?? "").trim().replace(",", ".");
       const qty = parseFloat(qtyStr);
@@ -629,7 +648,7 @@ router.post(
       }
 
       recordsToCreate.push({
-        warehouse: String(row.almacen ?? "").trim() || defaultWarehouse,
+        warehouse: rowWarehouse,
         productId: product.id,
         recordDate: defaultDate,
         physicalCount: qty,

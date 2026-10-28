@@ -128,7 +128,7 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
       id: generateId(), warehouse: row.warehouse, type: "Q", code: row.code, name: row.name,
       category: "Químicos", unit: row.unit, location: row.location, minimumStock: 0,
     }))).onConflictDoUpdate({
-      target: [productsTable.warehouse, productsTable.code],
+      target: [productsTable.warehouse, productsTable.type, productsTable.code],
       set: {
         type: sql.raw("excluded.type"), name: sql.raw("excluded.name"),
         unit: sql.raw("excluded.unit"), location: sql.raw("excluded.location"), updatedAt: new Date(),

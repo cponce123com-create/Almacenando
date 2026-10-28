@@ -1,5 +1,3 @@
-process.env.SESSION_SECRET = "test-secret-for-ci";
-
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import express from "express";
@@ -21,9 +19,10 @@ import samplesRouter from "../routes/samples.js";
 
 function mc(r: Record<string, unknown>[]) {
   const chain: Record<string, unknown> = {};
+  (chain as any).then = (resolve: (value: typeof r) => unknown, reject?: (error: unknown) => unknown) => Promise.resolve(r).then(resolve, reject);
   chain.from = () => chain;
   chain.where = () => chain;
-  chain.limit = () => Promise.resolve(r);
+  chain.limit = () => chain;
   chain.orderBy = () => chain;
   chain.offset = () => chain;
   chain.returning = () => Promise.resolve(r);
@@ -40,20 +39,21 @@ function app() { const e = express(); e.use(express.json()); e.use("/api/samples
 const T = jwt.sign({ userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
 
 describe("Samples API", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => vi.resetAllMocks());
 
   it("401 without auth", async () => expect((await request(app()).get("/api/samples")).status).toBe(401));
 
   it("GET / returns samples list", async () => {
-    auth(1); // 2 for auth + 1 for route
+    auth(0);
+    m.dbS.mockReturnValueOnce(mc([{ total: 0 }])).mockReturnValueOnce(mc([]));
     const r = await request(app()).get("/api/samples").set("Authorization", `Bearer ${T}`);
     expect(r.status).toBe(200);
   });
 
   it("POST / creates sample", async () => {
-    auth(1); // 2 for auth + 1 for route
+    auth(0); // 2 for auth; POST does not select
     m.dbI.mockReturnValue({ values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "1", sampleCode: "S-001", productId: "p1", quantity: "1", purpose: "Test", status: "pending", sampleDate: "2024-01-01" }]) }) });
-    const r = await request(app()).post("/api/samples").set("Authorization", `Bearer ${T}`).send({ productId: "p1", sampleCode: "S-001", quantity: "1", purpose: "Test", sampleDate: "2024-01-01" });
+    const r = await request(app()).post("/api/samples").set("Authorization", `Bearer ${T}`).send({ productId: "p1", sampleCode: "S-001", quantity: "1", unit: "kg", purpose: "Test", sampleDate: "2024-01-01" });
     expect(r.status).toBe(201);
   });
 

@@ -15,6 +15,7 @@ import { asyncHandler } from "../lib/async-handler.js";
 const router = Router();
 
 const cuadreItemSchema = z.object({
+  type: z.string().trim().max(40).nullable().optional(),
   code: z.string().min(1),
   productDescription: z.string().min(1),
   unit: z.string().min(1),
@@ -44,7 +45,7 @@ router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asy
   const ids = records.map(r => r.id);
   const allItems = await db.select().from(cuadreItemsTable).where(inArray(cuadreItemsTable.cuadreId, ids));
 
-  // Last consumption date per product code — dual source: ERP (balance_records) > Sistema (inventory_records)
+  // Last consumption is keyed by warehouse, type and code, matching the product identity.
   const codes = [...new Set(allItems.map(i => i.code))];
   const warehouseByCuadreId = new Map(records.map(r => [r.id, r.warehouse]));
   const lcMap = new Map<string, string>();
@@ -53,15 +54,18 @@ router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asy
   if (codes.length > 0) {
     // Source 1: ERP — the same code can refer to different products by warehouse.
     const erpRows = await db.execute(sql`
-      SELECT cr.warehouse, br.code, MAX(br.ultimo_consumo) AS ultimo_consumo
+      SELECT cr.warehouse, br.type, br.code, MAX(br.ultimo_consumo) AS ultimo_consumo
       FROM balance_records br
       JOIN cuadre_records cr ON cr.warehouse = br.warehouse
+      JOIN cuadre_items ci ON ci.cuadre_id = cr.id
+        AND ci.code = br.code
+        AND ci.type IS NOT DISTINCT FROM br.type
       WHERE cr.id = ANY(${ids}) AND br.code = ANY(${codes})
-      GROUP BY cr.warehouse, br.code
+      GROUP BY cr.warehouse, br.type, br.code
     `);
-    for (const row of erpRows.rows as { warehouse: string; code: string; ultimo_consumo: string | null }[]) {
+    for (const row of erpRows.rows as { warehouse: string; type: string | null; code: string; ultimo_consumo: string | null }[]) {
       if (row.ultimo_consumo && row.ultimo_consumo > "2013-01-01") {
-        const key = `${row.warehouse}::${row.code}`;
+        const key = `${row.warehouse}::${row.type ?? ""}::${row.code}`;
         lcMap.set(key, row.ultimo_consumo);
         sourceMap.set(key, "ERP");
       }
@@ -69,16 +73,18 @@ router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asy
 
     // Source 2: Sistema — MAX(record_date) from inventory_records as fallback
     const sysRows = await db.execute(sql`
-      SELECT p.warehouse, p.code, MAX(ir.record_date) AS last_consumption_date
+      SELECT p.warehouse, p.type, p.code, MAX(ir.record_date) AS last_consumption_date
       FROM inventory_records ir
       JOIN products p ON ir.product_id = p.id
-      WHERE p.code = ANY(${codes}) AND p.warehouse IN (
-        SELECT warehouse FROM cuadre_records WHERE id = ANY(${ids})
-      )
-      GROUP BY p.warehouse, p.code
+      JOIN cuadre_records cr ON cr.warehouse = p.warehouse AND cr.id = ANY(${ids})
+      JOIN cuadre_items ci ON ci.cuadre_id = cr.id
+        AND ci.code = p.code
+        AND ci.type IS NOT DISTINCT FROM p.type
+      WHERE p.code = ANY(${codes})
+      GROUP BY p.warehouse, p.type, p.code
     `);
-    for (const row of sysRows.rows as { warehouse: string; code: string; last_consumption_date: string | null }[]) {
-      const key = `${row.warehouse}::${row.code}`;
+    for (const row of sysRows.rows as { warehouse: string; type: string | null; code: string; last_consumption_date: string | null }[]) {
+      const key = `${row.warehouse}::${row.type ?? ""}::${row.code}`;
       if (row.last_consumption_date && !lcMap.has(key)) {
         lcMap.set(key, row.last_consumption_date);
         sourceMap.set(key, "Sistema");
@@ -89,7 +95,7 @@ router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asy
   const itemMap = new Map<string, typeof allItems>();
   for (const item of allItems) {
     if (!itemMap.has(item.cuadreId)) itemMap.set(item.cuadreId, []);
-    const key = `${warehouseByCuadreId.get(item.cuadreId) ?? ""}::${item.code}`;
+    const key = `${warehouseByCuadreId.get(item.cuadreId) ?? ""}::${item.type ?? ""}::${item.code}`;
     itemMap.get(item.cuadreId)!.push({
       ...item,
       lastConsumptionDate: lcMap.get(key) ?? null,
@@ -112,25 +118,24 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const { items, ...cuadreData } = parsed.data;
   const id = generateId();
-  const [created] = await db.insert(cuadreRecordsTable).values({
-    id,
-    ...cuadreData,
-    registeredBy: req.userId,
-  }).returning();
+  const [created] = await db.transaction(async tx => {
+    const [record] = await tx.insert(cuadreRecordsTable).values({
+      id,
+      ...cuadreData,
+      registeredBy: req.userId,
+    }).returning();
 
-  if (items && items.length > 0) {
-    const itemRows = items.map(item => {
-      const sys = item.systemBalance;
-      const phys = item.physicalCount;
-      return {
+    if (items && items.length > 0) {
+      await tx.insert(cuadreItemsTable).values(items.map(item => ({
         id: generateId(),
         cuadreId: id,
         ...item,
-        difference: phys - sys,
-      };
-    });
-    await db.insert(cuadreItemsTable).values(itemRows);
-  }
+        type: item.type || null,
+        difference: item.physicalCount - item.systemBalance,
+      })));
+    }
+    return [record!];
+  });
 
   res.status(201).json(created);
 }));
@@ -140,27 +145,28 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler
   const parsed = cuadreSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const { items, ...cuadreData } = parsed.data as { items?: z.infer<typeof cuadreItemSchema>[]; [k: string]: unknown };
-  const [updated] = await db.update(cuadreRecordsTable)
-    .set({ ...(cuadreData as object), updatedAt: new Date() })
-    .where(eq(cuadreRecordsTable.id, id as string)).returning();
-  if (!updated) { res.status(404).json({ error: "Cuadre no encontrado" }); return; }
+  let updated: typeof cuadreRecordsTable.$inferSelect | undefined;
+  await db.transaction(async tx => {
+    const [record] = await tx.update(cuadreRecordsTable)
+      .set({ ...(cuadreData as object), updatedAt: new Date() })
+      .where(eq(cuadreRecordsTable.id, id)).returning();
+    updated = record;
+    if (!record) return;
 
-  if (items) {
-    await db.delete(cuadreItemsTable).where(eq(cuadreItemsTable.cuadreId, id as string));
-    if (items.length > 0) {
-      const itemRows = items.map(item => {
-        const sys = item.systemBalance;
-        const phys = item.physicalCount;
-        return {
+    if (items) {
+      await tx.delete(cuadreItemsTable).where(eq(cuadreItemsTable.cuadreId, id));
+      if (items.length > 0) {
+        await tx.insert(cuadreItemsTable).values(items.map(item => ({
           id: generateId(),
           cuadreId: id,
           ...item,
-          difference: phys - sys,
-        };
-      });
-      await db.insert(cuadreItemsTable).values(itemRows);
+          type: item.type || null,
+          difference: item.physicalCount - item.systemBalance,
+        })));
+      }
     }
-  }
+  });
+  if (!updated) { res.status(404).json({ error: "Cuadre no encontrado" }); return; }
 
   res.json(updated);
 }));

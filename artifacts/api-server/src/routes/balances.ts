@@ -74,17 +74,30 @@ function parseImportDate(val: unknown): string {
 router.get("/template", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
 
-  // Fetch latest SA per warehouse+code (including stored ultimo_consumo)
+  // Build the template from the latest complete snapshot per warehouse.
+  // Keep product type and each physical location distinct.
   const latestRows = await db.execute(sql`
+    WITH latest_snapshot AS (
+      SELECT DISTINCT ON (warehouse)
+        warehouse, balance_date, batch_id
+      FROM balance_records
+      ${warehouse && warehouse !== "all" ? sql`WHERE warehouse = ${warehouse}` : sql``}
+      ORDER BY warehouse, balance_date DESC, created_at DESC, id DESC
+    )
     SELECT DISTINCT ON (
-      br.warehouse, br.code, br.unit,
+      br.warehouse, br.type, br.code, br.unit,
       COALESCE(br.location_summary, ''), COALESCE(br.zone_summary, '')
     )
       br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
       br.ultimo_consumo, br.location_summary, br.zone_summary
     FROM balance_records br
-    ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
-    ORDER BY br.warehouse, br.code, br.unit,
+    JOIN latest_snapshot s
+      ON s.warehouse = br.warehouse
+     AND s.balance_date = br.balance_date
+     AND s.batch_id IS NOT DISTINCT FROM br.batch_id
+    WHERE TRUE
+      ${warehouse && warehouse !== "all" ? sql`AND br.warehouse = ${warehouse}` : sql``}
+    ORDER BY br.warehouse, br.type, br.code, br.unit,
       COALESCE(br.location_summary, ''), COALESCE(br.zone_summary, ''),
       br.balance_date DESC, br.created_at DESC, br.id DESC
   `);
