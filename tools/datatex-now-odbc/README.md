@@ -28,6 +28,12 @@ La confirmación añade una captura al historial de ALMACENANDO; no escribe ni m
 
 En **Maestro de Productos**, selecciona QA, Q1, QP, QL, QC o todos los almacenes y pulsa **Actualizar desde NOW**. El conector obtiene los productos `Q` que tienen saldo en los almacenes seleccionados, reúne sus ubicaciones para la ficha de producto y envía una vista previa. Al confirmar, los campos de seguridad y stock mínimo existentes se conservan.
 
+## Disponibilidad
+
+En **Disponibilidad**, ajusta los periodos de consumo y movimientos y pulsa **Extraer de NOW**. El conector consulta Oracle en modo de solo lectura, replica los cálculos de la hoja de Excel para Q1 y muestra también los saldos y datos de QA/QD que alimentan el análisis. Las solicitudes internas se presentan según los estados utilizados por la macro (`INTERNALORDERLINE` estado `0` e `INTERNALDOCUMENTLINE` estados `0/1`).
+
+La tabla permite seleccionar productos, escribir la cantidad necesaria y copiar un resumen para el correo o abrir un borrador en la aplicación de correo. La aplicación no envía el mensaje ni modifica Oracle. Para usar esta sección después de desplegar una versión nueva, sustituye el `.ps1` de la carpeta del conector por el que viene en el ZIP actualizado y vuelve a iniciar el `.cmd`.
+
 ## Diagnóstico de ODBC
 
 `Test-DatatexNow.ps1` comprueba la arquitectura de PowerShell, el DSN, la conexión, `SELECT 1 FROM DUAL`, permisos de lectura y una muestra limitada. La muestra es solo de QA/Q1; no es un conteo total ni prueba la sincronización web.

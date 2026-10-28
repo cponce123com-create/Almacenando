@@ -8,6 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $apiRoot = "https://almacenando.onrender.com/api/balances/now"
+$availabilityApiRoot = "https://almacenando.onrender.com/api/availability"
 $token = $null
 $script:oracleUserName = $null
 $script:oracleSecurePassword = $null
@@ -73,6 +74,195 @@ function Send-Failure {
         Invoke-RestMethod -Method Post -Uri "$apiRoot/connector/$RequestId/fail" -Headers $headers -ContentType "application/json" -Body $body | Out-Null
     } catch {
         Write-Host "No se pudo informar el error a ALMACENANDO; verifica la conexión HTTPS."
+    }
+}
+function Format-AvailabilityNumber {
+    param([decimal]$Value)
+    return $Value.ToString("0.############################", [Globalization.CultureInfo]::InvariantCulture)
+}
+function Get-AvailabilityValue {
+    param([hashtable]$Map, [string]$Key)
+    if ($Map.ContainsKey($Key)) { return [decimal]$Map[$Key] }
+    return [decimal]0
+}
+function Invoke-AvailabilityExtraction {
+    param([string]$RequestId, [object]$Config)
+    $connection = $null
+    $recordsets = New-Object System.Collections.Generic.List[object]
+    $password = $null
+    try {
+        foreach ($name in @("consumptionStart", "consumptionEnd", "q1MovementsStart", "q1MovementsEnd", "qpMovementsStart", "qpMovementsEnd")) {
+            if ([string]$Config.$name -notmatch '^\d{4}-\d{2}-\d{2}$') { throw "El rango de fechas de disponibilidad es inválido." }
+        }
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($script:oracleSecurePassword)
+        try { $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+        $connection = New-Object -ComObject ADODB.Connection
+        $connection.ConnectionTimeout = 15
+        $connection.CommandTimeout = 120
+        $connection.Open("DSN=$Dsn;UID=$script:oracleUserName;PWD=$password")
+        $password = $null
+
+        $toOracleDate = { param([string]$date) ([datetime]::ParseExact($date, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)).ToString("dd/MM/yyyy", [Globalization.CultureInfo]::InvariantCulture) }
+        $consStart = & $toOracleDate ([string]$Config.consumptionStart)
+        $consEnd = & $toOracleDate ([string]$Config.consumptionEnd)
+        $q1Start = & $toOracleDate ([string]$Config.q1MovementsStart)
+        $q1End = & $toOracleDate ([string]$Config.q1MovementsEnd)
+        $qpStart = & $toOracleDate ([string]$Config.qpMovementsStart)
+        $qpEnd = & $toOracleDate ([string]$Config.qpMovementsEnd)
+
+        $productsSql = @"
+SELECT H.SUBCODE01, H.SUBCODE02, MIN(H.LONGDESCRIPTION) AS LONGDESCRIPTION,
+       MIN(H.REPLENCODE) AS REPLENCODE, MIN(K.BASEPRIMARYUNITCODE) AS UNITCODE
+FROM NOW.PRODUCT H
+JOIN NOW.BALANCE K ON K.DECOSUBCODE01=H.SUBCODE01 AND K.DECOSUBCODE02=H.SUBCODE02 AND K.ITEMTYPECODE='Q'
+WHERE H.ITEMTYPECODE='Q' AND K.LOGICALWAREHOUSECODE IN ('QA','Q1','QD','QP')
+  AND K.BASEPRIMARYQUANTITYUNIT >= 0.001
+GROUP BY H.SUBCODE01, H.SUBCODE02
+ORDER BY MIN(H.LONGDESCRIPTION)
+"@
+        $productsRs = $connection.Execute($productsSql); $recordsets.Add($productsRs)
+        $products = New-Object System.Collections.Generic.List[object]
+        $seenProducts = @{}
+        while (-not $productsRs.EOF) {
+            $code = "$(Get-TextField $productsRs 'SUBCODE01')-$(Get-TextField $productsRs 'SUBCODE02')"
+            if (-not $seenProducts.ContainsKey($code)) {
+                $seenProducts[$code] = $true
+                $replenCode = Get-TextField $productsRs "REPLENCODE"
+                $lineStatus = "No Linea"
+                if ($replenCode -eq "201") { $lineStatus = "Linea" }
+                $products.Add([pscustomobject]@{
+                    code = $code; description = Get-TextField $productsRs "LONGDESCRIPTION"
+                    lineStatus = $lineStatus
+                    unit = Get-TextField $productsRs "UNITCODE"
+                })
+            }
+            $productsRs.MoveNext()
+        }
+        if ($products.Count -eq 0) { throw "NOW no devolvió productos Q con saldo en QA, Q1, QD o QP." }
+
+        $maps = @{}
+        $queries = @{
+            balances = @"
+SELECT LOGICALWAREHOUSECODE || '|' || DECOSUBCODE01 || '-' || DECOSUBCODE02 AS ITEMKEY,
+       SUM(BASEPRIMARYQUANTITYUNIT) AS TOTAL
+FROM NOW.BALANCE WHERE ITEMTYPECODE='Q' AND LOGICALWAREHOUSECODE IN ('Q1','QD')
+GROUP BY LOGICALWAREHOUSECODE, DECOSUBCODE01, DECOSUBCODE02
+"@
+            documents = @"
+SELECT SUBCODE01 || '-' || SUBCODE02 AS ITEMKEY, SUM(BASEPRIMARYQUANTITY) AS TOTAL
+FROM NOW.INTERNALDOCUMENTLINE WHERE PROGRESSSTATUS IN ('0','1') AND ITEMTYPEAFICODE='Q'
+AND WAREHOUSECODE IN ('QA','Q1') GROUP BY SUBCODE01, SUBCODE02
+"@
+            orders = @"
+SELECT SUBCODE01 || '-' || SUBCODE02 AS ITEMKEY, SUM(USERPRIMARYQUANTITY) AS TOTAL
+FROM NOW.INTERNALORDERLINE WHERE ITEMTYPEAFICODE='Q' AND DOCUMENTTYPETYPE='03'
+AND WAREHOUSECODE IN ('QA','Q1') AND PROGRESSSTATUS='0' GROUP BY SUBCODE01, SUBCODE02
+"@
+            reservations = @"
+SELECT WAREHOUSECODE || '|' || SUBCODE01 || '-' || SUBCODE02 AS ITEMKEY, SUM(BASEPRIMARYQUANTITY) AS TOTAL
+FROM NOW.PRODUCTIONORDERRESERVATION WHERE ITEMTYPEAFICODE='Q' AND BASEPRIMARYUOMCODE NOT IN ('L')
+AND ORDERCOUNTERCODE IN ('ORDPRO','ORDPROR') AND PROGRESSSTATUS='0' AND WAREHOUSECODE IN ('Q1','QD')
+GROUP BY WAREHOUSECODE, SUBCODE01, SUBCODE02
+"@
+            consumption = @"
+SELECT DECOSUBCODE01 || '-' || DECOSUBCODE02 AS ITEMKEY, SUM(BASEPRIMARYQUANTITY) AS TOTAL
+FROM NOW.STOCKTRANSACTION WHERE ITEMTYPECODE='Q' AND LOGICALWAREHOUSECODE='Q1'
+AND TEMPLATECODE IN ('DN','DA','DL','46','60')
+AND TRANSACTIONDATE >= TO_DATE('$consStart','DD/MM/YYYY') AND TRANSACTIONDATE <= TO_DATE('$consEnd','DD/MM/YYYY')
+GROUP BY DECOSUBCODE01, DECOSUBCODE02
+"@
+            qpMovements = @"
+SELECT DECOSUBCODE01 || '-' || DECOSUBCODE02 AS ITEMKEY, SUM(BASEPRIMARYQUANTITY) AS TOTAL
+FROM NOW.STOCKTRANSACTION WHERE ITEMTYPECODE='Q' AND LOGICALWAREHOUSECODE='QP' AND TEMPLATECODE='10'
+AND TRANSACTIONDATE >= TO_DATE('$qpStart','DD/MM/YYYY') AND TRANSACTIONDATE <= TO_DATE('$qpEnd','DD/MM/YYYY')
+GROUP BY DECOSUBCODE01, DECOSUBCODE02
+"@
+            q1Movements = @"
+SELECT DECOSUBCODE01 || '-' || DECOSUBCODE02 AS ITEMKEY, SUM(BASEPRIMARYQUANTITY) AS TOTAL
+FROM NOW.STOCKTRANSACTION WHERE ITEMTYPECODE='Q' AND LOGICALWAREHOUSECODE='Q1'
+AND TEMPLATECODE IN ('DN','DA','DL','46')
+AND TRANSACTIONDATE >= TO_DATE('$q1Start','DD/MM/YYYY') AND TRANSACTIONDATE <= TO_DATE('$q1End','DD/MM/YYYY')
+GROUP BY DECOSUBCODE01, DECOSUBCODE02
+"@
+            qaLots = @"
+SELECT B.DECOSUBCODE01 || '-' || B.DECOSUBCODE02 AS ITEMKEY, B.LOTCODE, B.BASEPRIMARYQUANTITYUNIT AS QUANTITY,
+       B.WHSLOCATIONWAREHOUSEZONECODE AS ZONECODE, B.WAREHOUSELOCATIONCODE AS LOCATIONCODE
+FROM NOW.BALANCE B JOIN NOW.LOT A ON B.LOTCODE=A.CODE
+WHERE B.ITEMTYPECODE='Q' AND B.LOGICALWAREHOUSECODE='QA'
+ORDER BY A.LOTCREATIONDATE ASC
+"@
+        }
+        foreach ($mapName in @("balances", "documents", "orders", "reservations", "consumption", "qpMovements", "q1Movements", "qaLots")) {
+            $rs = $connection.Execute($queries[$mapName]); $recordsets.Add($rs)
+            $maps[$mapName] = @{}
+            while (-not $rs.EOF) {
+                $key = Get-TextField $rs "ITEMKEY"
+                if ($mapName -eq "qaLots") {
+                    if ($key -and -not $maps[$mapName].ContainsKey($key)) {
+                        $maps[$mapName][$key] = [pscustomobject]@{
+                            lot = Get-TextField $rs "LOTCODE"; quantity = Get-TextField $rs "QUANTITY"
+                            zone = Get-TextField $rs "ZONECODE"; location = Get-TextField $rs "LOCATIONCODE"
+                        }
+                    }
+                } elseif ($key) {
+                    $value = Get-Field $rs "TOTAL"
+                    if ($null -ne $value -and $value -isnot [DBNull]) {
+                        $maps[$mapName][$key] = [Convert]::ToDecimal($value, [Globalization.CultureInfo]::InvariantCulture)
+                    }
+                }
+                $rs.MoveNext()
+            }
+        }
+
+        $days = ([datetime]::ParseExact([string]$Config.consumptionEnd, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture) -
+            [datetime]::ParseExact([string]$Config.consumptionStart, "yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)).Days + 1
+        if ($days -lt 1) { throw "El rango de consumo debe incluir al menos un día." }
+        $rows = @($products | ForEach-Object {
+            $code = $_.code
+            $q1Balance = Get-AvailabilityValue $maps.balances "Q1|$code"
+            $qdBalance = Get-AvailabilityValue $maps.balances "QD|$code"
+            $production = Get-AvailabilityValue $maps.reservations "Q1|$code"
+            $qdPreparation = Get-AvailabilityValue $maps.reservations "QD|$code"
+            $orders = Get-AvailabilityValue $maps.orders $code
+            $documents = Get-AvailabilityValue $maps.documents $code
+            $consumption = (Get-AvailabilityValue $maps.consumption $code) / $days * 2
+            $qpMovements = Get-AvailabilityValue $maps.qpMovements $code
+            $q1Movements = Get-AvailabilityValue $maps.q1Movements $code
+            $availability = $q1Balance - $production - $orders - $documents - $consumption - $qpMovements - $q1Movements
+            $qa = $maps.qaLots[$code]
+            $qaLot = ""; $qaQuantity = ""; $qaZone = ""; $qaLocation = ""
+            if ($qa) { $qaLot = $qa.lot; $qaQuantity = $qa.quantity; $qaZone = $qa.zone; $qaLocation = $qa.location }
+            [pscustomobject]@{
+                code = $code; description = $_.description; lineStatus = $_.lineStatus; unit = $_.unit
+                productionReservations = Format-AvailabilityNumber $production
+                internalOrders = Format-AvailabilityNumber $orders
+                internalDocuments = Format-AvailabilityNumber $documents
+                consumptionTwoDays = Format-AvailabilityNumber $consumption
+                qpMovements = Format-AvailabilityNumber $qpMovements
+                q1Movements = Format-AvailabilityNumber $q1Movements
+                q1Balance = Format-AvailabilityNumber $q1Balance
+                availability = Format-AvailabilityNumber $availability
+                qaLot = $qaLot
+                qaQuantity = $qaQuantity
+                qaZone = $qaZone
+                qaLocation = $qaLocation
+                qdBalance = Format-AvailabilityNumber $qdBalance
+                qdPreparation = Format-AvailabilityNumber $qdPreparation
+            }
+        })
+        $body = @{ extractedAt = [DateTimeOffset]::UtcNow.ToString("o"); config = $Config; rows = $rows } | ConvertTo-Json -Depth 8 -Compress
+        Invoke-RestMethod -Method Post -Uri "$availabilityApiRoot/connector/$RequestId/result" -Headers $headers -ContentType "application/json; charset=utf-8" -Body $body -TimeoutSec 120 | Out-Null
+        Write-Host "Disponibilidad Q1 extraída: $($rows.Count) productos."
+    } catch {
+        $message = $_.Exception.Message
+        Write-Host "No se pudo extraer la disponibilidad: $message"
+        Send-Failure -RequestId $RequestId -Message $message
+    } finally {
+        $password = $null
+        foreach ($rs in $recordsets) { try { if ($rs.State -ne 0) { $rs.Close() } } catch {}; try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($rs) } catch {} }
+        if ($connection) { try { if ($connection.State -ne 0) { $connection.Close() } } catch {}; try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($connection) } catch {} }
+        [GC]::Collect(); [GC]::WaitForPendingFinalizers()
     }
 }
 function Invoke-Extraction {
@@ -418,7 +608,9 @@ try {
         $response = Invoke-RestMethod -Method Get -Uri "$apiRoot/connector/next" -Headers $headers -TimeoutSec 20
         if ($response.request -and $response.request.id) {
             Write-Host "Solicitud recibida. Ejecutando consulta de solo lectura."
-            if ($response.request.kind -eq "products") {
+            if ($response.request.kind -eq "availability") {
+                Invoke-AvailabilityExtraction -RequestId ([string]$response.request.id) -Config $response.request.config
+            } elseif ($response.request.kind -eq "products") {
                 Invoke-ProductExtraction -RequestId ([string]$response.request.id) -Warehouse ([string]$response.request.warehouse)
             } else {
                 Invoke-Extraction -RequestId ([string]$response.request.id)

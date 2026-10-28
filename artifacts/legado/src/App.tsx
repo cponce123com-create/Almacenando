@@ -16,6 +16,7 @@ import Dashboard from "@/pages/dashboard";
 const ProductsPage       = lazy(() => import("@/pages/modules/products"));
 const InventoryPage      = lazy(() => import("@/pages/modules/inventory"));
 const BalancesPage       = lazy(() => import("@/pages/modules/balances"));
+const AvailabilityPage   = lazy(() => import("@/pages/modules/availability"));
 const CuadrePage         = lazy(() => import("@/pages/modules/cuadre"));
 const ImmobilizedPage    = lazy(() => import("@/pages/modules/immobilized"));
 const SamplesPage        = lazy(() => import("@/pages/modules/samples"));
@@ -113,6 +114,7 @@ function Router() {
       <Route path="/products"><ProtectedRoute component={ProductsPage} /></Route>
       <Route path="/inventory"><ProtectedRoute component={InventoryPage} /></Route>
       <Route path="/balances"><ProtectedRoute component={BalancesPage} /></Route>
+      <Route path="/availability"><ProtectedRoute component={AvailabilityPage} /></Route>
       <Route path="/cuadre"><ProtectedRoute component={CuadrePage} /></Route>
       <Route path="/immobilized"><ProtectedRoute component={ImmobilizedPage} /></Route>
       <Route path="/samples"><ProtectedRoute component={SamplesPage} /></Route>
