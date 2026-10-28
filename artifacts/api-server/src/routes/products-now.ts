@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { db, balanceSyncRunsTable, productsTable } from "@workspace/db";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -41,11 +41,22 @@ router.post("/request", requireAuth, requireRole("supervisor", "admin"), asyncHa
   if (!parsed.success) { res.status(400).json({ error: "Selecciona un almacén válido." }); return; }
   const [active] = await db.select({ id: balanceSyncRunsTable.id }).from(balanceSyncRunsTable)
     .where(inArray(balanceSyncRunsTable.status, [...activeStatuses])).limit(1);
-  if (active) { res.status(409).json({ error: "Ya existe una sincronización en curso." }); return; }
+  if (active) { res.status(409).json({ error: "Ya existe una sincronización en curso.", requestId: active.id }); return; }
   const id = "product-" + parsed.data.warehouse + "-" + generateId();
   await db.insert(balanceSyncRunsTable).values({ id, status: "requested", requestedBy: req.userId, requestedAt: new Date() });
   void writeAuditLog({ userId: req.userId, action: "create", resource: "now_product_sync_request", resourceId: id, ipAddress: req.ip as string });
   res.status(202).json({ id, status: "requested", warehouse: parsed.data.warehouse });
+}));
+
+router.get("/status", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (_req, res) => {
+  const [run] = await db.select({
+    id: balanceSyncRunsTable.id, status: balanceSyncRunsTable.status,
+    requestedAt: balanceSyncRunsTable.requestedAt, recordCount: balanceSyncRunsTable.recordCount,
+    errorMessage: balanceSyncRunsTable.errorMessage,
+  }).from(balanceSyncRunsTable)
+    .where(and(like(balanceSyncRunsTable.id, "product-%"), inArray(balanceSyncRunsTable.status, [...activeStatuses])))
+    .orderBy(desc(balanceSyncRunsTable.requestedAt)).limit(1);
+  res.json(run ?? null);
 }));
 
 router.get("/status/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
@@ -64,6 +75,11 @@ router.post("/:id/preview", requireConnector, asyncHandler(async (req, res) => {
   const parsed = previewSchema.safeParse(req.body);
   if (!id.startsWith("product-") || !parsed.success) {
     res.status(400).json({ error: "Vista previa de productos inválida.", details: parsed.success ? undefined : parsed.error.issues.slice(0, 10) });
+    return;
+  }
+  const requestedWarehouse = id.match(/^product-(QA|Q1|QP|QL|QC|all)-/)?.[1];
+  if (!requestedWarehouse || parsed.data.rows.some(row => requestedWarehouse !== "all" && row.warehouse !== requestedWarehouse)) {
+    res.status(400).json({ error: "La extracción incluye almacenes que no corresponden a la solicitud." });
     return;
   }
   const keys = new Set<string>();
@@ -128,11 +144,12 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
 
 router.post("/:id/reject", requireAuth, requireRole("supervisor", "admin"), asyncHandler(async (req, res) => {
   const id = req.params.id as string;
+  if (!id.startsWith("product-")) { res.status(404).json({ error: "No hay vista previa de productos pendiente." }); return; }
   const [updated] = await db.update(balanceSyncRunsTable).set({
     status: "rejected", completedAt: new Date(), payload: null, summary: null,
   }).where(and(eq(balanceSyncRunsTable.id, id), eq(balanceSyncRunsTable.status, "preview")))
     .returning({ id: balanceSyncRunsTable.id });
-  if (!updated || !id.startsWith("product-")) { res.status(404).json({ error: "No hay vista previa pendiente." }); return; }
+  if (!updated) { res.status(404).json({ error: "No hay vista previa pendiente." }); return; }
   res.json({ id, status: "rejected" });
 }));
 

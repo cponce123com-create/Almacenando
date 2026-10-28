@@ -17,7 +17,6 @@ const itemSchema = z.object({
   code: z.string().trim().min(1).max(120),
   productDescription: z.string().trim().min(1).max(500),
   shortDescription: z.string().trim().max(500).optional().default(""),
-  shortDescription: z.string().trim().max(500).optional().default(""),
   unit: z.string().trim().min(1).max(40),
   quantity: z.string().trim().max(40).regex(/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/, "Cantidad decimal inválida"),
   locationSummary: z.string().max(1000).optional().default(""),
@@ -142,9 +141,14 @@ router.get("/connector/next", requireConnector, asyncHandler(async (_req, res) =
     res.json({ request: null });
     return;
   }
-  await db.update(balanceSyncRunsTable)
+  const [claimed] = await db.update(balanceSyncRunsTable)
     .set({ status: "extracting", claimedAt: new Date(), errorMessage: null })
-    .where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "requested")));
+    .where(and(eq(balanceSyncRunsTable.id, run.id), eq(balanceSyncRunsTable.status, "requested")))
+    .returning({ id: balanceSyncRunsTable.id });
+  if (!claimed) {
+    res.json({ request: null });
+    return;
+  }
   const productMatch = run.id.match(/^product-(QA|Q1|QP|QL|QC|all)-/);
   res.json({ request: { id: run.id, kind: productMatch ? "products" : "balances", warehouse: productMatch?.[1] ?? null } });
 }));
@@ -171,6 +175,10 @@ router.post("/connector/:id/preview", requireConnector, asyncHandler(async (req,
     unitSet.set(productKey, units);
   }
   const incompatibleUnits = [...unitSet.values()].filter(set => set.size > 1).length;
+  if (incompatibleUnits > 0) {
+    res.status(400).json({ error: `La extracción tiene ${incompatibleUnits} códigos con más de una unidad. Se rechazó para evitar sumar cantidades incompatibles.` });
+    return;
+  }
   const summary = {
     total: parsed.data.rows.length,
     QA: parsed.data.rows.filter(row => row.warehouse === "QA").length,

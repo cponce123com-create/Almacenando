@@ -79,6 +79,7 @@ function Invoke-Extraction {
     param([string]$RequestId)
     $connection = $null
     $recordset = $null
+    $consumptionRecordset = $null
     $password = $null
     $connectionString = $null
     $stage = "conexión Oracle"
@@ -93,6 +94,39 @@ function Invoke-Extraction {
         $connection.Open($connectionString)
         $connectionString = $null
         $password = $null
+        $stage = "lectura del último consumo"
+        $lastConsumptionByKey = @{}
+        $consumptionSql = @"
+SELECT
+    LOGICALWAREHOUSECODE,
+    DECOSUBCODE01 AS BALANCE_SUBCODE01,
+    DECOSUBCODE02 AS BALANCE_SUBCODE02,
+    MAX(TRANSACTIONDATE) AS LASTCONSUMPTION
+FROM NOW.STOCKTRANSACTION
+WHERE ITEMTYPECODE = 'Q'
+  AND LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
+  AND TEMPLATECODE IN ('DN','DL','DA','60','46')
+GROUP BY LOGICALWAREHOUSECODE, DECOSUBCODE01, DECOSUBCODE02
+"@
+        $consumptionRecordset = $connection.Execute($consumptionSql)
+        try {
+            while (-not $consumptionRecordset.EOF) {
+                $consumptionWarehouse = Get-TextField $consumptionRecordset "LOGICALWAREHOUSECODE"
+                $consumptionCode01 = Get-TextField $consumptionRecordset "BALANCE_SUBCODE01"
+                $consumptionCode02 = Get-TextField $consumptionRecordset "BALANCE_SUBCODE02"
+                $consumptionValue = Get-Field $consumptionRecordset "LASTCONSUMPTION"
+                if ($consumptionValue -and $consumptionValue -isnot [DBNull]) {
+                    $consumptionDate = [Convert]::ToDateTime($consumptionValue, [Globalization.CultureInfo]::InvariantCulture)
+                    $consumptionKey = "$consumptionWarehouse|$consumptionCode01-$consumptionCode02"
+                    $lastConsumptionByKey[$consumptionKey] = $consumptionDate.ToString("yyyy-MM-dd", [Globalization.CultureInfo]::InvariantCulture)
+                }
+                $consumptionRecordset.MoveNext()
+            }
+        } finally {
+            if ($consumptionRecordset -and $consumptionRecordset.State -ne 0) { $consumptionRecordset.Close() }
+            if ($consumptionRecordset) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($consumptionRecordset) }
+            $consumptionRecordset = $null
+        }
         $stage = "lectura de saldos"
         $sql = @"
 SELECT
@@ -110,11 +144,18 @@ SELECT
     H.BASEPRIMARYUNITCODE
 FROM NOW.BALANCE H
 JOIN (
-    SELECT DISTINCT SUBCODE01, SUBCODE02, LONGDESCRIPTION, SHORTDESCRIPTION
+    SELECT
+        SUBCODE01,
+        SUBCODE02,
+        ITEMTYPECODE,
+        MIN(LONGDESCRIPTION) AS LONGDESCRIPTION,
+        MIN(SHORTDESCRIPTION) AS SHORTDESCRIPTION
     FROM NOW.PRODUCT
+    GROUP BY SUBCODE01, SUBCODE02, ITEMTYPECODE
 ) F
   ON F.SUBCODE01 = H.DECOSUBCODE01
  AND F.SUBCODE02 = H.DECOSUBCODE02
+ AND F.ITEMTYPECODE = H.ITEMTYPECODE
 WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
   AND H.ITEMTYPECODE = 'Q'
 "@
@@ -131,7 +172,11 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
                 $code01 = Get-TextField $recordset "BALANCE_SUBCODE01"
                 $code02 = Get-TextField $recordset "BALANCE_SUBCODE02"
                 $code = "$code01-$code02"
+                $consumptionKey = "$warehouse|$code"
+                $lastConsumption = if ($lastConsumptionByKey.ContainsKey($consumptionKey)) { $lastConsumptionByKey[$consumptionKey] } else { $null }
                 $unit = Get-TextField $recordset "BASEPRIMARYUNITCODE"
+                $location = Get-TextField $recordset "WAREHOUSELOCATIONCODE"
+                $zone = Get-TextField $recordset "WHSLOCATIONWAREHOUSEZONECODE"
                 $description = Get-TextField $recordset "LONGDESCRIPTION"
                 $shortDescription = Get-TextField $recordset "SHORTDESCRIPTION"
                 $quantityValue = Get-Field $recordset "BALANCE_QUANTITY"
@@ -147,7 +192,7 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
                     throw "La consulta devolvió una cantidad no numérica; la extracción se rechaza."
                 }
 
-                $key = "$warehouse|$code|$unit"
+                $key = "$warehouse|$code|$unit|$location|$zone"
                 if (-not $groups.ContainsKey($key)) {
                     $groups[$key] = @{
                         warehouse = $warehouse
@@ -156,20 +201,14 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
                         productDescription = $description
                         shortDescription = $shortDescription
                         unit = $unit
+                        location = $location
+                        zone = $zone
+                        ultimoConsumo = $lastConsumption
                         quantity = [decimal]0
-                        locations = @{}
-                        zones = @{}
                     }
                 }
                 $group = $groups[$key]
-                if ($group.productDescription -ne $description -or $group.shortDescription -ne $shortDescription) {
-                    throw "Hay descripciones diferentes para el mismo almacén, código y unidad; la extracción se rechaza para no consolidar cantidades ambiguas."
-                }
                 $group.quantity += $quantity
-                $location = Get-TextField $recordset "WAREHOUSELOCATIONCODE"
-                $zone = Get-TextField $recordset "WHSLOCATIONWAREHOUSEZONECODE"
-                if ($location) { $group.locations[$location] = $true }
-                if ($zone) { $group.zones[$zone] = $true }
                 $recordset.MoveNext()
             }
         } finally {
@@ -190,8 +229,9 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
                 shortDescription = $_.shortDescription
                 unit = $_.unit
                 quantity = $_.quantity.ToString("0.############################", [Globalization.CultureInfo]::InvariantCulture)
-                locationSummary = Get-JoinedValues $_.locations
-                zoneSummary = Get-JoinedValues $_.zones
+                locationSummary = $_.location
+                zoneSummary = $_.zone
+                ultimoConsumo = $_.ultimoConsumo
             }
         })
         $stage = "transmisión HTTPS"
@@ -229,6 +269,7 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
                 Write-Host "Detalle técnico local (no se envía a ALMACENANDO): $($detailParts -join ' | ')"
                 "Falló la validación de productos en la base Oracle."
             }
+            "lectura del último consumo" { $caughtError.Exception.Message }
             "lectura de saldos" { $caughtError.Exception.Message }
             default { "No se pudo transmitir la extracción por HTTPS." }
         }
@@ -242,10 +283,128 @@ WHERE H.LOGICALWAREHOUSECODE IN ('QA','Q1','QP','QL','QC')
             try { if ($recordset.State -ne 0) { $recordset.Close() } } catch {}
             try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($recordset) } catch {}
         }
+        if ($consumptionRecordset) {
+            try { if ($consumptionRecordset.State -ne 0) { $consumptionRecordset.Close() } } catch {}
+            try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($consumptionRecordset) } catch {}
+        }
         if ($connection) {
             try { if ($connection.State -ne 0) { $connection.Close() } } catch {}
             try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($connection) } catch {}
         }
+        [GC]::Collect()
+        [GC]::WaitForPendingFinalizers()
+    }
+}
+
+function Invoke-ProductExtraction {
+    param([string]$RequestId, [string]$Warehouse)
+    $connection = $null
+    $recordset = $null
+    $password = $null
+    $stage = "conexión Oracle"
+    try {
+        if ($Warehouse -notin @("QA", "Q1", "QP", "QL", "QC", "all")) { throw "Almacén no permitido para la maestra." }
+        $warehouseClause = if ($Warehouse -eq "all") { "IN ('QA','Q1','QP','QL','QC')" } else { "= '$Warehouse'" }
+        $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($script:oracleSecurePassword)
+        try { $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+        $connectionString = "DSN=$Dsn;UID=$script:oracleUserName;PWD=$password"
+        $connection = New-Object -ComObject ADODB.Connection
+        $connection.ConnectionTimeout = 15
+        $connection.CommandTimeout = 120
+        $connection.Open($connectionString)
+        $connectionString = $null
+        $password = $null
+        $stage = "lectura del maestro"
+        $sql = @"
+SELECT
+    F.SUBCODE01,
+    F.SUBCODE02,
+    F.LONGDESCRIPTION,
+    F.SHORTDESCRIPTION,
+    H.LOGICALWAREHOUSECODE,
+    H.BASEPRIMARYUNITCODE,
+    H.WAREHOUSELOCATIONCODE,
+    H.WHSLOCATIONWAREHOUSEZONECODE
+FROM (
+    SELECT SUBCODE01, SUBCODE02,
+           MIN(LONGDESCRIPTION) AS LONGDESCRIPTION,
+           MIN(SHORTDESCRIPTION) AS SHORTDESCRIPTION
+    FROM NOW.PRODUCT
+    WHERE ITEMTYPECODE = 'Q'
+    GROUP BY SUBCODE01, SUBCODE02
+) F
+JOIN NOW.BALANCE H
+  ON H.DECOSUBCODE01 = F.SUBCODE01
+ AND H.DECOSUBCODE02 = F.SUBCODE02
+ AND H.ITEMTYPECODE = 'Q'
+WHERE H.LOGICALWAREHOUSECODE $warehouseClause
+ORDER BY F.SUBCODE01, F.SUBCODE02
+"@
+        $recordset = $connection.Execute($sql)
+        $products = @{}
+        $rawCount = 0
+        try {
+            while (-not $recordset.EOF) {
+                $rawCount++
+                if ($rawCount -gt $MaxRawRows) { throw "La maestra excede el límite de $MaxRawRows filas Oracle." }
+                $code01 = Get-TextField $recordset "SUBCODE01"
+                $code02 = Get-TextField $recordset "SUBCODE02"
+                $code = "$code01-$code02"
+                $name = Get-TextField $recordset "LONGDESCRIPTION"
+                $unit = Get-TextField $recordset "BASEPRIMARYUNITCODE"
+                $rowWarehouse = Get-TextField $recordset "LOGICALWAREHOUSECODE"
+                if ($rowWarehouse -notin @("QA", "Q1", "QP", "QL", "QC") -or $code01 -eq "" -or $code02 -eq "" -or $name -eq "" -or $unit -eq "") {
+                    throw "NOW.PRODUCT devolvió un químico Q sin código, descripción o unidad."
+                }
+                $key = "$rowWarehouse|$code"
+                if (-not $products.ContainsKey($key)) {
+                    $products[$key] = @{
+                        warehouse = $rowWarehouse
+                        type = "Q"
+                        code = $code
+                        name = $name
+                        unit = $unit
+                        locations = @{}
+                    }
+                }
+                $product = $products[$key]
+                if ($product.unit -ne $unit) { throw "El código $code tiene más de una unidad en el almacén $Warehouse." }
+                $location = Get-TextField $recordset "WAREHOUSELOCATIONCODE"
+                $zone = Get-TextField $recordset "WHSLOCATIONWAREHOUSEZONECODE"
+                $locationText = (@($zone, $location) | Where-Object { $_ }) -join "/"
+                if ($locationText) { $product.locations[$locationText] = $true }
+                $recordset.MoveNext()
+            }
+        } finally {
+            if ($recordset -and $recordset.State -ne 0) { $recordset.Close() }
+            if ($recordset) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($recordset) }
+            $recordset = $null
+        }
+        if ($rawCount -eq 0 -or $products.Count -eq 0) { throw "No se encontraron productos tipo Q con saldo en $Warehouse." }
+        $rows = @($products.Values | Sort-Object code | ForEach-Object {
+            [pscustomobject]@{
+                warehouse = $_.warehouse
+                type = $_.type
+                code = $_.code
+                name = $_.name
+                unit = $_.unit
+                location = Get-JoinedValues $_.locations
+            }
+        })
+        $payload = @{ extractedAt = [DateTimeOffset]::UtcNow.ToString("o"); rows = $rows }
+        $json = ConvertTo-Json -InputObject $payload -Depth 6 -Compress
+        Invoke-RestMethod -Method Post -Uri "$apiRoot/products/$RequestId/preview" -Headers $headers -ContentType "application/json; charset=utf-8" -Body $json | Out-Null
+        Write-Host "Vista previa de Maestro de Productos enviada: $($rows.Count) químicos Q en $Warehouse."
+    } catch {
+        $message = $_.Exception.Message
+        Write-Host "Importación de maestro detenida en etapa: $stage."
+        Write-Host $message
+        Send-Failure -RequestId $RequestId -Message $message
+    } finally {
+        $password = $null
+        if ($recordset) { try { if ($recordset.State -ne 0) { $recordset.Close() } } catch {}; try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($recordset) } catch {} }
+        if ($connection) { try { if ($connection.State -ne 0) { $connection.Close() } } catch {}; try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($connection) } catch {} }
         [GC]::Collect()
         [GC]::WaitForPendingFinalizers()
     }
@@ -259,7 +418,11 @@ try {
         $response = Invoke-RestMethod -Method Get -Uri "$apiRoot/connector/next" -Headers $headers -TimeoutSec 20
         if ($response.request -and $response.request.id) {
             Write-Host "Solicitud recibida. Ejecutando consulta de solo lectura."
-            Invoke-Extraction -RequestId ([string]$response.request.id)
+            if ($response.request.kind -eq "products") {
+                Invoke-ProductExtraction -RequestId ([string]$response.request.id) -Warehouse ([string]$response.request.warehouse)
+            } else {
+                Invoke-Extraction -RequestId ([string]$response.request.id)
+            }
         }
     } catch {
         Write-Host "No se pudo consultar ALMACENANDO por HTTPS; se reintentará."

@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { db } from "@workspace/db";
 import { balanceRecordsTable, inventoryRoundsTable } from "@workspace/db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, isNull, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -19,7 +19,7 @@ import { parseExcelBuffer } from "../lib/excel-parser.js";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-const TEMPLATE_HEADERS = ["almacen", "tipo", "codigo", "descripcion_producto", "um", "cantidad", "ultimo_consumo"];
+const TEMPLATE_HEADERS = ["almacen", "tipo", "codigo", "descripcion_producto", "um", "cantidad", "ubicacion", "zona", "ultimo_consumo"];
 
 const balanceSchema = z.object({
   warehouse: z.string().min(1),
@@ -27,7 +27,7 @@ const balanceSchema = z.object({
   code: z.string().min(1),
   productDescription: z.string().min(1),
   unit: z.string().min(1),
-  quantity: z.string().default("0"),
+  quantity: z.coerce.number().finite().default(0),
   balanceDate: z.string().min(1),
   notes: z.string().optional(),
 });
@@ -76,19 +76,24 @@ router.get("/template", requireAuth, asyncHandler(async (req, res) => {
 
   // Fetch latest SA per warehouse+code (including stored ultimo_consumo)
   const latestRows = await db.execute(sql`
-    SELECT DISTINCT ON (br.warehouse, br.code, br.unit)
+    SELECT DISTINCT ON (
+      br.warehouse, br.code, br.unit,
+      COALESCE(br.location_summary, ''), COALESCE(br.zone_summary, '')
+    )
       br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
-      br.ultimo_consumo
+      br.ultimo_consumo, br.location_summary, br.zone_summary
     FROM balance_records br
     ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
-    ORDER BY br.warehouse, br.code, br.unit, br.balance_date DESC, br.created_at DESC
+    ORDER BY br.warehouse, br.code, br.unit,
+      COALESCE(br.location_summary, ''), COALESCE(br.zone_summary, ''),
+      br.balance_date DESC, br.created_at DESC, br.id DESC
   `);
 
   const wb = XLSX.utils.book_new();
   const rows = (latestRows.rows as {
     warehouse: string; type: string | null; code: string;
     product_description: string; unit: string; quantity: string;
-    ultimo_consumo: string | null;
+    ultimo_consumo: string | null; location_summary: string | null; zone_summary: string | null;
   }[]).map(r => ({
     almacen: r.warehouse,
     tipo: r.type ?? "",
@@ -96,11 +101,13 @@ router.get("/template", requireAuth, asyncHandler(async (req, res) => {
     descripcion_producto: r.product_description,
     um: r.unit,
     cantidad: r.quantity,
+    ubicacion: r.location_summary ?? "",
+    zona: r.zone_summary ?? "",
     ultimo_consumo: r.ultimo_consumo ?? "",
   }));
 
   if (rows.length === 0) {
-    rows.push({ almacen: "QA", tipo: "Reactivo", codigo: "PROD-001", descripcion_producto: "Ácido Sulfúrico 98%", um: "L", cantidad: "100", ultimo_consumo: "" });
+    rows.push({ almacen: "QA", tipo: "Q", codigo: "PROD-001", descripcion_producto: "Ácido Sulfúrico 98%", um: "L", cantidad: "100", ubicacion: "", zona: "", ultimo_consumo: "" });
   }
 
   const ws = XLSX.utils.json_to_sheet(rows, { header: TEMPLATE_HEADERS });
@@ -147,8 +154,11 @@ router.post(
         const unit = String(row.um ?? "").trim();
         const warehouse = String(row.almacen ?? "General").trim();
         const balanceDate = String(row.fecha ?? row.fecha_de_hoy ?? "").trim() || todayDate;
-        const quantity = String(row.cantidad ?? "0").trim() || "0";
+        const quantityText = String(row.cantidad ?? "0").trim() || "0";
+        const quantity = Number(quantityText);
         const type = String(row.tipo ?? "").trim() || undefined;
+        const locationSummary = String(row.ubicacion ?? "").trim();
+        const zoneSummary = String(row.zona ?? "").trim();
 
         // Parse and store ultimo_consumo from ERP — default to 2013-01-01 if empty
         const ultimoConsumo = parseImportDate(row.ultimo_consumo);
@@ -156,27 +166,33 @@ router.post(
         if (!code) { errors.push({ row: rowNum, code: "(vacío)", error: "El campo 'codigo' es obligatorio" }); continue; }
         if (!productDescription) { errors.push({ row: rowNum, code, error: "El campo 'descripcion_producto' es obligatorio" }); continue; }
         if (!unit) { errors.push({ row: rowNum, code, error: "El campo 'um' es obligatorio" }); continue; }
+        if (!Number.isFinite(quantity)) { errors.push({ row: rowNum, code, error: "El campo 'cantidad' debe ser numérico" }); continue; }
 
         const existing = await db.select({ id: balanceRecordsTable.id })
           .from(balanceRecordsTable)
           .where(and(
             eq(balanceRecordsTable.warehouse, warehouse),
             eq(balanceRecordsTable.code, code),
+            type ? eq(balanceRecordsTable.type, type) : isNull(balanceRecordsTable.type),
             eq(balanceRecordsTable.balanceDate, balanceDate),
+            eq(balanceRecordsTable.unit, unit),
+            locationSummary ? eq(balanceRecordsTable.locationSummary, locationSummary) : isNull(balanceRecordsTable.locationSummary),
+            zoneSummary ? eq(balanceRecordsTable.zoneSummary, zoneSummary) : isNull(balanceRecordsTable.zoneSummary),
             eq(balanceRecordsTable.source, "EXCEL")
           ))
           .limit(1);
 
         if (existing.length > 0) {
           await db.update(balanceRecordsTable)
-            .set({ productDescription, unit, quantity, type, ultimoConsumo, batchId, source: "EXCEL", sourceRunId: null, locationSummary: null, zoneSummary: null, registeredBy: userId, updatedAt: new Date() })
+            .set({ productDescription, unit, quantity, type, ultimoConsumo, batchId, source: "EXCEL", sourceRunId: null, locationSummary: locationSummary || null, zoneSummary: zoneSummary || null, registeredBy: userId, updatedAt: new Date() })
             .where(eq(balanceRecordsTable.id, existing[0]!.id));
           updated++;
         } else {
           const id = generateId();
           await db.insert(balanceRecordsTable).values({
             id, warehouse, type, code, productDescription, unit, quantity,
-            balanceDate, ultimoConsumo, batchId, source: "EXCEL", registeredBy: userId,
+            balanceDate, ultimoConsumo, batchId, source: "EXCEL", locationSummary: locationSummary || null,
+            zoneSummary: zoneSummary || null, registeredBy: userId,
           });
           inserted++;
         }
@@ -197,14 +213,14 @@ router.post(
           .limit(1);
         if (activeRound) {
           // Calcular totales
-          const [stats] = await db.execute(sql`
+              const statsResult = await db.execute(sql`
             SELECT
               COALESCE(SUM(ir.physical_count), 0) AS total_physical,
               COUNT(ir.id)::int AS record_count
             FROM inventory_records ir
             WHERE ir.round_id = ${activeRound.id}
           `);
-          const row = stats.rows[0] || {};
+              const row = statsResult.rows[0] || {};
           await db.update(inventoryRoundsTable)
             .set({
               status: "closed",
@@ -241,13 +257,30 @@ router.get("/latest", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
 
   const rows = await db.execute(sql`
-    SELECT DISTINCT ON (br.warehouse, br.code, br.unit)
+    WITH latest_snapshot AS (
+      SELECT DISTINCT ON (warehouse)
+        warehouse, balance_date, batch_id
+      FROM balance_records
+      ${warehouse && warehouse !== "all" ? sql`WHERE warehouse = ${warehouse}` : sql``}
+      ORDER BY warehouse, balance_date DESC, created_at DESC, id DESC
+    )
+    SELECT DISTINCT ON (
+      br.warehouse, br.type, br.code, br.unit,
+      COALESCE(br.location_summary, ''), COALESCE(br.zone_summary, '')
+    )
       br.id, br.warehouse, br.type, br.code, br.product_description, br.unit, br.quantity,
       br.balance_date, br.batch_id, br.notes, br.registered_by, br.created_at, br.updated_at,
       br.ultimo_consumo AS "ultimoConsumo", br.source, br.location_summary AS "locationSummary", br.zone_summary AS "zoneSummary"
     FROM balance_records br
-    ${warehouse && warehouse !== "all" ? sql`WHERE br.warehouse = ${warehouse}` : sql``}
-    ORDER BY br.warehouse, br.code, br.unit, br.balance_date DESC, br.created_at DESC
+    JOIN latest_snapshot s
+      ON s.warehouse = br.warehouse
+     AND s.balance_date = br.balance_date
+     AND s.batch_id IS NOT DISTINCT FROM br.batch_id
+    WHERE TRUE
+      ${warehouse && warehouse !== "all" ? sql`AND br.warehouse = ${warehouse}` : sql``}
+    ORDER BY br.warehouse, br.type, br.code, br.unit,
+      COALESCE(br.location_summary, ''), COALESCE(br.zone_summary, ''),
+      br.balance_date DESC, br.created_at DESC, br.id DESC
   `);
   res.json(rows.rows);
 }));
@@ -286,25 +319,6 @@ router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
   const records = await db.select().from(balanceRecordsTable).where(eq(balanceRecordsTable.id, id as string)).limit(1);
   if (records.length === 0) { res.status(404).json({ error: "Registro no encontrado" }); return; }
   res.json(records[0]);
-}));
-
-// ── Get available balance batch dates (for detect-no-movement flow) ────────
-router.get("/dates", requireAuth, asyncHandler(async (req, res) => {
-  const warehouse = req.query.warehouse as string | undefined;
-  const condition = warehouse && warehouse !== "all"
-    ? eq(balanceRecordsTable.warehouse, warehouse)
-    : undefined;
-
-  const dates = await db.select({
-    balanceDate: balanceRecordsTable.balanceDate,
-    batchId: balanceRecordsTable.batchId,
-  })
-    .from(balanceRecordsTable)
-    .where(condition)
-    .groupBy(balanceRecordsTable.batchId, balanceRecordsTable.balanceDate)
-    .orderBy(desc(balanceRecordsTable.balanceDate));
-
-  res.json(dates);
 }));
 
 router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), asyncHandler(async (req: AuthenticatedRequest, res) => {

@@ -146,6 +146,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
     id: productsTable.id,
     code: productsTable.code,
     warehouse: productsTable.warehouse,
+    type: productsTable.type,
   })
     .from(productsTable)
     .where(and(
@@ -158,20 +159,32 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
     return;
   }
 
-  // Get latest balance for each product to calculate priority
+  // Read the complete latest snapshot, summing the product's separate locations.
   const latestBalances = await db.execute(sql`
-    SELECT DISTINCT ON (br.code)
-      br.code, br.quantity, br.ultimo_consumo, br.batch_id
+    WITH latest_snapshot AS (
+      SELECT batch_id, balance_date
+      FROM balance_records
+      WHERE warehouse = ${warehouse}
+      ORDER BY balance_date DESC, created_at DESC, id DESC
+      LIMIT 1
+    )
+    SELECT br.type, br.code,
+      SUM(br.quantity)::text AS quantity,
+      MAX(br.ultimo_consumo)::text AS ultimo_consumo,
+      MAX(br.batch_id) AS batch_id
     FROM balance_records br
+    JOIN latest_snapshot s
+      ON br.balance_date = s.balance_date
+     AND br.batch_id IS NOT DISTINCT FROM s.batch_id
     WHERE br.warehouse = ${warehouse}
-    ORDER BY br.code, br.balance_date DESC, br.created_at DESC
+    GROUP BY br.type, br.code
   `);
 
   const balanceByCode = new Map<string, { quantity: string; ultimoConsumo: string | null; batchId: string }>();
   for (const row of latestBalances.rows as {
-    code: string; quantity: string; ultimo_consumo: string | null; batch_id: string;
+    type: string | null; code: string; quantity: string; ultimo_consumo: string | null; batch_id: string;
   }[]) {
-    balanceByCode.set(row.code, {
+    balanceByCode.set(`${row.type ?? ""}::${row.code}`, {
       quantity: row.quantity,
       ultimoConsumo: row.ultimo_consumo,
       batchId: row.batch_id,
@@ -196,7 +209,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
 
   // Build cycle products with priority: higher priority = more urgent to count
   const cycleProducts = products.map((p) => {
-    const balance = balanceByCode.get(p.code);
+    const balance = balanceByCode.get(`${p.type ?? ""}::${p.code}`);
     const lastInvDate = inventoryDateMap.get(p.id);
     const balanceBatchId = balance?.batchId ?? null;
     const initialQty = balance?.quantity ? parseFloat(balance.quantity) : null;
@@ -505,33 +518,47 @@ router.post("/:id/detect-no-movement", requireAuth, requireRole("supervisor", "a
     return;
   }
 
-  // Get latest balances for comparison (using batchId if provided)
-  const balanceCondition = batchId
-    ? and(
-        eq(balanceRecordsTable.warehouse, cycle.warehouse),
-        eq(balanceRecordsTable.batchId, batchId)
-      )
-    : eq(balanceRecordsTable.warehouse, cycle.warehouse);
+  // Compare complete snapshots: sum the product rows across its locations.
+  const latestBalances = batchId
+    ? await db.execute(sql`
+        SELECT br.type, br.code,
+          SUM(br.quantity)::text AS quantity,
+          MAX(br.ultimo_consumo)::text AS ultimo_consumo,
+          MAX(br.batch_id) AS batch_id
+        FROM balance_records br
+        WHERE br.warehouse = ${cycle.warehouse} AND br.batch_id = ${batchId}
+        GROUP BY br.type, br.code
+      `)
+    : await db.execute(sql`
+        WITH latest_snapshot AS (
+          SELECT batch_id, balance_date
+          FROM balance_records
+          WHERE warehouse = ${cycle.warehouse}
+          ORDER BY balance_date DESC, created_at DESC, id DESC
+          LIMIT 1
+        )
+        SELECT br.type, br.code,
+          SUM(br.quantity)::text AS quantity,
+          MAX(br.ultimo_consumo)::text AS ultimo_consumo,
+          MAX(br.batch_id) AS batch_id
+        FROM balance_records br
+        JOIN latest_snapshot s
+          ON br.balance_date = s.balance_date
+         AND br.batch_id IS NOT DISTINCT FROM s.batch_id
+        WHERE br.warehouse = ${cycle.warehouse}
+        GROUP BY br.type, br.code
+      `);
 
-  const latestBalances = await db.execute(sql`
-    SELECT DISTINCT ON (br.code)
-      br.code, br.quantity, br.ultimo_consumo, br.batch_id
-    FROM balance_records br
-    WHERE br.warehouse = ${cycle.warehouse}
-      ${batchId ? sql`AND br.batch_id = ${batchId}` : sql``}
-    ORDER BY br.code, br.balance_date DESC, br.created_at DESC
-  `);
-
-  const balanceMap = new Map<string, { quantity: string | null; ultimoConsumo: string | null }>();
-  for (const row of latestBalances.rows as { code: string; quantity: string | null; ultimo_consumo: string | null }[]) {
-    balanceMap.set(row.code, { quantity: row.quantity, ultimoConsumo: row.ultimo_consumo });
+  const balanceMap = new Map<string, { quantity: string | null; ultimoConsumo: string | null; batch_id: string | null }>();
+  for (const row of latestBalances.rows as { type: string | null; code: string; quantity: string | null; ultimo_consumo: string | null; batch_id: string | null }[]) {
+    balanceMap.set(`${row.type ?? ""}::${row.code}`, { quantity: row.quantity, ultimoConsumo: row.ultimo_consumo, batch_id: row.batch_id });
   }
 
   let marked = 0;
   const updates: Array<{ productId: string; update: Record<string, unknown> }> = [];
 
   for (const { cp, product } of pendingProducts) {
-    const currentBalance = balanceMap.get(product.code);
+    const currentBalance = balanceMap.get(`${product.type ?? ""}::${product.code}`);
     if (!currentBalance) continue;
 
     // Check: same ultimo_consumo AND same quantity → no movement
@@ -551,7 +578,7 @@ router.post("/:id/detect-no-movement", requireAuth, requireRole("supervisor", "a
           status: "without_movement",
           finalUltimoConsumo: currentUC,
           finalQuantity: currentQty,
-          finalBalanceBatchId: (currentBalance as unknown as { batch_id: string }).batch_id ?? null,
+          finalBalanceBatchId: currentBalance.batch_id,
           updatedAt: new Date(),
         },
       });
