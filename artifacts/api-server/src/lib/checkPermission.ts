@@ -41,7 +41,8 @@ function permissionForRequest(req: Request): PermissionAction {
   // Check destructive/import actions first so those routes keep their own grant.
   if (req.method === "DELETE" || /(?:reset|archive|purge)/.test(path)) return "canDelete";
   if (req.method === "POST" && /(?:import|upload)/.test(path)) return "canImport";
-  if (/(?:export|download|template)/.test(path)) return "canExport";
+  if (/(?:template)/.test(path)) return "canImport";
+  if (/(?:export|download)/.test(path)) return "canExport";
   if (["POST", "PUT", "PATCH"].includes(req.method)) return "canEdit";
   return "canView";
 }

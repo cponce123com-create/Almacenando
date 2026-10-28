@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // Access tokens live only in memory. A short-lived token is restored on page
@@ -12,6 +12,7 @@ authChannel?.addEventListener("message", event => {
     memoryToken = null;
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = null;
+    window.dispatchEvent(new Event("almacenando-auth-logout"));
   }
 });
 
@@ -87,6 +88,16 @@ async function refreshTokenRequest(): Promise<boolean> {
 export function useAuth() {
   const queryClient = useQueryClient();
   const [, setToken] = useState<string | null>(memoryToken);
+
+  useEffect(() => {
+    const onRemoteLogout = () => {
+      setToken(null);
+      queryClient.setQueryData(["/api/auth/me"], null);
+      queryClient.clear();
+    };
+    window.addEventListener("almacenando-auth-logout", onRemoteLogout);
+    return () => window.removeEventListener("almacenando-auth-logout", onRemoteLogout);
+  }, [queryClient]);
 
   const { data: user, isLoading, error } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],

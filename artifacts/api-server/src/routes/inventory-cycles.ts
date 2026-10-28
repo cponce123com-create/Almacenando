@@ -603,6 +603,21 @@ router.patch("/:id/products/:productId", requireAuth, requireRole("supervisor", 
     return;
   }
 
+  if (parsed.data.status === "verified" && req.userRole === "operator") {
+    res.status(403).json({ error: "Solo supervisores pueden verificar conteos." });
+    return;
+  }
+
+  const [cycle] = await db.select({ status: inventoryCyclesTable.status })
+    .from(inventoryCyclesTable)
+    .where(eq(inventoryCyclesTable.id, id as string))
+    .limit(1);
+  if (!cycle) { res.status(404).json({ error: "Ciclo no encontrado" }); return; }
+  if (cycle.status !== "active") {
+    res.status(409).json({ error: "El ciclo está cerrado y ya no se puede modificar." });
+    return;
+  }
+
   const [existing] = await db.select()
     .from(inventoryCycleProductsTable)
     .where(and(
@@ -624,10 +639,15 @@ router.patch("/:id/products/:productId", requireAuth, requireRole("supervisor", 
   if (parsed.data.status === "counted") {
     updateData.countedDate = new Date().toISOString().slice(0, 10);
     updateData.countedBy = req.userId;
-    if (parsed.data.physicalCount) {
-      updateData.physicalCount = parseFloat(parsed.data.physicalCount);
+    if (parsed.data.physicalCount !== undefined) {
+      const physicalCount = Number(parsed.data.physicalCount);
+      if (!Number.isFinite(physicalCount)) {
+        res.status(400).json({ error: "El peso físico debe ser un número válido." });
+        return;
+      }
+      updateData.physicalCount = physicalCount;
       if (existing.initialQuantity !== null) {
-        updateData.difference = (updateData.physicalCount as number) - existing.initialQuantity;
+        updateData.difference = physicalCount - existing.initialQuantity;
       }
     }
     if (parsed.data.inventoryRecordId) {
@@ -831,27 +851,32 @@ router.post("/:id/sync", requireAuth, requireRole("supervisor", "admin"), asyncH
   if (!cycle) { res.status(404).json({ error: "Ciclo no encontrado" }); return; }
   if (cycle.status !== "active") { res.status(400).json({ error: "El ciclo ya está cerrado. No se puede sincronizar." }); return; }
 
-  // Obtener todos los registros de inventario del almacén, agrupados por producto
+  // Use only each product's latest physical count. Summing historical counts
+  // inflated quantities whenever a product had been counted more than once.
   const inventoryRecords = await db.execute(sql`
-    SELECT
+    SELECT DISTINCT ON (ir.product_id)
       ir.product_id,
-      COUNT(*)::int AS total_records,
-      MAX(ir.record_date) AS latest_date,
-      SUM(COALESCE(ir.physical_count, 0)) AS total_physical,
-      AVG(COALESCE(ir.previous_balance, 0)) AS avg_balance
+      ir.id AS inventory_record_id,
+      ir.record_date AS latest_date,
+      ir.physical_count AS physical_count,
+      ir.previous_balance AS system_balance,
+      ir.registered_by AS counted_by
     FROM inventory_records ir
     JOIN products p ON p.id = ir.product_id
     WHERE p.warehouse = ${cycle.warehouse}
       AND p.status = 'active'
-    GROUP BY ir.product_id
+      AND ir.warehouse = ${cycle.warehouse}
+      AND ir.physical_count IS NOT NULL
+    ORDER BY ir.product_id, ir.record_date DESC, ir.created_at DESC, ir.id DESC
   `);
 
   const rows = inventoryRecords.rows as {
     product_id: string;
-    total_records: number;
+    inventory_record_id: string;
     latest_date: string;
-    total_physical: number;
-    avg_balance: number;
+    physical_count: string | number;
+    system_balance: string | number;
+    counted_by: string | null;
   }[];
 
   let synced = 0;
@@ -868,8 +893,8 @@ router.post("/:id/sync", requireAuth, requireRole("supervisor", "admin"), asyncH
       ))
       .limit(1);
 
-    const physicalCount = row.total_physical;
-    const balance = row.avg_balance;
+    const physicalCount = Number(row.physical_count);
+    const balance = Number(row.system_balance);
     const diff = physicalCount - balance;
 
     if (existingCp) {
@@ -881,11 +906,13 @@ router.post("/:id/sync", requireAuth, requireRole("supervisor", "admin"), asyncH
           finalQuantity: physicalCount,
           difference: diff,
           countedDate: row.latest_date,
+          countedBy: row.counted_by,
+          inventoryRecordId: row.inventory_record_id,
           updatedAt: new Date(),
         } as any)
         .where(eq(inventoryCycleProductsTable.id, existingCp.id));
       synced++;
-    } else if (row.total_records > 0) {
+    } else {
       // Agregar el producto al ciclo (no estaba registrado)
       const id_gen = generateId();
       await db.insert(inventoryCycleProductsTable).values({
@@ -897,6 +924,8 @@ router.post("/:id/sync", requireAuth, requireRole("supervisor", "admin"), asyncH
         finalQuantity: physicalCount,
         difference: diff,
         countedDate: row.latest_date,
+        countedBy: row.counted_by,
+        inventoryRecordId: row.inventory_record_id,
         initialQuantity: balance,
         updatedAt: new Date(),
       } as any);

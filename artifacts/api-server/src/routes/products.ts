@@ -129,15 +129,29 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   }
   const products = await query.orderBy(productsTable.code);
 
-  // Last inventory record date per product
+  // Export the ERP's actual last-consumption date from each warehouse's latest
+  // balance snapshot; inventory record dates describe counts, not consumption.
   const lcRows = await db.execute(sql`
-    SELECT ir.product_id, MAX(ir.record_date) AS last_consumption_date
-    FROM inventory_records ir
-    GROUP BY ir.product_id
+    WITH latest_snapshot AS (
+      SELECT DISTINCT ON (warehouse) warehouse, balance_date, batch_id
+      FROM balance_records
+      ORDER BY warehouse, balance_date DESC, created_at DESC, id DESC
+    ), latest_products AS (
+      SELECT DISTINCT ON (br.warehouse, br.type, br.code)
+        br.warehouse, br.type, br.code, br.ultimo_consumo
+      FROM balance_records br
+      JOIN latest_snapshot s
+        ON s.warehouse = br.warehouse
+       AND s.balance_date = br.balance_date
+       AND s.batch_id IS NOT DISTINCT FROM br.batch_id
+      ORDER BY br.warehouse, br.type, br.code,
+        br.created_at DESC, br.id DESC
+    )
+    SELECT warehouse, type, code, ultimo_consumo FROM latest_products
   `);
   const lcMap = new Map<string, string>();
-  for (const row of lcRows.rows as { product_id: string; last_consumption_date: string | null }[]) {
-    if (row.last_consumption_date) lcMap.set(row.product_id, row.last_consumption_date);
+  for (const row of lcRows.rows as { warehouse: string; type: string | null; code: string; ultimo_consumo: string | null }[]) {
+    if (row.ultimo_consumo) lcMap.set(`${row.warehouse}\u0000${row.type ?? ""}\u0000${row.code}`, row.ultimo_consumo);
   }
 
   const rows = products.map(p => {
@@ -149,7 +163,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
       lote: "", tipo_producto: p.hazardClass ?? "", estado: p.status === "active" ? "activo" : "inactivo",
       msds: p.msds ? "si" : "no", controlado: p.controlled ? "si" : "no",
       observacion: p.notes ?? "",
-      ultimo_consumo: lcMap.get(p.id) ?? "",
+      ultimo_consumo: lcMap.get(`${p.warehouse}\u0000${p.type ?? ""}\u0000${p.code}`) ?? "",
       msds_url: p.msdsUrl ?? "",
       nivel_peligro: p.hazardLevel ?? "precaucion",
       primeros_auxilios: p.firstAid ?? "",
