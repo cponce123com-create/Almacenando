@@ -14,13 +14,14 @@ import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, Alert
 export interface Product { id: string; code: string; name: string; unit: string; warehouse: string; type?: string | null; }
 export interface InventoryBox {
   id: string; inventoryRecordId: string; boxNumber: number;
-  weight: string | null; lot: string | null; photoUrl: string | null; createdAt: string;
+  weight: string | null; tare?: string | null; lot: string | null; photoUrl: string | null; createdAt: string;
 }
 export interface InventoryRecord {
   id: string; warehouse: string; productId: string; recordDate: string;
   previousBalance: string; inputs: string; outputs: string; finalBalance: string;
   physicalCount?: string | null; photoUrl?: string | null;
   location?: string | null; notes?: string | null;
+  responsible?: string | null; missingLabel?: boolean | null;
   registeredBy: string; createdAt: string; boxes?: InventoryBox[];
   lastConsumptionDate?: string | null;
 }
@@ -35,8 +36,10 @@ export interface BalanceRecord {
 export interface BoxEntry {
   weight: string;   // peso bruto (lo que ingresa el usuario)
   tare: string;     // tara seleccionada (ej: "1.8", "2")
+  customTare?: string;
   netWeight: string; // calculado: weight - tare
   lot: string;
+  sourceBoxNumber?: number; // número previo al editar, para mantener asociada su foto
 }
 
 // ── Shared constants ──────────────────────────────────────────────────────────
