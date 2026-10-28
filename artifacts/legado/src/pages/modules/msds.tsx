@@ -1264,7 +1264,7 @@ export default function MsdsPage() {
                   const status = p.msdsStatus ?? "NONE";
                   const cfg = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.NONE;
                   const Icon = cfg.Icon;
-                  const sm = sinMovimiento(lastMovements[p.code]);
+                  const sm = sinMovimiento(lastMovements[`${p.warehouse}::${p.type ?? ""}::${p.code}`]);
                   return (
                     <div
                       key={p.id}

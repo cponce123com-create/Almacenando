@@ -146,7 +146,7 @@ export default function MaestrodeProductosPage() {
   });
 
   const balanceByCode = useMemo(
-    () => Object.fromEntries(latestBalances.map((b: BalanceRecord) => [b.code, b])),
+    () => Object.fromEntries(latestBalances.map((b: BalanceRecord) => [`${b.warehouse}::${b.type ?? ""}::${b.code}`, b])),
     [latestBalances]
   );
 
@@ -485,7 +485,7 @@ export default function MaestrodeProductosPage() {
                       </TableCell>
                       <TableCell className="text-center">
                         {(() => {
-                          const bal = balanceByCode[product.code];
+                          const bal = balanceByCode[`${product.warehouse}::${product.type ?? ""}::${product.code}`];
                           const sm = sinMovimiento(bal?.ultimoConsumo);
                           return (
                             <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${sm.pill}`} title={bal?.ultimoConsumo ? `Último movimiento: ${bal.ultimoConsumo}` : "Sin datos de movimiento"}>

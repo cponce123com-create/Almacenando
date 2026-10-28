@@ -665,19 +665,20 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
 
   // ── Obtener el ÚLTIMO ultimo_consumo de balance_records para cada producto ──
   const latestBalances = productIdArray.length > 0 ? await db.execute(sql`
-    SELECT DISTINCT ON (br.code)
-      br.code, br.ultimo_consumo
+    SELECT DISTINCT ON (br.type, br.code)
+      br.type, br.code, br.ultimo_consumo
     FROM balance_records br
     WHERE br.warehouse = ${warehouse}
       AND br.ultimo_consumo IS NOT NULL
       AND br.ultimo_consumo > '2013-01-01'
-    ORDER BY br.code, br.balance_date DESC, br.created_at DESC
+    ORDER BY br.type, br.code, br.balance_date DESC, br.created_at DESC
   `) : { rows: [] };
 
   const latestBalanceUltimoConsumo = new Map<string, string>();
-  for (const row of (latestBalances.rows as { code: string; ultimo_consumo: string }[])) {
-    if (!latestBalanceUltimoConsumo.has(row.code)) {
-      latestBalanceUltimoConsumo.set(row.code, row.ultimo_consumo);
+  for (const row of (latestBalances.rows as { type: string | null; code: string; ultimo_consumo: string }[])) {
+    const key = `${row.type ?? ""}::${row.code}`;
+    if (!latestBalanceUltimoConsumo.has(key)) {
+      latestBalanceUltimoConsumo.set(key, row.ultimo_consumo);
     }
   }
 
@@ -714,11 +715,12 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
 
   // ── Construir el consolidado ──
   // Mapa de producto.id → datos básicos (code, name, unit, productName)
-  const productInfoMap = new Map<string, { code: string; productName: string; unit: string }>();
+  const productInfoMap = new Map<string, { code: string; type: string | null; productName: string; unit: string }>();
   for (const r of allCycleProducts) {
     if (!productInfoMap.has(r.product.id)) {
       productInfoMap.set(r.product.id, {
         code: r.product.code,
+        type: r.product.type,
         productName: r.product.name,
         unit: r.product.unit,
       });
@@ -728,7 +730,7 @@ router.post("/export/consolidated-cycles", requireAuth, requireRole("admin", "su
   const dataConsolidated = Array.from(productInfoMap.entries()).map(([productId, info]) => {
     const firstInitialQty = firstInitialQtyMap.get(productId) ?? null;
     const lastPhysicalCount = latestPhysicalMap.get(productId) ?? null;
-    const ultimoConsumo = latestBalanceUltimoConsumo.get(info.code) ?? null;
+    const ultimoConsumo = latestBalanceUltimoConsumo.get(`${info.type ?? ""}::${info.code}`) ?? null;
     const daysSince = calcDaysSince(ultimoConsumo);
     const monthsSince = daysSince !== null ? Math.floor(daysSince / 30.44) : null;
     const diff = (lastPhysicalCount !== null && firstInitialQty !== null)

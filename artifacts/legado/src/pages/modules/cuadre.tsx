@@ -19,7 +19,7 @@ import {
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface Product { id: string; code: string; name: string; unit: string; warehouse: string; }
-interface BalanceRecord { code: string; quantity: string; ultimoConsumo?: string | null; }
+interface BalanceRecord { warehouse: string; type?: string | null; code: string; quantity: string; ultimoConsumo?: string | null; }
 
 function sinMovimiento(dateStr: string | null | undefined): { label: string; color: string } {
   if (!dateStr) return { label: "—", color: "text-slate-300" };
@@ -38,7 +38,7 @@ function sinMovimiento(dateStr: string | null | undefined): { label: string; col
 interface InventoryRecord { productId: string; physicalCount?: string | null; recordDate: string; }
 interface CuadreItem {
   id: string; cuadreId: string; code: string; productDescription: string; unit: string;
-  systemBalance: string; physicalCount: string; difference: string; notes?: string | null;
+  systemBalance: number; physicalCount: number; difference: number; notes?: string | null;
   lastConsumptionDate?: string | null;
 }
 interface CuadreRecord {
@@ -200,10 +200,19 @@ export default function CuadrePage() {
   });
 
   // Build lookup maps
-  const balanceByCode = useMemo(
-    () => Object.fromEntries(latestBalances.map(b => [b.code, b])),
-    [latestBalances]
-  );
+  const balanceByCode = useMemo(() => {
+    const result: Record<string, BalanceRecord> = {};
+    for (const row of latestBalances) {
+      const key = `${row.warehouse}::${row.type ?? ""}::${row.code}`;
+      const current = result[key];
+      result[key] = {
+        ...row,
+        quantity: String((Number(current?.quantity) || 0) + (Number(row.quantity) || 0)),
+        ultimoConsumo: [current?.ultimoConsumo, row.ultimoConsumo].filter(Boolean).sort().at(-1) ?? null,
+      };
+    }
+    return result;
+  }, [latestBalances]);
 
   // Latest physical count per product (records come sorted desc by date)
   const latestPhysicalByProduct = useMemo(() => {
@@ -222,7 +231,7 @@ export default function CuadrePage() {
   );
 
   const product = productMap[selectedProduct];
-  const saBalanceRecord = product ? (balanceByCode[product.code] ?? null) : null;
+  const saBalanceRecord = product ? (balanceByCode[`${product.warehouse}::${product.type ?? ""}::${product.code}`] ?? null) : null;
   const saBalance = saBalanceRecord?.quantity ?? null;
   const lastPhysical = product ? (latestPhysicalByProduct[product.id] ?? null) : null;
   const difference = saBalance !== null && lastPhysical !== null
@@ -246,8 +255,8 @@ export default function CuadrePage() {
             code: product.code,
             productDescription: product.name,
             unit: product.unit,
-            systemBalance: saBalance ?? "0",
-            physicalCount: lastPhysical ?? "0",
+            systemBalance: Number(saBalance ?? 0),
+            physicalCount: Number(lastPhysical ?? 0),
             notes: "",
           }],
         }),
@@ -293,7 +302,7 @@ export default function CuadrePage() {
   const withDiff = records.filter(r => {
     const item = r.items?.[0];
     if (!item) return false;
-    return Math.abs(parseFloat(item.difference) || 0) >= 0.01;
+    return Math.abs(Number(item.difference) || 0) >= 0.01;
   }).length;
 
   return (
@@ -379,7 +388,7 @@ export default function CuadrePage() {
                 <TableBody>
                   {records.map(r => {
                     const item = r.items?.[0];
-                    const diff = item ? parseFloat(item.difference) || 0 : 0;
+                    const diff = item ? Number(item.difference) || 0 : 0;
                     const isPending = r.status === "pending";
                     return (
                       <TableRow key={r.id} className="hover:bg-slate-50/70">
@@ -395,17 +404,18 @@ export default function CuadrePage() {
                           ) : <span className="text-slate-300 text-sm">—</span>}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm text-slate-500">
-                          {item ? parseFloat(item.systemBalance).toFixed(2) : "—"}
+                          {item ? Number(item.systemBalance).toFixed(2) : "—"}
                         </TableCell>
                         <TableCell className="text-right font-mono text-sm font-semibold text-slate-800">
-                          {item ? parseFloat(item.physicalCount).toFixed(2) : "—"}
+                          {item ? Number(item.physicalCount).toFixed(2) : "—"}
                         </TableCell>
                         <TableCell className="text-center">
                           {item ? <DiffBadge diff={diff} /> : <span className="text-slate-300 text-xs">—</span>}
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
                           {(() => {
-                            const uc = balanceByCode[item?.code ?? ""]?.ultimoConsumo;
+                            const itemProduct = products.find(p => p.code === item?.code && p.warehouse === r.warehouse);
+                            const uc = itemProduct ? balanceByCode[`${itemProduct.warehouse}::${itemProduct.type ?? ""}::${itemProduct.code}`]?.ultimoConsumo : null;
                             return uc
                               ? <span className="text-slate-700 font-medium">{uc}</span>
                               : <span className="text-slate-300">—</span>;
@@ -413,7 +423,8 @@ export default function CuadrePage() {
                         </TableCell>
                         <TableCell className="text-center whitespace-nowrap">
                           {(() => {
-                            const uc = balanceByCode[item?.code ?? ""]?.ultimoConsumo;
+                            const itemProduct = products.find(p => p.code === item?.code && p.warehouse === r.warehouse);
+                            const uc = itemProduct ? balanceByCode[`${itemProduct.warehouse}::${itemProduct.type ?? ""}::${itemProduct.code}`]?.ultimoConsumo : null;
                             const sm = sinMovimiento(uc);
                             return <span className={`text-xs font-semibold ${sm.color}`}>{sm.label}</span>;
                           })()}

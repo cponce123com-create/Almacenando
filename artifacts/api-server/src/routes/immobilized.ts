@@ -37,7 +37,7 @@ const router = Router();
 
 const immobilizedSchema = z.object({
   productId: z.string().min(1),
-  quantity: z.string().min(1),
+  quantity: z.coerce.number().positive().finite(),
   reason: z.string().min(1),
   immobilizedDate: z.string().min(1),
   status: z.enum(["immobilized", "released", "disposed"]).default("immobilized"),

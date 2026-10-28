@@ -43,7 +43,7 @@ import {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QD"];
+const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QC", "QD"];
 
 const LOCATION_TYPES = ["rack", "shelf", "bin", "floor", "cooler", "hazardous"] as const;
 

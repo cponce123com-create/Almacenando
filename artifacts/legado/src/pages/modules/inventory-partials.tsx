@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getAuthHeaders } from "@/hooks/use-auth";
-import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, TrendingDown, ClipboardList, Loader2, Camera } from "lucide-react";
+import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, ClipboardList, Loader2, Camera } from "lucide-react";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
-export interface Product { id: string; code: string; name: string; unit: string; warehouse: string; }
+export interface Product { id: string; code: string; name: string; unit: string; warehouse: string; type?: string | null; }
 export interface InventoryBox {
   id: string; inventoryRecordId: string; boxNumber: number;
   weight: string | null; lot: string | null; photoUrl: string | null; createdAt: string;
@@ -29,7 +29,7 @@ export interface InventoryStats {
   withDifference: number; surplus: number; shortage: number;
 }
 export interface BalanceRecord {
-  id: string; code: string; quantity: string; productDescription: string; unit: string; balanceDate: string;
+  id: string; warehouse: string; type?: string | null; code: string; quantity: string; productDescription: string; unit: string; balanceDate: string;
   ultimoConsumo?: string | null;
 }
 export interface BoxEntry {
@@ -41,7 +41,7 @@ export interface BoxEntry {
 
 // ── Shared constants ──────────────────────────────────────────────────────────
 
-export const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QD"] as const;
+export const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QC", "QD"] as const;
 export const NUM_BOXES = 2;
 
 /** Taras predefinidas para el dropdown */

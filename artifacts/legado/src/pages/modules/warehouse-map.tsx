@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Map,
+  Map as MapIcon,
   Loader2,
   Package,
   Warehouse as WarehouseIcon,
@@ -30,7 +30,7 @@ import {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QD"];
+const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QC", "QD"];
 
 interface Rack {
   id: string;
@@ -54,7 +54,7 @@ interface Product {
   location?: string;
 }
 
-const ZONE_COLORS: Record<string, string> = {
+const ZONE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   A: { bg: "#dcfce7", border: "#86efac", text: "#166534" },
   B: { bg: "#dbeafe", border: "#93c5fd", text: "#1e40af" },
   C: { bg: "#fef3c7", border: "#fcd34d", text: "#92400e" },
@@ -128,7 +128,7 @@ export default function MapaDelAlmacenPage() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center">
-              <Map className="w-6 h-6 text-amber-600" />
+              <MapIcon className="w-6 h-6 text-amber-600" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Mapa del Almacén</h1>
@@ -193,12 +193,12 @@ export default function MapaDelAlmacenPage() {
             </div>
             ) : racksError ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
-            <Map className="w-12 h-12 opacity-40" />
+            <MapIcon className="w-12 h-12 opacity-40" />
             <p className="text-sm font-medium text-amber-600">No se pudieron cargar los racks</p>
             <p className="text-xs text-slate-400">Primero debes crear ubicaciones en la sección Ubicaciones</p>
             </div>
             ) : racks.length === 0 ? (          <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
-            <Map className="w-12 h-12" />
+            <MapIcon className="w-12 h-12" />
             <p className="text-sm font-medium">No hay racks registrados</p>
           </div>
         ) : (

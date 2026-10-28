@@ -94,7 +94,7 @@ async function checkLowStock(): Promise<number> {
     userId: string;
     title: string;
     message: string;
-    type: string;
+    type: "low_stock";
     link: string;
   }> = [];
 
@@ -192,11 +192,12 @@ async function checkExpiringLots(): Promise<number> {
     userId: string;
     title: string;
     message: string;
-    type: string;
+    type: "expiring_lot";
     link: string;
   }> = [];
 
   for (const lot of expiringLots) {
+    if (!lot.expirationDate) continue;
     const daysLeft = Math.ceil(
       (new Date(lot.expirationDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
     );

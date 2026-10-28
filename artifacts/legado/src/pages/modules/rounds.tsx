@@ -53,7 +53,7 @@ const formatDate = (d: string | null) => d ? new Date(d).toLocaleDateString("es-
 const formatNum = (n: number | null | undefined) => n != null ? Number(n).toFixed(2) : "—";
 
 export default function RoundsPage() {
-  const { selectedWarehouse } = useWarehouse();
+  const { warehouse: selectedWarehouse } = useWarehouse();
   const [rounds, setRounds] = useState<Round[]>([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<{ round: Round; records: RoundRecord[] } | null>(null);
@@ -78,7 +78,7 @@ export default function RoundsPage() {
   };
 
   return (
-    <AppLayout title="Rondas de Inventario">
+    <AppLayout>
       <div className="max-w-5xl mx-auto px-3 sm:px-6 py-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

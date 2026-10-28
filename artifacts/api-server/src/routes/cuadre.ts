@@ -18,8 +18,8 @@ const cuadreItemSchema = z.object({
   code: z.string().min(1),
   productDescription: z.string().min(1),
   unit: z.string().min(1),
-  systemBalance: z.string().default("0"),
-  physicalCount: z.string().default("0"),
+  systemBalance: z.coerce.number().finite().default(0),
+  physicalCount: z.coerce.number().finite().default(0),
   notes: z.string().optional(),
 });
 
@@ -46,36 +46,42 @@ router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asy
 
   // Last consumption date per product code — dual source: ERP (balance_records) > Sistema (inventory_records)
   const codes = [...new Set(allItems.map(i => i.code))];
+  const warehouseByCuadreId = new Map(records.map(r => [r.id, r.warehouse]));
   const lcMap = new Map<string, string>();
   const sourceMap = new Map<string, "ERP" | "Sistema">();
 
   if (codes.length > 0) {
-    // Source 1: ERP — latest ultimo_consumo from balance_records per code
+    // Source 1: ERP — the same code can refer to different products by warehouse.
     const erpRows = await db.execute(sql`
-      SELECT code, MAX(ultimo_consumo) AS ultimo_consumo
-      FROM balance_records
-      WHERE code = ANY(${codes})
-      GROUP BY code
+      SELECT cr.warehouse, br.code, MAX(br.ultimo_consumo) AS ultimo_consumo
+      FROM balance_records br
+      JOIN cuadre_records cr ON cr.warehouse = br.warehouse
+      WHERE cr.id = ANY(${ids}) AND br.code = ANY(${codes})
+      GROUP BY cr.warehouse, br.code
     `);
-    for (const row of erpRows.rows as { code: string; ultimo_consumo: string | null }[]) {
+    for (const row of erpRows.rows as { warehouse: string; code: string; ultimo_consumo: string | null }[]) {
       if (row.ultimo_consumo && row.ultimo_consumo > "2013-01-01") {
-        lcMap.set(row.code, row.ultimo_consumo);
-        sourceMap.set(row.code, "ERP");
+        const key = `${row.warehouse}::${row.code}`;
+        lcMap.set(key, row.ultimo_consumo);
+        sourceMap.set(key, "ERP");
       }
     }
 
     // Source 2: Sistema — MAX(record_date) from inventory_records as fallback
     const sysRows = await db.execute(sql`
-      SELECT p.code, MAX(ir.record_date) AS last_consumption_date
+      SELECT p.warehouse, p.code, MAX(ir.record_date) AS last_consumption_date
       FROM inventory_records ir
       JOIN products p ON ir.product_id = p.id
-      WHERE p.code = ANY(${codes})
-      GROUP BY p.code
+      WHERE p.code = ANY(${codes}) AND p.warehouse IN (
+        SELECT warehouse FROM cuadre_records WHERE id = ANY(${ids})
+      )
+      GROUP BY p.warehouse, p.code
     `);
-    for (const row of sysRows.rows as { code: string; last_consumption_date: string | null }[]) {
-      if (row.last_consumption_date && !lcMap.has(row.code)) {
-        lcMap.set(row.code, row.last_consumption_date);
-        sourceMap.set(row.code, "Sistema");
+    for (const row of sysRows.rows as { warehouse: string; code: string; last_consumption_date: string | null }[]) {
+      const key = `${row.warehouse}::${row.code}`;
+      if (row.last_consumption_date && !lcMap.has(key)) {
+        lcMap.set(key, row.last_consumption_date);
+        sourceMap.set(key, "Sistema");
       }
     }
   }
@@ -83,10 +89,11 @@ router.get("/", requireAuth, requireRole("supervisor", "admin", "operator"), asy
   const itemMap = new Map<string, typeof allItems>();
   for (const item of allItems) {
     if (!itemMap.has(item.cuadreId)) itemMap.set(item.cuadreId, []);
+    const key = `${warehouseByCuadreId.get(item.cuadreId) ?? ""}::${item.code}`;
     itemMap.get(item.cuadreId)!.push({
       ...item,
-      lastConsumptionDate: lcMap.get(item.code) ?? null,
-      sourceLabel: sourceMap.get(item.code) ?? "Sistema",
+      lastConsumptionDate: lcMap.get(key) ?? null,
+      sourceLabel: sourceMap.get(key) ?? "Sistema",
     } as typeof item & { lastConsumptionDate: string | null; sourceLabel: "ERP" | "Sistema" });
   }
   res.json(records.map(r => ({ ...r, items: itemMap.get(r.id) ?? [] })));
@@ -113,13 +120,13 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
 
   if (items && items.length > 0) {
     const itemRows = items.map(item => {
-      const sys = parseFloat(item.systemBalance) || 0;
-      const phys = parseFloat(item.physicalCount) || 0;
+      const sys = item.systemBalance;
+      const phys = item.physicalCount;
       return {
         id: generateId(),
         cuadreId: id,
         ...item,
-        difference: String(phys - sys),
+        difference: phys - sys,
       };
     });
     await db.insert(cuadreItemsTable).values(itemRows);
@@ -142,13 +149,13 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin"), asyncHandler
     await db.delete(cuadreItemsTable).where(eq(cuadreItemsTable.cuadreId, id as string));
     if (items.length > 0) {
       const itemRows = items.map(item => {
-        const sys = parseFloat(item.systemBalance) || 0;
-        const phys = parseFloat(item.physicalCount) || 0;
+        const sys = item.systemBalance;
+        const phys = item.physicalCount;
         return {
           id: generateId(),
           cuadreId: id,
           ...item,
-          difference: String(phys - sys),
+          difference: phys - sys,
         };
       });
       await db.insert(cuadreItemsTable).values(itemRows);

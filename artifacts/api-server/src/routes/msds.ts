@@ -65,22 +65,18 @@ router.get("/last-movements", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
   const useWarehouse = warehouse && warehouse !== "all";
 
-  // DISTINCT ON gets the most recent balance record's ultimoConsumo per code
-  // (mirrors how Maestro de Productos computes "sin movimiento")
+  // A product code can exist in more than one warehouse. Keep the warehouse
+  // in the key so the "all warehouses" view cannot borrow another stock's date.
   const rows = await db.execute(
-    useWarehouse
-      ? sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
-             FROM balance_records
-             WHERE warehouse = ${warehouse}
-             ORDER BY code, balance_date DESC`
-      : sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
-             FROM balance_records
-             ORDER BY code, balance_date DESC`
-  ) as { rows: Array<{ code: string; ultimoConsumo: string | null }> };
+    sql`SELECT warehouse, type, code, MAX(ultimo_consumo) AS "ultimoConsumo"
+        FROM balance_records
+        ${useWarehouse ? sql`WHERE warehouse = ${warehouse}` : sql``}
+        GROUP BY warehouse, type, code`
+  ) as { rows: Array<{ warehouse: string; type: string | null; code: string; ultimoConsumo: string | null }> };
 
   const result: Record<string, string> = {};
   for (const row of rows.rows) {
-    if (row.ultimoConsumo) result[row.code] = row.ultimoConsumo;
+    if (row.ultimoConsumo) result[`${row.warehouse}::${row.type ?? ""}::${row.code}`] = row.ultimoConsumo;
   }
   res.json(result);
 }));
@@ -591,22 +587,18 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
       .from(productsTable)
       .where(condition)
       .orderBy(asc(productsTable.warehouse), asc(productsTable.type), asc(productsTable.name)),
-    db.execute(
-      useWarehouse
-        ? sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
-               FROM balance_records
-               WHERE warehouse = ${warehouse}
-               ORDER BY code, balance_date DESC`
-        : sql`SELECT DISTINCT ON (code) code, ultimo_consumo AS "ultimoConsumo"
-               FROM balance_records
-               ORDER BY code, balance_date DESC`
-    ) as Promise<{ rows: Array<{ code: string; ultimoConsumo: string | null }> }>,
+    db.execute(sql`
+      SELECT warehouse, type, code, MAX(ultimo_consumo) AS "ultimoConsumo"
+      FROM balance_records
+      ${useWarehouse ? sql`WHERE warehouse = ${warehouse}` : sql``}
+      GROUP BY warehouse, type, code
+    `) as Promise<{ rows: Array<{ warehouse: string; type: string | null; code: string; ultimoConsumo: string | null }> }>,
   ]);
 
-  // Build a quick lookup: code → ultimoConsumo string
+  // Build a warehouse + code lookup, since the same code may exist in both.
   const consumoMap = new Map<string, string>();
   for (const row of consumoRows.rows) {
-    if (row.ultimoConsumo) consumoMap.set(row.code, row.ultimoConsumo);
+    if (row.ultimoConsumo) consumoMap.set(`${row.warehouse}::${row.type ?? ""}::${row.code}`, row.ultimoConsumo);
   }
 
   const withMsds    = products.filter(p => p.msds);
@@ -627,7 +619,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   const COL_WIDTHS = [14, 14, 16, 36, 14, 16, 11, 34, 36, 14, 22, 16, 16];
 
   function productRow(p: typeof products[number]): (string | number | null)[] {
-    const ultimoConsumo = consumoMap.get(p.code) ?? null;
+    const ultimoConsumo = consumoMap.get(`${p.warehouse}::${p.type ?? ""}::${p.code}`) ?? null;
     const dias = daysSince(ultimoConsumo);
     return [
       p.warehouse ?? "",
@@ -682,7 +674,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   const ws1HeaderRow = ws1.rowCount + 1;
   applyHeaderRow(ws1, HEADERS);
   for (const p of withMsds) {
-    const ultimoConsumo = consumoMap.get(p.code) ?? null;
+    const ultimoConsumo = consumoMap.get(`${p.warehouse}::${p.type ?? ""}::${p.code}`) ?? null;
     applyDataRow(ws1, productRow(p), p.msdsStatus ?? "NONE", daysSince(ultimoConsumo));
   }
   finalizeSheet(ws1, ws1HeaderRow, HEADERS.length);
@@ -694,7 +686,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   const ws2HeaderRow = ws2.rowCount + 1;
   applyHeaderRow(ws2, HEADERS);
   for (const p of withoutMsds) {
-    const ultimoConsumo = consumoMap.get(p.code) ?? null;
+    const ultimoConsumo = consumoMap.get(`${p.warehouse}::${p.type ?? ""}::${p.code}`) ?? null;
     applyDataRow(ws2, productRow(p), "NONE", daysSince(ultimoConsumo));
   }
   finalizeSheet(ws2, ws2HeaderRow, HEADERS.length);
@@ -775,7 +767,7 @@ router.get("/export", requireAuth, asyncHandler(async (req, res) => {
   ];
 
   for (const bucket of agingBuckets) {
-    const cnt = products.filter(p => bucket.test(daysSince(consumoMap.get(p.code) ?? null))).length;
+    const cnt = products.filter(p => bucket.test(daysSince(consumoMap.get(`${p.warehouse}::${p.type ?? ""}::${p.code}`) ?? null))).length;
     const r = ws3.addRow([bucket.label, cnt, `${((cnt / total) * 100).toFixed(1)}%`]);
     r.eachCell(c => {
       c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bucket.argb } };

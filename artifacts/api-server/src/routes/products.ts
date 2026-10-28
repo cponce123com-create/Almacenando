@@ -29,8 +29,8 @@ const productSchema = z.object({
   casNumber: z.string().optional(),
   category: z.string().min(1),
   unit: z.string().min(1),
-  minimumStock: z.string().default("0"),
-  maximumStock: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
+  minimumStock: z.coerce.number().finite().default(0),
+  maximumStock: z.preprocess(v => (v === "" || v == null) ? null : v, z.coerce.number().finite().nullable().optional()),
   msds: z.boolean().default(false),
   msdsUrl: z.preprocess(
     v => (v === "" || v == null) ? null : v,
@@ -340,7 +340,7 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "operator"), as
   const parsed = productSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const id = generateId();
-  const [created] = await db.insert(productsTable).values({ id, ...parsed.data, minimumStock: Number(parsed.data.minimumStock) || 0 }).returning();
+  const [created] = await db.insert(productsTable).values({ id, ...parsed.data }).returning();
   void writeAuditLog({ userId: authedReq.userId, action: "create", resource: "product", resourceId: created!.id, ipAddress: req.ip });
   res.status(201).json(created);
 }));
@@ -351,7 +351,7 @@ router.patch("/:id", requireAuth, requireRole("supervisor", "admin", "operator")
   const parsed = productSchema.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" }); return; }
   const [updated] = await db.update(productsTable)
-    .set({ ...parsed.data, minimumStock: parsed.data.minimumStock ? Number(parsed.data.minimumStock) : undefined, updatedAt: new Date() })
+    .set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(productsTable.id, id as string)).returning();
   if (!updated) { res.status(404).json({ error: "Producto no encontrado" }); return; }
   void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "product", resourceId: id, ipAddress: req.ip });

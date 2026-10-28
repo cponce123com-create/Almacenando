@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Loader2, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getAuthHeaders } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { BASE } from "./products-partials";
 
-type SyncStatus = { id: string; status: string; recordCount: number; errorMessage?: string | null };
+type SyncStatus = { id: string; status: string; warehouse?: string; recordCount: number; errorMessage?: string | null };
 type PreviewRow = { warehouse: string; type: "Q"; code: string; name: string; unit: string; location?: string };
 
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
@@ -26,7 +26,22 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
 }) {
   const [runId, setRunId] = useState<string | null>(null);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const validWarehouse = ["QA", "Q1", "QP", "QL", "QC", "all"].includes(warehouse);
+
+  const activeRunQuery = useQuery<SyncStatus | null>({
+    queryKey: ["products-now-active"],
+    queryFn: () => apiRequest<SyncStatus | null>("/api/balances/now/products/status"),
+    enabled: canSync,
+    refetchInterval: query => {
+      const status = (query.state.data as SyncStatus | null | undefined)?.status;
+      return status === "requested" || status === "extracting" ? 2500 : false;
+    },
+  });
+  const currentRunId = runId ?? activeRunQuery.data?.id ?? null;
+  const currentWarehouse = activeRunQuery.data?.id === currentRunId
+    ? (activeRunQuery.data.warehouse ?? currentRunId?.match(/^product-(QA|Q1|QP|QL|QC|all)-/)?.[1] ?? warehouse)
+    : (currentRunId?.match(/^product-(QA|Q1|QP|QL|QC|all)-/)?.[1] ?? warehouse);
 
   const requestMutation = useMutation({
     mutationFn: () => apiRequest<{ id: string }>("/api/balances/now/products/request", {
@@ -34,14 +49,20 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ warehouse }),
     }),
-    onSuccess: data => setRunId(data.id),
-    onError: (error: Error) => toast({ title: "No se pudo solicitar la maestra", description: error.message, variant: "destructive" }),
+    onSuccess: data => {
+      setRunId(data.id);
+      queryClient.invalidateQueries({ queryKey: ["products-now-active"] });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ["products-now-active"] });
+      toast({ title: "No se pudo solicitar la maestra", description: error.message, variant: "destructive" });
+    },
   });
 
   const statusQuery = useQuery<SyncStatus>({
-    queryKey: ["products-now-status", runId],
-    queryFn: () => apiRequest<SyncStatus>(`/api/balances/now/products/status/${runId}`),
-    enabled: Boolean(runId),
+    queryKey: ["products-now-status", currentRunId],
+    queryFn: () => apiRequest<SyncStatus>(`/api/balances/now/products/status/${currentRunId}`),
+    enabled: Boolean(currentRunId),
     refetchInterval: query => {
       const status = (query.state.data as SyncStatus | undefined)?.status;
       return status === "requested" || status === "extracting" ? 2500 : false;
@@ -49,32 +70,34 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
   });
 
   const previewQuery = useQuery<{ recordCount: number; rows: PreviewRow[] }>({
-    queryKey: ["products-now-preview", runId],
-    queryFn: () => apiRequest(`/api/balances/now/products/${runId}/preview`),
-    enabled: Boolean(runId && statusQuery.data?.status === "preview"),
+    queryKey: ["products-now-preview", currentRunId],
+    queryFn: () => apiRequest(`/api/balances/now/products/${currentRunId}/preview`),
+    enabled: Boolean(currentRunId && statusQuery.data?.status === "preview"),
   });
 
   const confirmMutation = useMutation({
-    mutationFn: () => apiRequest<{ imported: number }>(`/api/balances/now/products/${runId}/confirm`, { method: "POST" }),
+    mutationFn: () => apiRequest<{ imported: number }>(`/api/balances/now/products/${currentRunId}/confirm`, { method: "POST" }),
     onSuccess: data => {
-      toast({ title: "Maestro actualizado", description: `Se sincronizaron ${data.imported} productos químicos Q en ${warehouse}.` });
+      toast({ title: "Maestro actualizado", description: `Se sincronizaron ${data.imported} productos químicos Q en ${currentWarehouse}.` });
       onImported();
       setRunId(null);
+      queryClient.invalidateQueries({ queryKey: ["products-now-active"] });
     },
     onError: (error: Error) => toast({ title: "Error al guardar", description: error.message, variant: "destructive" }),
   });
 
   const rejectMutation = useMutation({
-    mutationFn: () => apiRequest(`/api/balances/now/products/${runId}/reject`, { method: "POST" }),
+    mutationFn: () => apiRequest(`/api/balances/now/products/${currentRunId}/reject`, { method: "POST" }),
     onSuccess: () => {
       toast({ title: "Vista previa descartada" });
       setRunId(null);
+      queryClient.invalidateQueries({ queryKey: ["products-now-active"] });
     },
     onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
   });
 
-  const status = statusQuery.data?.status;
-  const busy = requestMutation.isPending || status === "requested" || status === "extracting";
+  const status = statusQuery.data?.status ?? (activeRunQuery.data?.id === currentRunId ? activeRunQuery.data.status : undefined);
+  const busy = requestMutation.isPending || activeRunQuery.isLoading || status === "requested" || status === "extracting";
   const preview = previewQuery.data;
 
   return (
@@ -84,7 +107,7 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
         variant="outline"
         size="sm"
         className="gap-1.5 border-teal-200 text-teal-700 hover:bg-teal-50"
-        disabled={!canSync || !validWarehouse || busy || Boolean(runId)}
+        disabled={!canSync || !validWarehouse || busy || Boolean(currentRunId)}
         title={!validWarehouse ? "Selecciona QA, Q1, QP, QL, QC o Todos los almacenes." : undefined}
         onClick={() => requestMutation.mutate()}
       >
@@ -97,7 +120,7 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
       )}
 
       {busy && (
-        <p className="text-sm text-slate-600">Esperando al conector de tu PC para leer los productos Q de {warehouse}…</p>
+        <p className="text-sm text-slate-600">Esperando al conector de tu PC para leer los productos Q de {currentWarehouse}…</p>
       )}
 
       {statusQuery.isError && (
@@ -106,15 +129,15 @@ export function ProductsNowSync({ warehouse, canSync, onImported }: {
       {status === "failed" && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           No se pudo leer la maestra: {statusQuery.data?.errorMessage || "revisa el conector y vuelve a solicitar la actualización."}
-          <Button type="button" variant="ghost" size="sm" className="ml-2" onClick={() => setRunId(null)}>Cerrar</Button>
+          <Button type="button" variant="ghost" size="sm" className="ml-2" onClick={() => { setRunId(null); queryClient.invalidateQueries({ queryKey: ["products-now-active"] }); }}>Cerrar</Button>
         </div>
       )}
 
       {status === "preview" && (
         <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-4 space-y-3">
           <div>
-            <p className="font-semibold text-slate-800">Vista previa de Maestro de Productos — {warehouse}</p>
-            <p className="text-sm text-slate-600">{preview?.recordCount ?? statusQuery.data?.recordCount ?? 0} productos tipo Q. Se actualizarán por código; los campos de seguridad y stock mínimo existentes se conservarán.</p>
+            <p className="font-semibold text-slate-800">Vista previa de Maestro de Productos — {currentWarehouse}</p>
+            <p className="text-sm text-slate-600">{preview?.recordCount ?? statusQuery.data?.recordCount ?? 0} productos tipo Q. Se actualizarán por almacén y código; los campos de seguridad y stock mínimo existentes se conservarán.</p>
           </div>
           {previewQuery.isLoading ? <p className="text-sm">Cargando vista previa…</p> : (
             <div className="max-h-52 overflow-auto rounded border bg-white">

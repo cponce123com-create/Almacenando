@@ -101,7 +101,7 @@ describe("Datatex NOW balance connector API", () => {
 
   it("rejects a connector token that is invalid", async () => {
     const response = await request(createApp())
-      .get("/connector/next")
+      .get("/api/balances/now/connector/next")
       .set("x-datatex-token", "wrong-token");
 
     expect(response.status).toBe(401);
@@ -110,7 +110,7 @@ describe("Datatex NOW balance connector API", () => {
 
   it("rejects empty extractions instead of treating them as zero balances", async () => {
     const response = await request(createApp())
-      .post("/connector/run-1/preview")
+      .post("/api/balances/now/connector/run-1/preview")
       .set("x-datatex-token", "test-only-connector-token")
       .send(validPayload([]));
 
@@ -122,18 +122,18 @@ describe("Datatex NOW balance connector API", () => {
   it("rejects duplicate warehouse, code, and unit keys before storing a preview", async () => {
     const row = validRow();
     const response = await request(createApp())
-      .post("/connector/run-1/preview")
+      .post("/api/balances/now/connector/run-1/preview")
       .set("x-datatex-token", "test-only-connector-token")
       .send(validPayload([row, { ...row }]));
 
     expect(response.status).toBe(400);
-    expect(response.body.error).toMatch(/duplicados/i);
+    expect(response.body.error).toMatch(/duplicad/i);
     expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it("accepts a valid QA/Q1 preview and stores it for confirmation", async () => {
     const response = await request(createApp())
-      .post("/connector/run-1/preview")
+      .post("/api/balances/now/connector/run-1/preview")
       .set("x-datatex-token", "test-only-connector-token")
       .send(validPayload([validRow(), validRow({ warehouse: "Q1", code: "0201-0010" })]));
 
@@ -143,9 +143,37 @@ describe("Datatex NOW balance connector API", () => {
     expect(dbMock.update).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the same chemical as separate rows when its locations differ", async () => {
+    const response = await request(createApp())
+      .post("/api/balances/now/connector/run-1/preview")
+      .set("x-datatex-token", "test-only-connector-token")
+      .send(validPayload([
+        validRow({ locationSummary: "Q04A001", zoneSummary: "ESQ", quantity: "3.25" }),
+        validRow({ locationSummary: "Q04A002", zoneSummary: "ESQ", quantity: "7.75" }),
+      ]));
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary.total).toBe(2);
+    expect(dbMock.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects one warehouse/code reported in incompatible units", async () => {
+    const response = await request(createApp())
+      .post("/api/balances/now/connector/run-1/preview")
+      .set("x-datatex-token", "test-only-connector-token")
+      .send(validPayload([
+        validRow({ unit: "kg", locationSummary: "A-01" }),
+        validRow({ unit: "L", locationSummary: "A-02" }),
+      ]));
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/unidades incompatibles|más de una unidad/i);
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
   it("rejects non-decimal quantities instead of coercing them to zero", async () => {
     const response = await request(createApp())
-      .post("/connector/run-1/preview")
+      .post("/api/balances/now/connector/run-1/preview")
       .set("x-datatex-token", "test-only-connector-token")
       .send(validPayload([validRow({ quantity: "not-a-number" })]));
 

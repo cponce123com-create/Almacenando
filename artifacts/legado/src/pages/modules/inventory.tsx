@@ -126,7 +126,8 @@ export default function TomaDeInventarioPage() {
     }
   };
 
-  const setField = (k: keyof typeof form, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const setField = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm(f => ({ ...f, [k]: v }));
 
   const updateBox = (i: number, key: keyof BoxEntry, val: string) => {
     setBoxes(prev => prev.map((b, idx) => idx === i ? { ...b, [key]: val } : b));
@@ -194,11 +195,21 @@ export default function TomaDeInventarioPage() {
     queryFn: () => apiJson(`/api/balances/latest?warehouse=${selectedWarehouse}`),
   });
 
-  // Build balance lookup by code
-  const balanceByCode = useMemo(() =>
-    Object.fromEntries(latestBalances.map(b => [b.code, b])),
-    [latestBalances]
-  );
+  // The API returns a row for each physical location. Sum those rows by
+  // warehouse and product so inventory compares the complete warehouse stock.
+  const balanceByCode = useMemo(() => {
+    const result: Record<string, BalanceRecord> = {};
+    for (const row of latestBalances) {
+      const key = `${row.warehouse}::${row.type ?? ""}::${row.code}`;
+      const current = result[key];
+      result[key] = {
+        ...row,
+        quantity: String((Number(current?.quantity) || 0) + (Number(row.quantity) || 0)),
+        ultimoConsumo: [current?.ultimoConsumo, row.ultimoConsumo].filter(Boolean).sort().at(-1) ?? null,
+      };
+    }
+    return result;
+  }, [latestBalances]);
 
   // Auto-fill previous balance when product changes
   useEffect(() => {
@@ -208,7 +219,7 @@ export default function TomaDeInventarioPage() {
     }
     const product = products.find(p => p.id === form.productId);
     if (!product) return;
-    const balance = balanceByCode[product.code];
+    const balance = balanceByCode[`${product.warehouse}::${product.type ?? ""}::${product.code}`];
     const next = balance ? String(balance.quantity) : "";
     if (next !== form.previousBalance) setField("previousBalance", next);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,7 +586,7 @@ export default function TomaDeInventarioPage() {
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">
                           {(() => {
-                            const uc = balanceByCode[product?.code ?? ""]?.ultimoConsumo;
+                            const uc = product ? balanceByCode[`${product.warehouse}::${product.type ?? ""}::${product.code}`]?.ultimoConsumo : null;
                             return uc
                               ? <span className="text-slate-700 font-medium">{uc}</span>
                               : <span className="text-slate-300">—</span>;
@@ -583,7 +594,7 @@ export default function TomaDeInventarioPage() {
                         </TableCell>
                         <TableCell className="text-center whitespace-nowrap">
                           {(() => {
-                            const uc = balanceByCode[product?.code ?? ""]?.ultimoConsumo;
+                            const uc = product ? balanceByCode[`${product.warehouse}::${product.type ?? ""}::${product.code}`]?.ultimoConsumo : null;
                             const sm = sinMovimiento(uc);
                             return <span className={`text-xs font-semibold ${sm.color}`}>{sm.label}</span>;
                           })()}
@@ -658,7 +669,7 @@ export default function TomaDeInventarioPage() {
               {/* Saldo en sistema (auto-cargado) */}
               {form.productId && (() => {
                 const product = productMap[form.productId];
-                const balance = balanceByCode[product?.code ?? ""];
+                const balance = product ? balanceByCode[`${product.warehouse}::${product.type ?? ""}::${product.code}`] : undefined;
                 const uc = balance?.ultimoConsumo ?? null;
                 const sm = sinMovimiento(uc);
                 return (
