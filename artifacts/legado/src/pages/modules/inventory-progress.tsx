@@ -414,11 +414,11 @@ export default function InventoryProgressPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 10;
     const columns = [
-      { title: ["Código"], width: 22 },
-      { title: ["Descripción"], width: 62 },
-      { title: ["Fecha último", "consumo"], width: 32 },
-      { title: ["Saldo", "sistema"], width: 34 },
-      { title: ["Peso", "físico"], width: 40 },
+      { title: "Código", width: 22 },
+      { title: "Descripción", width: 62 },
+      { title: "Último\nconsumo", width: 32 },
+      { title: "Saldo\nsistema", width: 34 },
+      { title: "Peso\nfísico", width: 40 },
     ];
     const headerY = 48;
     const headerHeight = 12;
@@ -437,15 +437,19 @@ export default function InventoryProgressPage() {
     doc.text("Anote el peso físico medido en la última columna.", margin, 39);
 
     let x = margin;
-    doc.setFillColor(15, 118, 110);
-    doc.setDrawColor(148, 163, 184);
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
     for (const column of columns) {
+      doc.setFillColor(15, 118, 110);
+      doc.setDrawColor(148, 163, 184);
       doc.rect(x, headerY, column.width, headerHeight, "FD");
-      const textY = column.title.length === 1 ? headerY + 7.5 : headerY + 5.3;
-      doc.text(column.title, x + column.width / 2, textY, { align: "center" });
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      const isMultiline = column.title.includes("\n");
+      const textY = isMultiline ? headerY + 4.5 : headerY + 7.5;
+      doc.text(column.title, x + column.width / 2, textY, {
+        align: "center",
+        maxWidth: column.width - 4,
+      });
       x += column.width;
     }
 
