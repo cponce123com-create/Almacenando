@@ -37,9 +37,11 @@ const routeModules: Array<[string, PageId]> = [
 
 function permissionForRequest(req: Request): PermissionAction {
   const path = req.path.toLowerCase();
-  if (req.method === "GET" && /(?:export|download|template)/.test(path)) return "canExport";
-  if (req.method === "POST" && /(?:import|upload)/.test(path)) return "canImport";
+  // Export endpoints may use POST when they accept filters or selected IDs.
+  // Check destructive/import actions first so those routes keep their own grant.
   if (req.method === "DELETE" || /(?:reset|archive|purge)/.test(path)) return "canDelete";
+  if (req.method === "POST" && /(?:import|upload)/.test(path)) return "canImport";
+  if (/(?:export|download|template)/.test(path)) return "canExport";
   if (["POST", "PUT", "PATCH"].includes(req.method)) return "canEdit";
   return "canView";
 }
