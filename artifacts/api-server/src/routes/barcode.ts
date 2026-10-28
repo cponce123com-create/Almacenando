@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { randomBytes } from "crypto";
-import { eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { productsTable, locationsTable } from "@workspace/db";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
@@ -30,14 +30,27 @@ router.get(
   asyncHandler(async (req, res) => {
     const { barcode } = req.params;
 
-    const [product] = await db
+    let [product] = await db
       .select()
       .from(productsTable)
       .where(eq(productsTable.barcode, barcode as string))
       .limit(1);
 
+    // Support scanning the printed NOW product code as well as a barcode.
     if (!product) {
-      res.status(404).json({ error: "Producto no encontrado para este código de barras" });
+      const warehouse = typeof req.query.warehouse === "string" && req.query.warehouse !== "all"
+        ? req.query.warehouse : undefined;
+      const conditions = [eq(productsTable.code, barcode as string), eq(productsTable.type, "Q")];
+      if (warehouse) conditions.push(eq(productsTable.warehouse, warehouse));
+      const matches = await db.select().from(productsTable)
+        .where(and(...conditions))
+        .orderBy(asc(productsTable.warehouse))
+        .limit(10);
+      product = matches.find(row => row.warehouse === warehouse) ?? matches.find(row => row.warehouse === "Q1") ?? matches[0];
+    }
+
+    if (!product) {
+      res.status(404).json({ error: "No se encontró un químico Q con ese código o código de barras" });
       return;
     }
 

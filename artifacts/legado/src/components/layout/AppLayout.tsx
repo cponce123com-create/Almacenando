@@ -35,6 +35,7 @@ import {
   Map,
   History,
   Target,
+  Activity,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
 import { PAGE_ID_BY_PATH, useModulePermissions } from "@/hooks/use-module-permissions";
@@ -116,6 +117,7 @@ export const navGroups: NavGroup[] = [
       { name: "Cuadre", href: "/cuadre", icon: Warehouse },
       { name: "Rondas", href: "/rounds", icon: History },
       { name: "Conteo Cíclico Q1", href: "/inventory-progress", icon: Target },
+      { name: "Panel de trabajo diario", href: "/work-center", icon: Activity },
       { name: "Ubicaciones", href: "/locations", icon: MapPin },
       { name: "Mapa del Almacén", href: "/warehouse-map", icon: Map },
       { name: "Productos Inmovilizados", href: "/immobilized", icon: AlertTriangle },
