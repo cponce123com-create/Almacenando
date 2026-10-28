@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
-import { useWarehouse } from "@/contexts/WarehouseContext";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,11 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Calendar, ClipboardList, Plus, Trash2, Loader2, AlertCircle, Search, Target, CheckCircle2,
   Clock, Radio, CircleDotDashed, BarChart3, Lightbulb, PackageX, TrendingUp,
-  TrendingDown, Minus, FileSpreadsheet, Archive, XCircle, RefreshCw,
+  TrendingDown, Minus, FileSpreadsheet, Archive, XCircle, RefreshCw, Scale, MapPin, AlertTriangle,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -38,6 +36,7 @@ interface CycleProduct {
   inventoryRecordId: string | null; priority: number;
   code: string; productName: string; unit: string;
   warehouse: string; location?: string | null; category?: string | null;
+  currentQuantity: number | null; currentBalanceDate: string | null; currentUltimoConsumo: string | null;
 }
 
 interface Recommendation {
@@ -49,7 +48,7 @@ interface Recommendation {
 
 interface ProgressResponse {
   cycle: Cycle;
-  stats: { pending: number; counted: number; verified: number; withoutMovement: number; skipped: number; total: number };
+  stats: { pending: number; counted: number; verified: number; consumptionAlert: number; withoutMovement: number; skipped: number; total: number };
   products: CycleProduct[];
 }
 
@@ -97,7 +96,8 @@ function statusBadge(status: string) {
     pending: { label: "Pendiente", bg: "bg-amber-50", text: "text-amber-700", icon: <Clock className="w-3 h-3" /> },
     counted: { label: "Conteado", bg: "bg-blue-50", text: "text-blue-700", icon: <CheckCircle2 className="w-3 h-3" /> },
     verified: { label: "Verificado", bg: "bg-emerald-50", text: "text-emerald-700", icon: <CheckCircle2 className="w-3 h-3" /> },
-    without_movement: { label: "Sin Movimiento", bg: "bg-slate-100", text: "text-slate-600", icon: <Minus className="w-3 h-3" /> },
+    consumption_alert: { label: "Consumido después", bg: "bg-red-100", text: "text-red-700", icon: <AlertTriangle className="w-3 h-3" /> },
+    without_movement: { label: "Sin consumo observado", bg: "bg-slate-100", text: "text-slate-600", icon: <Minus className="w-3 h-3" /> },
     skipped: { label: "Saltado", bg: "bg-red-50", text: "text-red-600", icon: <XCircle className="w-3 h-3" /> },
   };
   const s = map[status] ?? map.pending;
@@ -106,6 +106,16 @@ function statusBadge(status: string) {
       {s.icon} {s.label}
     </span>
   );
+}
+
+function inactivityBand(lastConsumption: string | null | undefined) {
+  if (!lastConsumption) return "Sin fecha confiable";
+  const days = Math.max(0, Math.floor((Date.now() - new Date(`${lastConsumption}T00:00:00`).getTime()) / 86_400_000));
+  if (days >= 365) return `12+ meses · ${days} días`;
+  if (days >= 270) return `9–12 meses · ${days} días`;
+  if (days >= 180) return `6–9 meses · ${days} días`;
+  if (days >= 90) return `3–6 meses · ${days} días`;
+  return `Menos de 3 meses · ${days} días`;
 }
 
 function RecommendationCard({ rec, onUse }: { rec: Recommendation; onUse: (rec: Recommendation) => void }) {
@@ -158,9 +168,9 @@ function RecommendationCard({ rec, onUse }: { rec: Recommendation; onUse: (rec: 
 
 export default function InventoryProgressPage() {
   const { user } = useAuth();
-  const { warehouse } = useWarehouse();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const warehouse = "Q1";
 
   const [showCreateCycle, setShowCreateCycle] = useState(false);
   const [showCloseCycle, setShowCloseCycle] = useState(false);
@@ -177,8 +187,11 @@ export default function InventoryProgressPage() {
   const [summaryCycleId, setSummaryCycleId] = useState<string | null>(null);
   const [closeResult, setCloseResult] = useState<CloseResult | null>(null);
   const [closeOptions, setCloseOptions] = useState({ markPendingAsSkipped: false, exportBeforeClose: false });
+  const [selectedProduct, setSelectedProduct] = useState<CycleProduct | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetConfirmation, setResetConfirmation] = useState("");
 
-  const warehouseParam = warehouse === "all" ? "" : `?warehouse=${warehouse}`;
+  const warehouseParam = `?warehouse=${warehouse}&type=Q`;
 
   // Get active cycle
   const { data: activeCycle, isLoading: cycleLoading, error: cycleError } = useQuery<Cycle | null>({
@@ -242,8 +255,8 @@ export default function InventoryProgressPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        warehouse: warehouse === "all" ? "QA" : warehouse,
-        name: cycleName || `Inventario ${warehouse === "all" ? "QA" : warehouse} - ${today()}`,
+        warehouse,
+        name: cycleName || `Conteo cíclico ${warehouse} - ${today()}`,
         description: cycleDescription || undefined,
         startDate: today(),
       }),
@@ -255,6 +268,27 @@ export default function InventoryProgressPage() {
       toast({ title: "Ciclo creado", description: `Ciclo iniciado con ${data.totalProducts} productos.` });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const resetInventoryMutation = useMutation({
+    mutationFn: () => apiJson(`${BASE}/api/inventory-cycles/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirmation: resetConfirmation }),
+    }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["active-cycle"] });
+      qc.invalidateQueries({ queryKey: ["cycle-progress"] });
+      qc.invalidateQueries({ queryKey: ["cycle-recommendations"] });
+      qc.invalidateQueries({ queryKey: ["cycle-history"] });
+      qc.invalidateQueries({ queryKey: ["inventory-live-progress"] });
+      setShowResetDialog(false);
+      setResetConfirmation("");
+      toast({ title: "Q1 reiniciado", description: data.archiveId
+        ? `${data.productCount} químicos cargados. Respaldo guardado: ${data.archiveId}.`
+        : `${data.productCount} químicos cargados. No había registros previos que archivar.` });
+    },
+    onError: (e: Error) => toast({ title: "No se pudo reiniciar", description: e.message, variant: "destructive" }),
   });
 
   // Close cycle mutation
@@ -315,7 +349,7 @@ export default function InventoryProgressPage() {
   });
 
   const progress = progressQuery.data;
-  const stats = progress?.stats ?? { pending: 0, counted: 0, verified: 0, withoutMovement: 0, skipped: 0, total: 0 };
+  const stats = progress?.stats ?? { pending: 0, counted: 0, verified: 0, consumptionAlert: 0, withoutMovement: 0, skipped: 0, total: 0 };
   const totalDone = stats.counted + stats.verified + stats.withoutMovement + stats.skipped;
   const pctComplete = stats.total > 0 ? Math.round((totalDone / stats.total) * 100) : 0;
 
@@ -330,14 +364,12 @@ export default function InventoryProgressPage() {
               <ClipboardList className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Progreso de Inventario</h1>
+              <h1 className="text-2xl font-bold text-slate-900">Conteo Cíclico · Q1</h1>
               <p className="text-sm text-slate-500">
                 {activeCycle
                   ? `Ciclo activo: ${activeCycle.name} · ${pctComplete}% completado`
                   : "No hay un ciclo de inventario activo"}
-                {warehouse !== "all" && (
-                  <span className="ml-1 font-semibold text-blue-600">· {warehouse}</span>
-                )}
+                <span className="ml-1 font-semibold text-blue-600">· {warehouse}</span>
               </p>
             </div>
           </div>
@@ -370,24 +402,16 @@ export default function InventoryProgressPage() {
                 }}>
                   <FileSpreadsheet className="w-4 h-4 mr-1.5" /> Exportar Excel
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => syncCycleMutation.mutate()}
-                  disabled={syncCycleMutation.isPending} className="border-blue-300 text-blue-700 hover:bg-blue-50">
-                  {syncCycleMutation.isPending
-                    ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                    : <RefreshCw className="w-4 h-4 mr-1.5" />}
-                  Sincronizar
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setShowDetectNoMovement(true)}>
-                  <Radio className="w-4 h-4 mr-1.5" /> Detectar Sin Movimiento
-                </Button>
-                <Button variant="outline" size="sm" className="border-amber-300 text-amber-700 hover:bg-amber-50"
-                  onClick={() => setShowCloseCycle(true)}>
-                  <Archive className="w-4 h-4 mr-1.5" /> Cerrar Ciclo
-                </Button>
               </>
             ) : (
               <Button size="sm" onClick={() => setShowCreateCycle(true)}>
                 <Plus className="w-4 h-4 mr-1.5" /> Iniciar Ciclo
+              </Button>
+            )}
+            {user?.role === "admin" && (
+              <Button variant="outline" size="sm" className="border-red-300 text-red-700 hover:bg-red-50"
+                onClick={() => setShowResetDialog(true)}>
+                <Trash2 className="w-4 h-4 mr-1.5" /> Reiniciar Q1
               </Button>
             )}
           </div>
@@ -463,7 +487,7 @@ export default function InventoryProgressPage() {
               {[
                 { label: "Pendientes", value: stats.pending, color: "text-amber-600", bg: "bg-amber-50" },
                 { label: "Conteados", value: stats.counted + stats.verified, color: "text-blue-600", bg: "bg-blue-50" },
-                { label: "Sin Movimiento", value: stats.withoutMovement, color: "text-slate-500", bg: "bg-slate-100" },
+                { label: "Consumo posterior", value: stats.consumptionAlert, color: "text-red-600", bg: "bg-red-50" },
                 { label: "Total", value: stats.total, color: "text-slate-900", bg: "bg-slate-50" },
               ].map(s => (
                 <div key={s.label} className={`${s.bg} rounded-lg px-3 py-2.5`}>
@@ -515,8 +539,8 @@ export default function InventoryProgressPage() {
             <p className="text-sm font-medium">No hay un ciclo de inventario activo</p>
             <p className="text-xs text-slate-400 text-center max-w-md">
               Crea un ciclo para empezar a rastrear el progreso de tu inventario físico.
-              El sistema cargará automáticamente todos los productos activos del almacén
-              y calculará prioridades basadas en cuándo fue su último inventario.
+              El sistema cargará automáticamente los químicos activos tipo Q de Q1,
+              tomará su saldo NOW como referencia y ordenará el trabajo por último consumo real.
             </p>
             <Button onClick={() => setShowCreateCycle(true)} className="mt-2">
               <Plus className="w-4 h-4 mr-1.5" /> Iniciar Ciclo de Inventario
@@ -524,7 +548,7 @@ export default function InventoryProgressPage() {
           </div>
         )}
 
-        {/* Products table */}
+        {/* Kanban board */}
         {activeCycle && (
           <>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -546,13 +570,14 @@ export default function InventoryProgressPage() {
                   <SelectItem value="pending">Pendientes</SelectItem>
                   <SelectItem value="counted">Conteados</SelectItem>
                   <SelectItem value="verified">Verificados</SelectItem>
-                  <SelectItem value="without_movement">Sin Movimiento</SelectItem>
+                  <SelectItem value="consumption_alert">Consumo posterior al conteo</SelectItem>
+                  <SelectItem value="without_movement">Sin consumo observado</SelectItem>
                   <SelectItem value="skipped">Saltados</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4">
               {progressQuery.isLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -568,79 +593,59 @@ export default function InventoryProgressPage() {
                   <p className="text-sm font-medium">No hay productos en este estado</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-slate-50">
-                        <TableHead className="font-semibold text-slate-600">Código</TableHead>
-                        <TableHead className="font-semibold text-slate-600">Producto</TableHead>
-                        <TableHead className="font-semibold text-slate-600">UM</TableHead>
-                        <TableHead className="font-semibold text-slate-600 text-right">Saldo Inicial</TableHead>
-                        <TableHead className="font-semibold text-slate-600 text-right">Conteo Físico</TableHead>
-                        <TableHead className="font-semibold text-slate-600 text-right">Diferencia</TableHead>
-                        <TableHead className="font-semibold text-slate-600">Últ. Consumo</TableHead>
-                        <TableHead className="font-semibold text-slate-600">Estado</TableHead>
-                        <TableHead className="font-semibold text-slate-600">Prioridad</TableHead>
-                        <TableHead className="font-semibold text-slate-600 w-24">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {progress.products.map(p => {
-                        const diff = p.difference;
-                        return (
-                          <TableRow key={p.id} className="hover:bg-slate-50/70">
-                            <TableCell className="font-mono text-xs font-medium text-slate-500">{p.code}</TableCell>
-                            <TableCell>
-                              <p className="text-sm font-medium text-slate-900 truncate max-w-[250px]">{p.productName}</p>
-                              {p.location && <p className="text-xs text-slate-400">{p.location}</p>}
-                            </TableCell>
-                            <TableCell className="text-sm text-slate-500">{p.unit}</TableCell>
-                            <TableCell className="text-right font-mono text-sm text-slate-600">
-                              {p.initialQuantity !== null ? p.initialQuantity.toFixed(2) : "—"}
-                            </TableCell>
-                            <TableCell className="text-right font-mono text-sm text-slate-800 font-semibold">
-                              {p.physicalCount !== null ? p.physicalCount.toFixed(2) : "—"}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {diff !== null ? (
-                                <span className={`font-mono text-sm font-semibold ${
-                                  Math.abs(diff) < 0.01 ? "text-emerald-600"
-                                  : diff > 0 ? "text-blue-600" : "text-red-600"
-                                }`}>
-                                  {diff > 0 ? "+" : ""}{diff.toFixed(2)}
-                                </span>
-                              ) : <span className="text-slate-300">—</span>}
-                            </TableCell>
-                            <TableCell className="text-xs whitespace-nowrap">
-                              {p.initialUltimoConsumo ? (
-                                <span className="text-slate-600">{p.initialUltimoConsumo}</span>
-                              ) : <span className="text-slate-300">—</span>}
-                            </TableCell>
-                            <TableCell>{statusBadge(p.status)}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-1">
-                                <div className={`w-2 h-2 rounded-full ${
-                                  p.priority >= 100 ? "bg-red-500"
-                                  : p.priority >= 50 ? "bg-amber-500"
-                                  : p.priority >= 20 ? "bg-blue-400"
-                                  : "bg-slate-300"
-                                }`} />
-                                <span className="text-xs text-slate-500">{p.priority}</span>
+                <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-3 items-start">
+                  {[
+                    { id: "pending", title: "Por inventariar", color: "border-red-300 bg-red-50/60", icon: <Clock className="w-4 h-4 text-red-600" />, rows: progress.products.filter(p => ["pending", "assigned", "without_movement"].includes(p.status)) },
+                    { id: "difference", title: "Por cuadrar", color: "border-rose-300 bg-rose-50/60", icon: <AlertTriangle className="w-4 h-4 text-rose-600" />, rows: progress.products.filter(p => ["counted", "verified"].includes(p.status) && (p.difference === null || Math.abs(p.difference) >= 0.01)) },
+                    { id: "consumption", title: "Recontar · consumo nuevo", color: "border-orange-300 bg-orange-50/60", icon: <TrendingDown className="w-4 h-4 text-orange-600" />, rows: progress.products.filter(p => p.status === "consumption_alert") },
+                    { id: "balanced", title: "Cuadrado", color: "border-emerald-300 bg-emerald-50/60", icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />, rows: progress.products.filter(p => ["counted", "verified"].includes(p.status) && p.difference !== null && Math.abs(p.difference) < 0.01) },
+                    { id: "skipped", title: "Omitidos", color: "border-slate-300 bg-slate-50", icon: <Minus className="w-4 h-4 text-slate-500" />, rows: progress.products.filter(p => p.status === "skipped") },
+                  ].map(lane => (
+                    <section key={lane.id} className={`rounded-xl border ${lane.color} min-h-36`}>
+                      <div className="sticky top-0 z-10 flex items-center gap-2 rounded-t-xl border-b border-inherit bg-white/90 px-3 py-2.5 backdrop-blur">
+                        {lane.icon}
+                        <h3 className="text-sm font-bold text-slate-800">{lane.title}</h3>
+                        <span className="ml-auto rounded-full bg-white px-2 py-0.5 text-xs font-bold text-slate-600">{lane.rows.length}</span>
+                      </div>
+                      <div className="max-h-[65vh] space-y-2 overflow-y-auto p-2">
+                        {lane.rows.length === 0 ? (
+                          <p className="px-2 py-5 text-center text-xs text-slate-400">Sin productos</p>
+                        ) : lane.rows.map(p => {
+                          const isBalanced = ["counted", "verified"].includes(p.status) && p.difference !== null && Math.abs(p.difference) < 0.01;
+                          const needsAttention = !isBalanced;
+                          return (
+                            <button key={p.id} type="button" onClick={() => setSelectedProduct(p)}
+                              className={`w-full rounded-lg border-l-4 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+                                isBalanced ? "border-l-emerald-500 border-y-emerald-100 border-r-emerald-100" : "border-l-red-500 border-y-red-100 border-r-red-100"
+                              }`}>
+                              <div className="flex items-start gap-2">
+                                <span className="mt-0.5 shrink-0 font-mono text-[11px] font-bold text-slate-500">{p.code}</span>
+                                <span className="ml-auto shrink-0">{isBalanced ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 text-red-500" />}</span>
                               </div>
-                            </TableCell>
-                            <TableCell>
-                              {p.status === "pending" && (
-                                <Button variant="ghost" size="sm" className="h-7 text-xs text-blue-600"
-                                  onClick={() => window.open(`${BASE}/inventory?productId=${p.productId}`, "_self")}>
-                                  <Target className="w-3 h-3 mr-1" /> Contar
-                                </Button>
+                              <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-900">{p.productName}</p>
+                              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                                <span className="text-slate-500">Saldo NOW</span>
+                                <span className="text-right font-mono font-semibold text-slate-800">{p.currentQuantity === null ? "Sin saldo" : `${p.currentQuantity.toFixed(2)} ${p.unit}`}</span>
+                                <span className="text-slate-500">Físico</span>
+                                <span className="text-right font-mono font-semibold text-slate-800">{p.physicalCount === null ? "Pendiente" : `${p.physicalCount.toFixed(2)} ${p.unit}`}</span>
+                              </div>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
+                                <span>{p.countedDate ? `Conteo ${p.countedDate}` : "Sin fecha de conteo"}</span>
+                                <span>·</span>
+                                <span>{inactivityBand(p.currentUltimoConsumo)}</span>
+                              </div>
+                              {needsAttention && p.status === "consumption_alert" && (
+                                <p className="mt-2 rounded bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">NOW reportó consumo después del conteo</p>
                               )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                              {needsAttention && p.status !== "consumption_alert" && p.difference !== null && (
+                                <p className="mt-2 text-xs font-bold text-red-700">Diferencia: {p.difference > 0 ? "+" : ""}{p.difference.toFixed(2)} {p.unit}</p>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
                 </div>
               )}
             </div>
@@ -735,6 +740,91 @@ export default function InventoryProgressPage() {
         )}
       </div>
 
+      {/* Product detail card */}
+      <Dialog open={!!selectedProduct} onOpenChange={open => { if (!open) setSelectedProduct(null); }}>
+        <DialogContent className="max-w-xl">
+          {selectedProduct && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="pr-6 text-left">
+                  <span className="mr-2 font-mono text-sm text-slate-500">{selectedProduct.code}</span>
+                  {selectedProduct.productName}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  {statusBadge(selectedProduct.status)}
+                  <Badge variant="outline">Almacén Q1</Badge>
+                  <Badge variant="outline">{selectedProduct.unit}</Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="flex items-center gap-1.5 text-xs text-slate-500"><Scale className="h-3.5 w-3.5" /> Saldo NOW actual</p>
+                    <p className="mt-1 font-mono text-lg font-bold text-slate-900">
+                      {selectedProduct.currentQuantity === null ? "Sin dato" : `${selectedProduct.currentQuantity.toFixed(3)} ${selectedProduct.unit}`}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">Actualizado: {selectedProduct.currentBalanceDate ?? "sin saldo cargado"}</p>
+                  </div>
+                  <div className={`rounded-lg border p-3 ${selectedProduct.physicalCount !== null ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+                    <p className="flex items-center gap-1.5 text-xs text-slate-500"><CheckCircle2 className="h-3.5 w-3.5" /> Saldo físico</p>
+                    <p className="mt-1 font-mono text-lg font-bold text-slate-900">
+                      {selectedProduct.physicalCount === null ? "Pendiente" : `${selectedProduct.physicalCount.toFixed(3)} ${selectedProduct.unit}`}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">Fecha de conteo: {selectedProduct.countedDate ?? "aún no inventariado"}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 p-3 text-sm sm:grid-cols-2">
+                  <div><span className="text-slate-500">Diferencia:</span> <strong className={selectedProduct.difference !== null && Math.abs(selectedProduct.difference) < 0.01 ? "text-emerald-700" : "text-red-700"}>{selectedProduct.difference === null ? "sin conteo" : `${selectedProduct.difference > 0 ? "+" : ""}${selectedProduct.difference.toFixed(3)} ${selectedProduct.unit}`}</strong></div>
+                  <div><span className="text-slate-500">Saldo al iniciar ciclo:</span> <strong>{selectedProduct.initialQuantity === null ? "sin dato" : `${selectedProduct.initialQuantity.toFixed(3)} ${selectedProduct.unit}`}</strong></div>
+                  <div><span className="text-slate-500">Último consumo NOW:</span> <strong>{selectedProduct.currentUltimoConsumo ?? "sin fecha confiable"}</strong></div>
+                  <div><span className="text-slate-500">Antigüedad:</span> <strong>{inactivityBand(selectedProduct.currentUltimoConsumo)}</strong></div>
+                  <div className="sm:col-span-2"><span className="text-slate-500"><MapPin className="mr-1 inline h-3.5 w-3.5" />Ubicaciones NOW:</span> <strong>{selectedProduct.location || "sin ubicación registrada"}</strong></div>
+                </div>
+                {selectedProduct.status === "consumption_alert" && (
+                  <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    NOW registró un consumo posterior al conteo físico. Vuelve a pesarlo para actualizar el saldo vigilado.
+                  </div>
+                )}
+                {selectedProduct.notes && <p className="text-sm text-slate-600">Observaciones: {selectedProduct.notes}</p>}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setSelectedProduct(null)}>Cerrar</Button>
+                <Button onClick={() => window.open(`${BASE}/inventory?productId=${encodeURIComponent(selectedProduct.productId)}&warehouse=Q1`, "_self")}>
+                  <Target className="mr-2 h-4 w-4" /> {selectedProduct.physicalCount === null || selectedProduct.status === "consumption_alert" ? "Inventariar ahora" : "Volver a inventariar"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Safe Q1 reset: archive first, then create the clean board */}
+      <AlertDialog open={showResetDialog} onOpenChange={open => { if (!open) { setShowResetDialog(false); setResetConfirmation(""); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-700">Reiniciar los inventarios de Q1</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se retirarán del módulo los registros físicos, rondas y ciclos de Q1. Antes se guardará una copia permanente con sus conteos y cajas; el maestro de productos y los saldos NOW no se modifican. Al terminar se creará un tablero nuevo con los productos activos tipo Q de Q1.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label>Escribe <strong>REINICIAR Q1</strong> para confirmar</Label>
+            <Input value={resetConfirmation} onChange={e => setResetConfirmation(e.target.value)} placeholder="REINICIAR Q1" autoComplete="off" />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetInventoryMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button variant="destructive" disabled={resetConfirmation !== "REINICIAR Q1" || resetInventoryMutation.isPending}
+                onClick={e => { e.preventDefault(); resetInventoryMutation.mutate(); }}>
+                {resetInventoryMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Guardar respaldo y reiniciar
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Create cycle dialog */}
       <Dialog open={showCreateCycle} onOpenChange={o => { if (!o) { setShowCreateCycle(false); setCycleName(""); setCycleDescription(""); } }}>
         <DialogContent className="max-w-md">
@@ -749,7 +839,7 @@ export default function InventoryProgressPage() {
               <Input
                 value={cycleName}
                 onChange={e => setCycleName(e.target.value)}
-                placeholder={`Inventario ${warehouse === "all" ? "QA" : warehouse} - ${today()}`}
+                placeholder={`Conteo cíclico ${warehouse} - ${today()}`}
               />
             </div>
             <div>
@@ -764,10 +854,10 @@ export default function InventoryProgressPage() {
             <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
               <p className="font-semibold mb-1">¿Qué pasará?</p>
               <ul className="space-y-1">
-                <li>• Se cargarán todos los productos activos del almacén</li>
-                <li>• Se calculará prioridad según último inventario y consumo</li>
-                <li>• Podrás marcar productos como "sin movimiento" tras importar saldos</li>
-                <li>• El sistema te recomendará qué productos contar cada día</li>
+                <li>• Se cargarán los productos activos tipo Q del almacén Q1</li>
+                <li>• Se priorizará por último consumo: 3, 6, 9 y 12+ meses</li>
+                <li>• Al registrar un conteo, el saldo físico se comparará con el saldo NOW</li>
+                <li>• Un consumo posterior devolverá el producto a la columna de alerta</li>
               </ul>
             </div>
           </div>

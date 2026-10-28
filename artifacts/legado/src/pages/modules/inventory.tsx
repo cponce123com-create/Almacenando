@@ -173,6 +173,19 @@ export default function TomaDeInventarioPage() {
     queryFn: () => apiJson(`/api/products?warehouse=${selectedWarehouse}&limit=500`).then((r: any) => r.data ?? r),
   });
 
+  // Open the selected product directly when arriving from the Q1 inventory board.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const requestedProductId = params.get("productId");
+    if (!requestedProductId || !products.some(product => product.id === requestedProductId)) return;
+    setSelectedWarehouse("Q1");
+    setForm(current => ({ ...current, productId: requestedProductId, recordDate: today() }));
+    setShowForm(true);
+    params.delete("productId");
+    const nextQuery = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+  }, [products]);
+
   const { data: records = [], isLoading, isError } = useQuery<InventoryRecord[]>({
     queryKey: ["/api/inventory", selectedWarehouse],
     queryFn: () => apiJson(`/api/inventory?warehouse=${selectedWarehouse}&limit=500`).then((r: any) => r.data ?? r),
