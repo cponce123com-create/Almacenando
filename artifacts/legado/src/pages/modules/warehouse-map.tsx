@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Boxes, FlaskConical, MapPin, Move, PackageSearch, Pencil,
-  Plus, Search, Scale, Warehouse, X,
+  Plus, Search, Scale, Trash2, Warehouse, X,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -78,6 +79,7 @@ export default function MapaDelAlmacenPage() {
   const [drafts, setDrafts] = useState<Record<string, Layout>>({});
   const [newZoneName, setNewZoneName] = useState("");
   const [showNewZone, setShowNewZone] = useState(false);
+  const [confirmRemoveArea, setConfirmRemoveArea] = useState(false);
   const warehouse = "Q1";
   const canEdit = user?.role === "admin" || user?.role === "supervisor";
 
@@ -152,6 +154,16 @@ export default function MapaDelAlmacenPage() {
       toast({ title: "Zona creada", description: "Ya puedes moverla y cambiar su tamaño en el plano." });
     },
     onError: (error: Error) => toast({ title: "No se creó la zona", description: error.message, variant: "destructive" }),
+  });
+  const removeArea = useMutation({
+    mutationFn: (id: string) => api(`/api/locations/${id}/map-layout`, { method: "DELETE" }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/locations", warehouse] });
+      setSelectedAreaId(null);
+      setConfirmRemoveArea(false);
+      toast({ title: "Elemento quitado del plano", description: "Se conservaron la ubicación física y sus productos vinculados." });
+    },
+    onError: (error: Error) => toast({ title: "No se pudo quitar del plano", description: error.message, variant: "destructive" }),
   });
   const associateCode = useMutation({
     mutationFn: () => {
@@ -276,6 +288,7 @@ export default function MapaDelAlmacenPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="font-bold text-slate-800">{selectedArea?.label ?? "Detalle del plano"}</h2>
             {selectedArea ? <><p className="mt-1 text-xs text-slate-500">{selectedArea.description} · {selectedArea.zone || "Sin zona asignada"}{selectedArea.rack ? ` · ${selectedArea.rack}` : ""}</p>
+              {editing && canEdit && selectedArea.kind === "storage" && <Button className="mt-3" size="sm" variant="destructive" onClick={() => setConfirmRemoveArea(true)} disabled={removeArea.isPending}><Trash2 className="mr-2 h-4 w-4" />Quitar {selectedArea.description?.toLocaleLowerCase("es") ?? "zona"} del plano</Button>}
               {areaBalances.length ? <div className="mt-3 divide-y">{areaBalances.slice(0,20).map((balance) => <div key={balance.id} className="flex justify-between gap-3 py-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{balance.productDescription}</p><p className="font-mono text-xs text-slate-500">{balance.code} · {balance.locationSummary}</p></div><b className="shrink-0 text-sm">{qty(balance.quantity)} {balance.unit}</b></div>)}</div> : <p className="mt-3 rounded bg-slate-50 p-3 text-sm text-slate-500">No hay productos vinculados a esta zona todavía.</p>}
             </> : <p className="mt-2 text-sm text-slate-600">Elige un bloque del plano para ver su detalle. {section === "colorantes" ? "Los cinco racks tienen cuatro niveles." : "Auxiliares A tiene tres niveles y nueve ubicaciones por nivel."}</p>}
           </section>
@@ -287,6 +300,26 @@ export default function MapaDelAlmacenPage() {
           </section>
         </div>
       </div>
+      <AlertDialog open={confirmRemoveArea} onOpenChange={(open) => !open && !removeArea.isPending && setConfirmRemoveArea(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Quitar “{selectedArea?.label}” del plano?</AlertDialogTitle>
+            <AlertDialogDescription>
+              El bloque dejará de aparecer en este plano. Se conservarán la ubicación física y los productos o registros vinculados; esta acción no los elimina de la base de datos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removeArea.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removeArea.isPending || !selectedArea}
+              className="bg-red-600 text-white hover:bg-red-700"
+              onClick={(event) => { event.preventDefault(); if (selectedArea) removeArea.mutate(selectedArea.locationId); }}
+            >
+              {removeArea.isPending ? "Quitando..." : "Quitar del plano"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }

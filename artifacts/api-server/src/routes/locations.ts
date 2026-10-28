@@ -143,6 +143,41 @@ router.patch(
   }),
 );
 
+router.delete(
+  "/:id/map-layout",
+  requireAuth,
+  requireRole("admin", "supervisor"),
+  asyncHandler(async (req, res) => {
+    const id = req.params.id as string;
+    const [location] = await db.select().from(locationsTable).where(eq(locationsTable.id, id)).limit(1);
+    if (!location || !location.mapSection || !["zone", "rack"].includes(location.type) || location.zone === "REFERENCIAS") {
+      res.status(404).json({ error: "No se encontró una zona o rack editable en el plano." });
+      return;
+    }
+
+    // Retira el bloque del mapa, pero conserva la ubicación física y sus vínculos.
+    const [updated] = await db.update(locationsTable).set({
+      mapSection: null,
+      mapLabel: null,
+      mapX: null,
+      mapY: null,
+      mapWidth: null,
+      mapHeight: null,
+    }).where(eq(locationsTable.id, id)).returning();
+
+    void writeAuditLog({
+      userId: (req as AuthenticatedRequest).userId,
+      action: "update",
+      resource: "locations-map",
+      resourceId: id,
+      details: { operation: "remove_from_map", label: location.mapLabel ?? location.rack ?? location.zone },
+      ipAddress: req.ip,
+    });
+
+    res.json(updated);
+  }),
+);
+
 /**
  * @route GET /locations/racks
  * @description Lista racks distintos (para mapa de almacén).
