@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useWarehouse } from "@/contexts/WarehouseContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +31,7 @@ interface BarcodeProduct {
   category: string;
   stock: number;
   unit: string;
-  barcode: string;
+  barcode: string | null;
   location?: string;
   warehouse?: string;
 }
@@ -60,6 +61,8 @@ const api = async (path: string, opts?: RequestInit) => {
 
 export default function ScannerPage() {
   const { user } = useAuth();
+  const { warehouse: selectedWarehouse } = useWarehouse();
+  const warehouse = selectedWarehouse === "all" ? "Q1" : selectedWarehouse;
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -75,19 +78,19 @@ export default function ScannerPage() {
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrCodeRef = useRef<any>(null);
 
-  const canWrite = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
+  const canWrite = user?.role && ["admin", "supervisor"].includes(user.role);
 
   // Fetch product by barcode
   const lookupBarcode = useCallback(async (barcode: string) => {
     setScanError("");
     setScanResult(null);
     try {
-      const data = await api(`/api/barcode/by-barcode/${encodeURIComponent(barcode)}`);
+      const data = await api(`/api/barcode/by-barcode/${encodeURIComponent(barcode)}?warehouse=${encodeURIComponent(warehouse)}`);
       setScanResult(data);
     } catch (err: unknown) {
       setScanError((err as Error).message || "Código de barras no encontrado");
     }
-  }, []);
+  }, [warehouse]);
 
   // Generate barcode for a product
   const generateMutation = useMutation({
@@ -96,7 +99,7 @@ export default function ScannerPage() {
       const res = await fetch(`${BASE}/api/barcode/generate`, {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ code: scannedCode || manualBarcode }),
+        body: JSON.stringify({ productId: scanResult?.product.id }),
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
@@ -107,6 +110,7 @@ export default function ScannerPage() {
     onSuccess: () => {
       toast({ title: "Código generado", description: "El código de barras fue generado exitosamente." });
       qc.invalidateQueries({ queryKey: ["/api/barcode"] });
+      void lookupBarcode(scannedCode || manualBarcode);
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -272,7 +276,7 @@ export default function ScannerPage() {
                     value={manualBarcode}
                     onChange={(e) => setManualBarcode(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleManualLookup()}
-                    placeholder="Ingresa código de barras..."
+                    placeholder="Escanea o ingresa código de barras / código NOW..."
                     className="flex-1 h-9 px-3 rounded-md border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
                   />
                   <Button onClick={handleManualLookup} size="sm" className="gap-1.5">
@@ -284,7 +288,7 @@ export default function ScannerPage() {
             </Card>
 
             {/* Actions */}
-            {canWrite && scannedCode && !scanResult && !scanError && (
+            {canWrite && scanResult && !scanResult.product.barcode && (
               <Card>
                 <CardContent className="pt-4">
                   <Button onClick={handleGenerateBarcode} className="gap-2 w-full min-h-[44px]" size="sm" disabled={isGenerating}>
@@ -372,9 +376,9 @@ export default function ScannerPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-slate-500">Código Barras</span>
+                        <span className="text-sm text-slate-500">Código de barras</span>
                         <span className="font-mono text-xs text-slate-600 bg-slate-100 px-2 py-1 rounded">
-                          {scanResult.product.barcode}
+                          {scanResult.product.barcode || "Sin asignar"}
                         </span>
                       </div>
                       <div className="pt-2 border-t border-slate-100">

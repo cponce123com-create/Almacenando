@@ -32,6 +32,7 @@ import searchRouter from "./search.js";
 import analyticsRouter from "./analytics.js";
 import inventoryCyclesRouter from "./inventory-cycles.js";
 import roundsRouter from "./rounds.js";
+import workCenterRouter from "./work-center.js";
 import { checkModulePermission } from "../lib/checkPermission.js";
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ v1Router.use("/search", searchRouter);
 v1Router.use("/analytics", analyticsRouter);
 v1Router.use("/inventory-cycles", inventoryCyclesRouter);
 v1Router.use("/rounds", roundsRouter);
+v1Router.use("/work-center", workCenterRouter);
 
 // Legacy alias — mismo router para compatibilidad hacia atrás
 const router: IRouter = v1Router;

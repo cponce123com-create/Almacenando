@@ -33,6 +33,7 @@ const routeModules: Array<[string, PageId]> = [
   ["/compatibility", "compatibility"], ["/locations", "locations"], ["/barcode", "scanner"],
   ["/picking", "picking"], ["/reorganization", "warehouse_map"], ["/rounds", "rounds"],
   ["/analytics", "dashboard"],
+  ["/work-center", "inventory_progress"],
 ];
 
 function permissionForRequest(req: Request): PermissionAction {
