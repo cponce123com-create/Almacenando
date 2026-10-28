@@ -55,6 +55,7 @@ export default function AvailabilityPage() {
   const [search, setSearch] = useState("");
   const [sortMode, setSortMode] = useState<"availabilityAsc" | "availabilityDesc" | "codeAsc" | "descriptionAsc">("availabilityAsc");
   const [coverageDays, setCoverageDays] = useState(7);
+  const [onlyRecommended, setOnlyRecommended] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const canRefresh = user?.role === "admin" || user?.role === "supervisor";
 
@@ -74,14 +75,15 @@ export default function AvailabilityPage() {
   const recommendation = (row: AvailabilityRow) => Math.max(0, (amount(row.consumptionTwoDays) / 2 * coverageDays) - amount(row.availability));
   const visibleRows = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
-    const filtered = term ? rows.filter(row => row.code.toLowerCase().includes(term) || row.description.toLowerCase().includes(term)) : [...rows];
+    const filtered = rows.filter(row => (!term || row.code.toLowerCase().includes(term) || row.description.toLowerCase().includes(term))
+      && (!onlyRecommended || recommendation(row) > 0));
     return filtered.sort((a, b) => {
       if (sortMode === "availabilityAsc") return amount(a.availability) - amount(b.availability) || a.code.localeCompare(b.code);
       if (sortMode === "availabilityDesc") return amount(b.availability) - amount(a.availability) || a.code.localeCompare(b.code);
       if (sortMode === "descriptionAsc") return a.description.localeCompare(b.description, "es");
       return a.code.localeCompare(b.code);
     });
-  }, [rows, search, sortMode]);
+  }, [rows, search, sortMode, onlyRecommended, coverageDays]);
   const selectedRows = useMemo(() => rows.filter(row => selected.has(row.code)), [rows, selected]);
   const visibleSelectedCount = visibleRows.filter(row => selected.has(row.code)).length;
   const negativeCount = rows.filter(row => amount(row.availability) < 0).length;
@@ -102,7 +104,11 @@ export default function AvailabilityPage() {
     setRequested(current => ({ ...current, [row.code]: String(Number(quantity.toFixed(3))) }));
   };
   const applyRecommendations = () => {
-    const candidates = selected.size ? rows.filter(row => selected.has(row.code)) : rows;
+    if (selected.size === 0) {
+      toast({ title: "Selecciona productos", description: "Marca los productos a los que quieres aplicar la sugerencia." });
+      return;
+    }
+    const candidates = rows.filter(row => selected.has(row.code));
     const suggestions = Object.fromEntries(candidates.filter(row => recommendation(row) > 0)
       .map(row => [row.code, String(Number(recommendation(row).toFixed(3)))]));
     setRequested(current => ({ ...current, ...suggestions }));
@@ -199,7 +205,10 @@ export default function AvailabilityPage() {
               {[3, 7, 14].map(days => <option key={days} value={days}>{days} días</option>)}
             </select>
           </label>
-          <Button variant="outline" onClick={applyRecommendations} className="whitespace-nowrap"><Sparkles className="w-4 h-4 mr-2 text-violet-600" />Aplicar sugerencias</Button>
+          <Button variant="outline" onClick={applyRecommendations} disabled={selected.size === 0} className="whitespace-nowrap"><Sparkles className="w-4 h-4 mr-2 text-violet-600" />Aplicar a seleccionados</Button>
+          <Button type="button" variant={onlyRecommended ? "default" : "outline"} onClick={() => setOnlyRecommended(value => !value)} className="whitespace-nowrap">
+            {onlyRecommended ? "Ver todos" : "Solo recomendados"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => toggleVisible(visibleSelectedCount < visibleRows.length)}>
             {visibleSelectedCount >= visibleRows.length ? "Quitar selección visible" : "Seleccionar visibles"}
           </Button>
