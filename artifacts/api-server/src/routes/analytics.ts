@@ -49,10 +49,19 @@ router.get("/dashboard", requireAuth, asyncHandler(async (_req, res) => {
     // Últimos 10 movimientos de inventario
     db
       .select({
-        id: (inventoryRecordsTable as any).id,
-        type: (inventoryRecordsTable as any).type,
-        quantity: (inventoryRecordsTable as any).quantity,
-        date: inventoryRecordsTable.recordDate,        productName: productsTable.name,
+        id: inventoryRecordsTable.id,
+        type: sql<string>`CASE
+          WHEN ${inventoryRecordsTable.inputs} > 0 THEN 'entrada'
+          WHEN ${inventoryRecordsTable.outputs} > 0 THEN 'salida'
+          ELSE 'conteo'
+        END`,
+        quantity: sql<number>`CASE
+          WHEN ${inventoryRecordsTable.inputs} > 0 THEN ${inventoryRecordsTable.inputs}
+          WHEN ${inventoryRecordsTable.outputs} > 0 THEN ${inventoryRecordsTable.outputs}
+          ELSE COALESCE(${inventoryRecordsTable.physicalCount}, ${inventoryRecordsTable.finalBalance})
+        END`,
+        date: inventoryRecordsTable.recordDate,
+        productName: productsTable.name,
         productCode: productsTable.code,
       })
       .from(inventoryRecordsTable)
