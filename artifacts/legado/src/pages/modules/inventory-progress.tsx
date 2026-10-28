@@ -414,13 +414,14 @@ export default function InventoryProgressPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 10;
     const columns = [
-      { title: "Código", width: 24 },
-      { title: "Descripción", width: 67 },
-      { title: "Último\nconsumo", width: 32 },
-      { title: "Saldo\nsistema", width: 32 },
+      { title: "Código", width: 22 },
+      { title: "Descripción", width: 57 },
+      { title: "Último\nconsumo", width: 30 },
+      { title: "Saldo\nsistema", width: 30 },
       { title: "Lote\n(20 dígitos)", width: 54 },
-      { title: "Falta\netiqueta", width: 25 },
-      { title: "Peso\nfísico", width: 43 },
+      { title: "¿Tiene\netiqueta?", width: 27 },
+      { title: "Peso\nfísico", width: 34 },
+      { title: "Tara", width: 23 },
     ];
     const headerY = 42;
     const headerHeight = 12;
@@ -436,7 +437,7 @@ export default function InventoryProgressPage() {
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`Selección: ${rangeLabel}  ·  ${products.length} productos priorizados`, margin, 33);
-    doc.text("Marque si falta la etiqueta; anote el lote y el peso físico medido.", margin, 39);
+    doc.text("Marque si tiene etiqueta; anote el lote, el peso físico y la tara.", margin, 39);
 
     let x = margin;
     for (const column of columns) {
@@ -465,7 +466,8 @@ export default function InventoryProgressPage() {
           : "Sin fecha",
         product.currentQuantity === null
           ? "Sin saldo"
-          : `${product.currentQuantity.toLocaleString("es-PE", { maximumFractionDigits: 3 })} ${product.unit}`,
+          : `${product.currentQuantity.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${product.unit}`,
+        "",
         "",
         "",
         "",
