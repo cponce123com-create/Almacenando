@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin, Upload, Download, FileSpreadsheet, Search } from 'lucide-react';
+import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin, Upload, Download, FileSpreadsheet, Search, Pencil } from 'lucide-react';
 
 const LOCATION_SUGGESTIONS = [
   "Lata 1", "Lata 2", "Lata 3", "Lata 4", "Lata 5",
@@ -42,6 +42,8 @@ export default function TomaDeInventarioPage() {
 
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>("Q1");
   const [showForm, setShowForm] = useState(false);
+  const [editRecordId, setEditRecordId] = useState<string | null>(null);
+  const [manualPhysicalCount, setManualPhysicalCount] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<InventoryRecord | null>(null);
   const [viewBoxesRecord, setViewBoxesRecord] = useState<InventoryRecord | null>(null);
   const [filterProduct, setFilterProduct] = useState("all");
@@ -67,7 +69,7 @@ export default function TomaDeInventarioPage() {
     productId: "",
     recordDate: today(),
     previousBalance: "",
-    location: "",
+    location: "", responsible: "",
     missingLabel: false, notes: "",
   });
   const [boxes, setBoxes] = useState<BoxEntry[]>(emptyBoxes());
@@ -135,6 +137,19 @@ export default function TomaDeInventarioPage() {
     setBoxes(prev => prev.map((b, idx) => idx === i ? { ...b, [key]: val } : b));
   };
 
+  const addBox = () => {
+    setBoxes(prev => [...prev, { weight: "", tare: "", customTare: "", netWeight: "0.000", lot: "" }]);
+    setBoxPhotos(prev => [...prev, null]);
+    setBoxPreviews(prev => [...prev, null]);
+  };
+
+  const removeBox = (index: number) => {
+    setBoxes(prev => prev.filter((_, i) => i !== index));
+    setBoxPhotos(prev => prev.filter((_, i) => i !== index));
+    setBoxPreviews(prev => prev.filter((_, i) => i !== index));
+    fileRefs.forEach(ref => { if (ref.current) ref.current.value = ""; });
+  };
+
   const handleBoxPhoto = (i: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -147,7 +162,7 @@ export default function TomaDeInventarioPage() {
   const clearBoxPhoto = (i: number) => {
     setBoxPhotos(prev => prev.map((p, idx) => idx === i ? null : p));
     setBoxPreviews(prev => prev.map((p, idx) => idx === i ? null : p));
-    if (fileRefs[i].current) fileRefs[i].current!.value = "";
+    if (fileRefs[i]?.current) fileRefs[i]!.current!.value = "";
   };
 
   const totalPhysical = useMemo(
@@ -155,12 +170,17 @@ export default function TomaDeInventarioPage() {
     [boxes]
   );
   const hasBoxData = boxes.some(b => b.weight || b.lot) || boxPhotos.some(Boolean);
-  const difference = hasBoxData && form.previousBalance
-    ? totalPhysical - (parseFloat(form.previousBalance) || 0)
+  const hasMeasuredBoxes = boxes.some(box => Number(box.weight) > 0);
+  const displayedPhysicalCount = hasMeasuredBoxes ? totalPhysical
+    : editRecordId && manualPhysicalCount.trim() ? Number(manualPhysicalCount) : null;
+  const difference = displayedPhysicalCount !== null && form.previousBalance
+    ? displayedPhysicalCount - (parseFloat(form.previousBalance) || 0)
     : null;
 
   const resetForm = () => {
-    setForm({ productId: "", recordDate: today(), previousBalance: "", location: "", missingLabel: false, notes: "" });
+    setEditRecordId(null);
+    setManualPhysicalCount("");
+    setForm({ productId: "", recordDate: today(), previousBalance: "", location: "", responsible: "", missingLabel: false, notes: "" });
     setBoxes(emptyBoxes());
     setBoxPhotos(Array(NUM_BOXES).fill(null));
     setBoxPreviews(Array(NUM_BOXES).fill(null));
@@ -228,6 +248,7 @@ export default function TomaDeInventarioPage() {
 
   // Auto-fill previous balance when product changes
   useEffect(() => {
+    if (editRecordId) return;
     if (!form.productId) {
       if (form.previousBalance !== "") setField("previousBalance", "");
       return;
@@ -238,11 +259,11 @@ export default function TomaDeInventarioPage() {
     const next = balance ? String(balance.quantity) : "";
     if (next !== form.previousBalance) setField("previousBalance", next);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.productId, products, balanceByCode]);
+  }, [form.productId, products, balanceByCode, editRecordId]);
 
   // Auto-tare when product changes — detects colorantes (0200-0000 to 0299-9999) → 1.8kg
   useEffect(() => {
-    if (!form.productId) return;
+    if (editRecordId || !form.productId) return;
     const product = products.find(p => p.id === form.productId);
     if (!product) return;
     const autoTare = getAutoTare(product.code);
@@ -250,7 +271,7 @@ export default function TomaDeInventarioPage() {
       setBoxes(prev => prev.map(b => ({ ...b, tare: String(autoTare) })));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.productId, products]);
+  }, [form.productId, products, editRecordId]);
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() => {
@@ -341,8 +362,9 @@ export default function TomaDeInventarioPage() {
       fd.append("finalBalance", hasBoxData ? String(totalPhysical) : form.previousBalance || "0");
       fd.append("physicalCount", hasBoxData ? String(totalPhysical) : "");
       fd.append("location", form.location);
+      fd.append("responsible", form.responsible || "");
       fd.append("missingLabel", String(form.missingLabel)); fd.append("notes", form.notes);
-      fd.append("boxesData", JSON.stringify(boxes));
+      fd.append("boxesData", JSON.stringify(boxes.map(box => ({ ...box, tare: box.tare === "otro" ? box.customTare ?? "" : box.tare }))));
       // Attach photos
       boxPhotos.forEach((photo, i) => {
         if (photo) fd.append(`photo${i}`, photo);
@@ -375,7 +397,80 @@ export default function TomaDeInventarioPage() {
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); setDeleteTarget(null); },
   });
 
+  const editMutation = useMutation({
+    mutationFn: () => {
+      if (!editRecordId) throw new Error("Selecciona un conteo para editar.");
+      const fd = new FormData();
+      fd.append("productId", form.productId);
+      fd.append("warehouse", selectedWarehouse);
+      fd.append("recordDate", form.recordDate);
+      fd.append("previousBalance", form.previousBalance || "0");
+      fd.append("location", form.location);
+      fd.append("responsible", form.responsible || "");
+      fd.append("missingLabel", String(form.missingLabel));
+      fd.append("notes", form.notes);
+      const hasMeasuredBoxes = boxes.some(box => Number(box.weight) > 0);
+      const physicalValue = hasMeasuredBoxes ? String(totalPhysical) : manualPhysicalCount;
+      fd.append("physicalCount", physicalValue);
+      fd.append("finalBalance", physicalValue || form.previousBalance || "0");
+      const boxesData = boxes.map((box, index) => ({
+        weight: box.weight,
+        tare: box.tare === "otro" ? box.customTare ?? "" : box.tare,
+        lot: box.lot.trim(),
+        removePhoto: !boxPreviews[index],
+        sourceBoxNumber: box.sourceBoxNumber,
+      }));
+      fd.append("boxesData", JSON.stringify(boxesData));
+      boxPhotos.forEach((photo, index) => { if (photo && index < 5) fd.append(`photo${index}`, photo); });
+      return apiForm(`/api/inventory/${editRecordId}`, fd, "PUT");
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/inventory"] });
+      qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
+      qc.invalidateQueries({ queryKey: ["/api/inventory-cycles"] });
+      qc.invalidateQueries({ queryKey: ["/api/inventory/progress"] });
+      qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
+      toast({ title: "Conteo actualizado", description: "Se guardaron los cambios del registro." });
+      setShowForm(false);
+      resetForm();
+    },
+    onError: (e: Error) => toast({ title: "No se pudo actualizar", description: e.message, variant: "destructive", duration: 8000 }),
+  });
+
+  const openEditRecord = (record: InventoryRecord) => {
+    setEditRecordId(record.id);
+    setManualPhysicalCount(record.physicalCount ?? "");
+    setForm({
+      productId: record.productId,
+      recordDate: record.recordDate,
+      previousBalance: record.previousBalance ?? "",
+      location: record.location ?? "",
+      responsible: record.responsible ?? "",
+      missingLabel: Boolean(record.missingLabel),
+      notes: record.notes ?? "",
+    });
+    const existingBoxes = record.boxes ?? [];
+    const boxCount = Math.max(NUM_BOXES, existingBoxes.length);
+    setBoxes(Array.from({ length: boxCount }, (_, index) => {
+      const box = existingBoxes[index];
+      return {
+        weight: box?.weight ?? "",
+        tare: box?.tare && !TARE_PRESETS.some(preset => preset.value === box.tare) ? "otro" : box?.tare ?? "",
+        customTare: box?.tare && !TARE_PRESETS.some(preset => preset.value === box.tare) ? box.tare : "",
+        netWeight: "0.000",
+        lot: box?.lot ?? "",
+        sourceBoxNumber: box?.boxNumber,
+      };
+    }));
+    setBoxPhotos(Array(boxCount).fill(null));
+    setBoxPreviews(Array.from({ length: boxCount }, (_, index) => existingBoxes[index]?.photoUrl ?? null));
+    fileRefs.forEach(ref => { if (ref.current) ref.current.value = ""; });
+    setMutationError(null);
+    setShowForm(true);
+  };
+
   const canSubmit = form.productId && (hasBoxData || form.previousBalance);
+  const canEditSubmit = Boolean(form.productId) && Boolean(form.previousBalance || manualPhysicalCount || hasBoxData);
 
   return (
     <AppLayout>
@@ -517,6 +612,7 @@ export default function TomaDeInventarioPage() {
 
         {/* Tabla */}
         <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
+          {canWrite && <p className="flex items-center gap-1.5 border-b border-slate-100 bg-emerald-50/60 px-4 py-2 text-xs text-emerald-800"><Pencil className="h-3.5 w-3.5" />Haz clic en cualquier fila para editar los datos del conteo.</p>}
           {isLoading ? (
             <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
               <Loader2 className="w-5 h-5 animate-spin" /> Cargando registros...
@@ -560,7 +656,14 @@ export default function TomaDeInventarioPage() {
                     const product = productMap[r.productId];
                     const boxCount = (r.boxes ?? []).filter(b => b.weight || b.lot || b.photoUrl).length;
                     return (
-                      <TableRow key={r.id} className="hover:bg-slate-50/70">
+                      <TableRow
+                        key={r.id}
+                        onClick={() => canWrite && openEditRecord(r)}
+                        onKeyDown={event => { if (canWrite && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openEditRecord(r); } }}
+                        tabIndex={canWrite ? 0 : undefined}
+                        aria-label={canWrite ? `Editar conteo de ${product?.name ?? r.productId} del ${r.recordDate}` : undefined}
+                        className={`${canWrite ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600" : ""} hover:bg-slate-50/70`}
+                      >
                         <TableCell className="text-sm text-slate-700 font-medium whitespace-nowrap">{r.recordDate}</TableCell>
                         <TableCell>
                           <div>
@@ -596,7 +699,7 @@ export default function TomaDeInventarioPage() {
                         <TableCell className="text-center">
                           {boxCount > 0 ? (
                             <button
-                              onClick={() => setViewBoxesRecord(r)}
+                              onClick={event => { event.stopPropagation(); setViewBoxesRecord(r); }}
                               className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-800 text-xs font-medium bg-emerald-50 hover:bg-emerald-100 rounded-full px-2 py-0.5 transition-colors">
                               <Box className="w-3 h-3" /> {boxCount}
                             </button>
@@ -633,7 +736,8 @@ export default function TomaDeInventarioPage() {
                         {canDelete && (
                           <TableCell className="text-right">
                             <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50"
-                              onClick={() => setDeleteTarget(r)}>
+                              aria-label="Eliminar registro"
+                              onClick={event => { event.stopPropagation(); setDeleteTarget(r); }}>
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </TableCell>
@@ -647,12 +751,12 @@ export default function TomaDeInventarioPage() {
           )}
         </div>
 
-        {/* ── Formulario nuevo registro ── */}
+        {/* ── Formulario de registro / edición ── */}
         <Dialog open={showForm} onOpenChange={v => { setShowForm(v); if (!v) resetForm(); }}>
           <DialogContent className="w-full sm:max-w-2xl h-full sm:h-auto sm:max-h-[90vh] max-sm:!rounded-none max-sm:!m-0 max-sm:!p-3 max-sm:!pb-20 overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <ClipboardList className="w-5 h-5 text-emerald-600" /> Nuevo Registro de Inventario
+                <ClipboardList className="w-5 h-5 text-emerald-600" /> {editRecordId ? "Editar Registro de Conteo" : "Nuevo Registro de Inventario"}
                 <span className="ml-auto text-xs font-normal text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">{selectedWarehouse}</span>
               </DialogTitle>
             </DialogHeader>
@@ -710,9 +814,9 @@ export default function TomaDeInventarioPage() {
                           {form.previousBalance ? "" : " · Sin saldo actualizado registrado"}
                         </p>
                       </div>
-                      <span className="text-2xl font-bold text-slate-800 font-mono">
+                      {editRecordId ? <Input type="number" step="0.01" value={form.previousBalance} onChange={e => setField("previousBalance", e.target.value)} className="w-36 text-right font-mono text-lg font-bold" aria-label="Saldo sistema usado" /> : <span className="text-2xl font-bold text-slate-800 font-mono">
                         {form.previousBalance ? parseFloat(form.previousBalance).toFixed(2) : <span className="text-slate-300">—</span>}
-                      </span>
+                      </span>}
                     </div>
                     <div className={`px-4 py-2.5 flex items-center justify-between border-t border-slate-100 ${sm.bg}`}>
                       <div>
@@ -726,6 +830,11 @@ export default function TomaDeInventarioPage() {
                   </div>
                 );
               })()}
+
+              {editRecordId && !boxes.some(box => Number(box.weight) > 0) && <div className="space-y-1.5">
+                <Label htmlFor="manual-physical-count">Conteo físico manual</Label>
+                <Input id="manual-physical-count" type="number" min="0" step="0.01" value={manualPhysicalCount} onChange={e => setManualPhysicalCount(e.target.value)} placeholder="Peso o cantidad física" />
+              </div>}
 
               {/* Ya inventariado previamente */}
               {form.productId && (
@@ -762,6 +871,10 @@ export default function TomaDeInventarioPage() {
                   </Label>
                   <span className="text-xs text-slate-400">Peso · Lote o Observación · Foto</span>
                 </div>
+                {editRecordId && <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+                  <span className="text-xs text-slate-600">Puedes corregir, agregar o quitar cajas y lotes de este conteo.</span>
+                  <Button type="button" size="sm" variant="outline" onClick={addBox} disabled={boxes.length >= 50}><Plus className="mr-1 h-3.5 w-3.5" />Agregar caja</Button>
+                </div>}
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   {/* Header */}
                   <div className="grid grid-cols-[3rem_1fr_min-content_3.5rem] gap-1 bg-slate-50 border-b border-slate-200 px-2 sm:px-4 py-2">
@@ -772,7 +885,7 @@ export default function TomaDeInventarioPage() {
                   </div>
                   {boxes.map((box, i) => (
                     <div key={i} className="grid grid-cols-[3rem_1fr_min-content_3.5rem] gap-1 items-start px-2 sm:px-4 py-2.5 border-b border-slate-100 last:border-0">
-                      <span className="text-xs font-bold text-slate-400 pt-2">{i + 1}</span>
+                      <span className="flex items-center gap-1 text-xs font-bold text-slate-400 pt-2">{i + 1}{editRecordId && boxes.length > 1 && <button type="button" className="text-slate-300 hover:text-red-600" aria-label={`Quitar caja ${i + 1}`} onClick={() => removeBox(i)}><X className="h-3 w-3" /></button>}</span>
                       <div className="space-y-1">
                         <Input
                           type="number"
@@ -783,7 +896,13 @@ export default function TomaDeInventarioPage() {
                           onChange={e => updateBox(i, "weight", e.target.value)}
                           className="h-8 text-sm"
                         />
-                        <div className="flex items-center gap-1"> <select value={box.tare || ""} onChange={e => updateBox(i, "tare", e.target.value)} className="h-7 text-[11px] rounded-md border border-input bg-background px-1.5 py-0 w-full"> <option value="">Tara</option> {TARE_PRESETS.map(p => ( <option key={p.value} value={p.value}>{p.label}</option> ))} </select> {box.tare === "otro" && ( <Input type="number" step="0.1" min="0" placeholder="Manual (kg)" value={box.tare === "otro" ? "" : box.tare} onChange={e => updateBox(i, "tare", e.target.value || "otro")} className="h-7 text-xs" /> )} {box.tare && box.tare !== "otro" && parseFloat(box.weight) > 0 && ( <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap"> Neto: {calcNetWeight(box.weight, box.tare)} </span> )} </div>
+                        <div className="flex items-center gap-1">
+                          <select value={box.tare || ""} onChange={e => updateBox(i, "tare", e.target.value)} className="h-7 text-[11px] rounded-md border border-input bg-background px-1.5 py-0 w-full">
+                            <option value="">Tara</option>{TARE_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                          </select>
+                          {box.tare === "otro" && <Input type="number" step="0.1" min="0" placeholder="Tara manual (kg)" value={box.customTare ?? ""} onChange={e => updateBox(i, "customTare", e.target.value)} className="h-7 text-xs" />}
+                          {box.weight && (box.tare || box.customTare) && <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">Neto: {calcNetWeight(box.weight, box.tare === "otro" ? box.customTare ?? "" : box.tare)}</span>}
+                        </div>
                       </div>
                       <div className="flex flex-col items-start gap-0.5">
                         <label className="flex items-center gap-1 cursor-pointer select-none">
@@ -809,14 +928,14 @@ export default function TomaDeInventarioPage() {
                         )}
                       </div>
                       <div className="flex items-center justify-center">
-                        <input
+                        {i < fileRefs.length && <input
                           ref={fileRefs[i]}
                           type="file"
                           accept="image/*"
                           capture="environment"
                           className="hidden"
                           onChange={e => handleBoxPhoto(i, e)}
-                        />
+                        />}
                         {boxPreviews[i] ? (
                           <div className="relative group">
                             <button
@@ -833,12 +952,12 @@ export default function TomaDeInventarioPage() {
                             </button>
                           </div>
                         ) : (
-                          <button
+                          i < fileRefs.length ? <button
                             type="button"
-                            onClick={() => fileRefs[i].current?.click()}
+                            onClick={() => fileRefs[i]?.current?.click()}
                             className="w-9 h-9 border border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-300 hover:border-emerald-400 hover:text-emerald-500 transition-colors">
                             <Camera className="w-4 h-4" />
-                          </button>
+                          </button> : <span className="text-xs text-slate-300">—</span>
                         )}
                       </div>
                     </div>
@@ -847,7 +966,7 @@ export default function TomaDeInventarioPage() {
               </div>
 
               {/* Total y diferencia */}
-              {hasBoxData && (
+              {(hasBoxData || (editRecordId && manualPhysicalCount.trim())) && (
                 <div className={`rounded-lg p-3 flex items-center justify-between border ${
                   difference === null ? "bg-slate-50 border-slate-100"
                   : Math.abs(difference) < 0.01 ? "bg-emerald-50 border-emerald-100"
@@ -856,7 +975,7 @@ export default function TomaDeInventarioPage() {
                 }`}>
                   <div>
                     <p className="text-xs font-semibold text-slate-600">
-                      Total físico: <span className="font-mono text-slate-900">{totalPhysical.toFixed(3)} {productMap[form.productId]?.unit ?? ""}</span>
+                      Total físico: <span className="font-mono text-slate-900">{(displayedPhysicalCount ?? 0).toFixed(3)} {productMap[form.productId]?.unit ?? ""}</span>
                     </p>
                     {difference !== null && (
                       <p className="text-xs text-slate-400 mt-0.5">
@@ -882,7 +1001,9 @@ export default function TomaDeInventarioPage() {
 
               {/* Observaciones generales */}
               <div className="space-y-1.5">
-                <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4"> <input type="checkbox" id="missingLabel" checked={form.missingLabel || false} onChange={e => setField("missingLabel", e.target.checked)} className="h-5 w-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500" /> <label htmlFor="missingLabel" className="text-sm font-medium text-amber-800 cursor-pointer select-none"> Falta etiqueta al producto </label> </div> <Label>Observaciones generales</Label>
+                <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-4"> <input type="checkbox" id="missingLabel" checked={form.missingLabel || false} onChange={e => setField("missingLabel", e.target.checked)} className="h-5 w-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500" /> <label htmlFor="missingLabel" className="text-sm font-medium text-amber-800 cursor-pointer select-none"> Falta etiqueta al producto </label> </div>
+                {editRecordId && <><Label htmlFor="inventory-responsible">Responsable del conteo</Label><Input id="inventory-responsible" value={form.responsible} onChange={e => setField("responsible", e.target.value)} maxLength={120} placeholder="Nombre del responsable" /></>}
+                <Label>Observaciones generales</Label>
                 <Textarea
                   placeholder="Observaciones adicionales del conteo..."
                   value={form.notes}
@@ -899,12 +1020,12 @@ export default function TomaDeInventarioPage() {
                 Cancelar
               </Button>
               <Button
-                onClick={() => createMutation.mutate()}
-                disabled={createMutation.isPending || !canSubmit}
+                onClick={() => editRecordId ? editMutation.mutate() : createMutation.mutate()}
+                disabled={editRecordId ? editMutation.isPending || !canEditSubmit : createMutation.isPending || !canSubmit}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
-                {createMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Guardar Registro
+                {(editRecordId ? editMutation.isPending : createMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {editRecordId ? "Guardar cambios" : "Guardar Registro"}
               </Button>
             </DialogFooter>
           </DialogContent>

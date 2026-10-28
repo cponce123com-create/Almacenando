@@ -365,6 +365,7 @@ router.post(
           inventoryRecordId: id,
           boxNumber: i + 1,
           weight: box.weight || null,
+          tare: box.tare && box.tare !== "otro" ? box.tare : null,
           lot: box.lot || null,
           photoUrl: photoUrls[i] ?? null,
         });
@@ -487,7 +488,7 @@ router.put(
   "/:id",
   requireAuth,
   requireRole("supervisor", "admin", "operator"),
-  upload.single("photo"),
+  boxUpload,
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const parsed = inventorySchema.partial().safeParse(req.body);
@@ -496,19 +497,74 @@ router.put(
       return;
     }
 
-    let photoUrl: string | undefined;
-    if (req.file) {
+    const files = (req.files ?? {}) as Files;
+    const existingRecord = await db.select().from(inventoryRecordsTable)
+      .where(eq(inventoryRecordsTable.id, id as string)).limit(1);
+    if (!existingRecord[0]) { res.status(404).json({ error: "Registro no encontrado" }); return; }
+    if (existingRecord[0].roundId) {
+      const [cycle] = await db.select({ status: inventoryCyclesTable.status })
+        .from(inventoryCyclesTable).where(eq(inventoryCyclesTable.id, existingRecord[0].roundId)).limit(1);
+      if (cycle?.status === "closed") {
+        res.status(409).json({ error: "No se pueden editar conteos de un ciclo cerrado." });
+        return;
+      }
+    }
+
+    let boxEntries: Array<{ weight: string; tare: string; lot: string; removePhoto: boolean; sourceBoxNumber?: number }> | undefined;
+    if (parsed.data.boxesData !== undefined) {
       try {
-        await validateMimeType(req.file.buffer, "image");
-        const ext = "." + (req.file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
-        const fileName = buildInventoryPhotoName(parsed.data.productId ?? (id as string), parsed.data.recordDate ?? new Date().toISOString().slice(0, 10), 0, ext);
-        const { url } = await uploadFileToDrive(req.file.buffer, fileName, req.file.mimetype);
+        const raw = JSON.parse(parsed.data.boxesData);
+        const boxesSchema = z.array(z.object({
+          weight: z.string().trim().default(""),
+          tare: z.string().trim().default(""),
+          lot: z.string().max(120).default(""),
+          removePhoto: z.boolean().default(false),
+          sourceBoxNumber: z.number().int().positive().optional(),
+        })).max(50);
+        const checked = boxesSchema.safeParse(raw);
+        if (!checked.success || checked.data.some(box =>
+          (box.weight !== "" && (!/^\\d+(\\.\\d+)?$/.test(box.weight) || Number(box.weight) < 0))
+          || (box.tare !== "" && (!/^\\d+(\\.\\d+)?$/.test(box.tare) || Number(box.tare) < 0))
+        )) {
+          res.status(400).json({ error: "Revisa los pesos, taras y lotes de las cajas." });
+          return;
+        }
+        boxEntries = checked.data;
+      } catch {
+        res.status(400).json({ error: "Los datos de cajas no tienen un formato válido." });
+        return;
+      }
+    }
+
+    let photoUrl: string | undefined;
+    const productIdForPhoto = parsed.data.productId ?? existingRecord[0].productId;
+    const dateForPhoto = parsed.data.recordDate ?? existingRecord[0].recordDate;
+    const [photoProduct] = await db.select({ code: productsTable.code, name: productsTable.name })
+      .from(productsTable).where(eq(productsTable.id, productIdForPhoto)).limit(1);
+    const productLabel = photoProduct?.code ?? photoProduct?.name ?? productIdForPhoto;
+    const boxPhotoUrls = boxEntries ? await uploadBoxPhotos(files, productLabel, dateForPhoto) : [];
+    if (files.photo?.[0]) {
+      try {
+        const file = files.photo[0];
+        await validateMimeType(file.buffer, "image");
+        const ext = "." + (file.mimetype.split("/")[1] ?? "jpg").replace("jpeg", "jpg");
+        const fileName = buildInventoryPhotoName(productLabel, dateForPhoto, 0, ext);
+        const { url } = await uploadFileToDrive(file.buffer, fileName, file.mimetype);
         photoUrl = url;
       } catch { logger.warn({ fileId: id }, "Failed to upload inventory photo"); }
     }
     const updateData: Record<string, unknown> = { ...parsed.data };
     delete updateData.boxesData;
     if (photoUrl) updateData.photoUrl = photoUrl;
+    if (boxEntries) {
+      const boxesWithWeight = boxEntries.filter(box => box.weight && Number(box.weight) > 0);
+      const sum = boxesWithWeight.reduce((total, box) => total + Number(box.weight), 0);
+      const physicalCount = boxesWithWeight.length > 0
+        ? String(sum)
+        : parsed.data.physicalCount ?? null;
+      updateData.physicalCount = physicalCount;
+      updateData.finalBalance = physicalCount ?? parsed.data.finalBalance ?? parsed.data.previousBalance ?? existingRecord[0].finalBalance;
+    }
 
     const authedReq = req as AuthenticatedRequest;
     const updated = await db.transaction(async (tx) => {
@@ -516,6 +572,24 @@ router.put(
         .set(updateData)
         .where(eq(inventoryRecordsTable.id, id as string)).returning();
       if (!record) return null;
+
+      if (boxEntries) {
+        const currentBoxes = await tx.select().from(inventoryBoxesTable)
+          .where(eq(inventoryBoxesTable.inventoryRecordId, record.id));
+        const boxesByNumber = new Map(currentBoxes.map(box => [box.boxNumber, box]));
+        await tx.delete(inventoryBoxesTable).where(eq(inventoryBoxesTable.inventoryRecordId, record.id));
+        const replacementBoxes = boxEntries.flatMap((box, index) => {
+          const current = box.sourceBoxNumber ? boxesByNumber.get(box.sourceBoxNumber) : undefined;
+          const uploadedPhoto = boxPhotoUrls[index] ?? null;
+          const savedPhoto = uploadedPhoto || (box.removePhoto ? null : current?.photoUrl ?? null);
+          if (!box.weight && !box.lot && !savedPhoto) return [];
+          return [{
+            id: generateId(), inventoryRecordId: record.id, boxNumber: index + 1,
+            weight: box.weight || null, tare: box.tare || null, lot: box.lot || null, photoUrl: savedPhoto,
+          }];
+        });
+        if (replacementBoxes.length) await tx.insert(inventoryBoxesTable).values(replacementBoxes);
+      }
 
       const linkedRows = await tx.select({
         cycleId: inventoryCycleProductsTable.cycleId,
