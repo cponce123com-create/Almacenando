@@ -16,6 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -38,6 +39,8 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  Pencil,
+  Trash2,
   XCircle,
 } from "lucide-react";
 
@@ -57,6 +60,7 @@ interface Location {
   type: string;
   isActive: boolean;
   isNearScale: boolean;
+  mapLabel: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -102,6 +106,11 @@ const TYPE_LABELS: Record<string, string> = {
   pallet: "Pallet",
 };
 
+const locationDescription = (loc: Location) => loc.mapLabel
+  || [loc.zone, loc.rack, loc.shelf, loc.position].filter(Boolean).join(" · ")
+  || TYPE_LABELS[loc.type]
+  || loc.type;
+
 export default function GestionDeUbicacionesPage() {
   const { user } = useAuth();
   const { warehouse } = useWarehouse();
@@ -113,6 +122,9 @@ export default function GestionDeUbicacionesPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<LocationFormData>(emptyForm);
   const [formError, setFormError] = useState("");
+  const [descriptionTarget, setDescriptionTarget] = useState<Location | null>(null);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Location | null>(null);
 
   const perPage = 25;
 
@@ -148,11 +160,35 @@ export default function GestionDeUbicacionesPage() {
     },
   });
 
+  const updateDescriptionMutation = useMutation({
+    mutationFn: ({ id, description }: { id: string; description: string }) => api(`/api/locations/${id}/description`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/locations"] });
+      setDescriptionTarget(null);
+      toast({ title: "Descripción actualizada", description: "El cambio también se verá en el plano del almacén." });
+    },
+    onError: (err: Error) => toast({ title: "No se pudo actualizar", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api(`/api/locations/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/locations"] });
+      setDeleteTarget(null);
+      toast({ title: "Ubicación eliminada", description: "Se quitó de la lista de ubicaciones." });
+    },
+    onError: (err: Error) => toast({ title: "No se pudo eliminar", description: err.message, variant: "destructive" }),
+  });
+
   const filtered = useMemo(() => {
     const term = search.toLowerCase();
     return locations.filter((loc) => {
       if (!term) return true;
-      return [loc.warehouse, loc.zone, loc.rack, loc.shelf, loc.position, loc.type]
+      return [loc.warehouse, loc.zone, loc.rack, loc.shelf, loc.position, loc.type, loc.mapLabel]
         .some((v) => v?.toLowerCase().includes(term));
     });
   }, [locations, search]);
@@ -262,6 +298,8 @@ export default function GestionDeUbicacionesPage() {
                     <TableHead className="font-semibold text-slate-600 w-24">Tipo</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-24">Cerca Balanza</TableHead>
                     <TableHead className="font-semibold text-slate-600 w-20 text-center">Activo</TableHead>
+                    <TableHead className="font-semibold text-slate-600 min-w-48">Descripción</TableHead>
+                    {canWrite && <TableHead className="font-semibold text-slate-600 w-28 text-center">Acciones</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -301,6 +339,17 @@ export default function GestionDeUbicacionesPage() {
                           </span>
                         )}
                       </TableCell>
+                      <TableCell className="max-w-64 truncate text-xs text-slate-700" title={locationDescription(loc)}>{locationDescription(loc)}</TableCell>
+                      {canWrite && <TableCell className="text-center">
+                        <div className="flex justify-center gap-1">
+                          <Button variant="ghost" size="icon" aria-label={`Cambiar descripción de ${locationDescription(loc)}`} title="Cambiar descripción" onClick={() => { setDescriptionTarget(loc); setDescriptionDraft(locationDescription(loc)); }}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          {["zone", "rack"].includes(loc.type) && <Button variant="ghost" size="icon" aria-label={`Eliminar ${locationDescription(loc)}`} title="Eliminar zona o rack" className="text-red-600 hover:text-red-700" onClick={() => setDeleteTarget(loc)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>}
+                        </div>
+                      </TableCell>}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -461,6 +510,40 @@ export default function GestionDeUbicacionesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!descriptionTarget} onOpenChange={(open) => !open && setDescriptionTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Cambiar descripción</DialogTitle></DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-sm text-slate-600">{descriptionTarget ? `${descriptionTarget.warehouse} · ${TYPE_LABELS[descriptionTarget.type] ?? descriptionTarget.type}` : ""}</p>
+            <Label htmlFor="location-description">Descripción visible</Label>
+            <Input id="location-description" value={descriptionDraft} onChange={(event) => setDescriptionDraft(event.target.value)} maxLength={120} autoFocus />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDescriptionTarget(null)} disabled={updateDescriptionMutation.isPending}>Cancelar</Button>
+            <Button onClick={() => descriptionTarget && updateDescriptionMutation.mutate({ id: descriptionTarget.id, description: descriptionDraft.trim() })} disabled={!descriptionDraft.trim() || updateDescriptionMutation.isPending}>
+              {updateDescriptionMutation.isPending ? "Guardando..." : "Guardar descripción"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && !deleteMutation.isPending && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta zona o rack?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget ? `Se eliminará “${locationDescription(deleteTarget)}” de Ubicaciones y del plano. Solo se permite si no tiene sububicaciones, productos, conteos ni movimientos asociados.` : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" disabled={!deleteTarget || deleteMutation.isPending} onClick={(event) => { event.preventDefault(); if (deleteTarget) deleteMutation.mutate(deleteTarget.id); }}>
+              {deleteMutation.isPending ? "Eliminando..." : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
