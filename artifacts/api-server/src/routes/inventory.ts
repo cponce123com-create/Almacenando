@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { parseExcelBuffer, normalizeHeaders } from "../lib/excel-parser.js";
 import { db } from "@workspace/db";
 import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable } from "@workspace/db";
-import { eq, desc, asc, sql, and, inArray, count, max, isNotNull } from "drizzle-orm";
+import { eq, desc, asc, sql, and, or, inArray, count, max, isNotNull } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
@@ -511,9 +511,85 @@ router.put(
     if (photoUrl) updateData.photoUrl = photoUrl;
 
     const authedReq = req as AuthenticatedRequest;
-    const [updated] = await db.update(inventoryRecordsTable)
-      .set(updateData)
-      .where(eq(inventoryRecordsTable.id, id as string)).returning();
+    const updated = await db.transaction(async (tx) => {
+      const [record] = await tx.update(inventoryRecordsTable)
+        .set(updateData)
+        .where(eq(inventoryRecordsTable.id, id as string)).returning();
+      if (!record) return null;
+
+      const linkedRows = await tx.select({
+        cycleId: inventoryCycleProductsTable.cycleId,
+        cycleProductId: inventoryCycleProductsTable.id,
+        productId: inventoryCycleProductsTable.productId,
+        warehouse: inventoryCyclesTable.warehouse,
+      })
+        .from(inventoryCycleProductsTable)
+        .innerJoin(inventoryCyclesTable, eq(inventoryCycleProductsTable.cycleId, inventoryCyclesTable.id))
+        .where(and(
+          eq(inventoryCyclesTable.status, "active"),
+          or(
+            eq(inventoryCycleProductsTable.inventoryRecordId, record.id),
+            and(
+              eq(inventoryCycleProductsTable.productId, record.productId),
+              eq(inventoryCyclesTable.warehouse, record.warehouse),
+            ),
+          ),
+        ));
+
+      const affectedCycleIds = new Set<string>();
+      for (const linked of linkedRows) {
+        affectedCycleIds.add(linked.cycleId);
+        const [latestCount] = await tx.select().from(inventoryRecordsTable)
+          .where(and(
+            eq(inventoryRecordsTable.productId, linked.productId),
+            eq(inventoryRecordsTable.warehouse, linked.warehouse),
+            isNotNull(inventoryRecordsTable.physicalCount),
+          ))
+          .orderBy(desc(inventoryRecordsTable.recordDate), desc(inventoryRecordsTable.createdAt), desc(inventoryRecordsTable.id))
+          .limit(1);
+
+        if (latestCount) {
+          const physicalCount = latestCount.physicalCount!;
+          await tx.update(inventoryCycleProductsTable).set({
+            status: "counted",
+            physicalCount,
+            finalQuantity: physicalCount,
+            countedDate: latestCount.recordDate,
+            countedBy: latestCount.registeredBy,
+            difference: physicalCount - latestCount.previousBalance,
+            inventoryRecordId: latestCount.id,
+            updatedAt: new Date(),
+          }).where(eq(inventoryCycleProductsTable.id, linked.cycleProductId));
+        } else {
+          await tx.update(inventoryCycleProductsTable).set({
+            status: "pending",
+            physicalCount: null,
+            finalQuantity: null,
+            countedDate: null,
+            countedBy: null,
+            difference: null,
+            inventoryRecordId: null,
+            updatedAt: new Date(),
+          }).where(eq(inventoryCycleProductsTable.id, linked.cycleProductId));
+        }
+      }
+
+      for (const cycleId of affectedCycleIds) {
+        const statusCounts = await tx.select({ status: inventoryCycleProductsTable.status, count: count() })
+          .from(inventoryCycleProductsTable)
+          .where(eq(inventoryCycleProductsTable.cycleId, cycleId))
+          .groupBy(inventoryCycleProductsTable.status);
+        const countedProducts = statusCounts
+          .filter(row => row.status === "counted" || row.status === "verified")
+          .reduce((sum, row) => sum + Number(row.count), 0);
+        const withoutMovement = statusCounts
+          .filter(row => row.status === "without_movement")
+          .reduce((sum, row) => sum + Number(row.count), 0);
+        await tx.update(inventoryCyclesTable).set({ countedProducts, withoutMovement, updatedAt: new Date() })
+          .where(eq(inventoryCyclesTable.id, cycleId));
+      }
+      return record;
+    });
 
     if (!updated) { res.status(404).json({ error: "Registro no encontrado" }); return; }
     void writeAuditLog({ userId: authedReq.userId, action: "update", resource: "inventory_record", resourceId: id as string, ipAddress: req.ip as string });

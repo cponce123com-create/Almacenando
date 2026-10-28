@@ -146,8 +146,13 @@ router.post("/refresh", refreshTokenLimiter, asyncHandler(async (req, res) => {
 router.post("/logout", requireAuth, asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const { userId, jti, tokenExp } = authedReq;
-
-  await revokeToken(jti, new Date(tokenExp * 1000));
+  const refreshToken = req.cookies?.refreshToken ?? req.body?.refreshToken;
+  const refreshPayload = typeof refreshToken === "string" ? verifyRefreshToken(refreshToken) : null;
+  const revocations = [revokeToken(jti, new Date(tokenExp * 1000))];
+  if (refreshPayload?.userId === userId) {
+    revocations.push(revokeToken(refreshPayload.jti, new Date(refreshPayload.exp * 1000)));
+  }
+  await Promise.all(revocations);
 
   res.cookie("refreshToken", "", {
     httpOnly: true,
