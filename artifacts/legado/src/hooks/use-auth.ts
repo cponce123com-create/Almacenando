@@ -1,35 +1,25 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-// ---------------------------------------------------------------------------
-// Token persistence
-// Access token is stored in-memory only (not localStorage) to prevent XSS.
-// Refresh token is in an HttpOnly cookie (set by the server).
-// ---------------------------------------------------------------------------
-const TOKEN_KEY = "auth_token";
+// Access tokens live only in memory. A short-lived token is restored on page
+// load by exchanging the HttpOnly refresh cookie for a new access token.
+let memoryToken: string | null = null;
+let refreshInFlight: Promise<boolean> | null = null;
+let refreshTimer: ReturnType<typeof setInterval> | null = null;
+const authChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("almacenando-auth") : null;
+authChannel?.addEventListener("message", event => {
+  if (event.data === "logout") {
+    memoryToken = null;
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+});
 
-function readToken(key: string): string | null {
-  try { return localStorage.getItem(key); } catch { return null; }
-}
-function writeToken(key: string, value: string | null): void {
-  try {
-    if (value) localStorage.setItem(key, value);
-    else localStorage.removeItem(key);
-  } catch { /* localStorage may be blocked */ }
-}
-
-let memoryToken: string | null = null; // Ya no se lee de localStorage al inicio
-
-// Sync in-memory token from localStorage when it changes externally.
-function syncTokensFromStorage(): void {
-  const storedToken = readToken(TOKEN_KEY);
-  if (storedToken !== memoryToken) memoryToken = storedToken;
-}
-
-// Listen for storage events from other tabs AND custom refresh events
-if (typeof window !== "undefined") {
-  window.addEventListener("storage", () => syncTokensFromStorage());
-  window.addEventListener("app:token-refreshed", () => syncTokensFromStorage());
+function scheduleTokenRefresh() {
+  if (refreshTimer) return;
+  refreshTimer = setInterval(() => {
+    if (memoryToken) void tryRefreshToken();
+  }, 12 * 60 * 1000);
 }
 
 export type WarehouseRole = "supervisor" | "operator" | "quality" | "admin" | "readonly";
@@ -44,7 +34,6 @@ export interface AuthUser {
 }
 
 export function getAuthToken() {
-  syncTokensFromStorage();
   return memoryToken;
 }
 
@@ -58,6 +47,22 @@ export function getAuthHeaders(): Record<string, string> {
  * Devuelve true si se pudo refrescar, false si no.
  */
 async function tryRefreshToken(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  const request = () => refreshTokenRequest();
+  const lockManager = typeof navigator !== "undefined" && navigator.locks
+    ? navigator.locks as unknown as { request<T>(name: string, callback: (lock: Lock | null) => Promise<T>): Promise<T> }
+    : null;
+  const inFlight: Promise<boolean> = lockManager
+    ? lockManager.request<boolean>("almacenando-refresh-cookie", async () => await request())
+    : request();
+  refreshInFlight = inFlight;
+  try { return await inFlight; }
+  finally { if (refreshInFlight === inFlight) refreshInFlight = null; }
+}
+
+export function refreshAccessToken(): Promise<boolean> { return tryRefreshToken(); }
+
+async function refreshTokenRequest(): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/refresh", {
       method: "POST",
@@ -66,15 +71,13 @@ async function tryRefreshToken(): Promise<boolean> {
     });
 
     if (!res.ok) {
-      // Refresh token inválido o expirado — limpiar todo
       memoryToken = null;
-      writeToken(TOKEN_KEY, null);
       return false;
     }
 
     const data = await res.json();
     memoryToken = data.token;
-    writeToken(TOKEN_KEY, data.token);
+    scheduleTokenRefresh();
     return true;
   } catch {
     return false;
@@ -83,12 +86,14 @@ async function tryRefreshToken(): Promise<boolean> {
 
 export function useAuth() {
   const queryClient = useQueryClient();
-  const [token, setToken] = useState<string | null>(memoryToken);
+  const [, setToken] = useState<string | null>(memoryToken);
 
   const { data: user, isLoading, error } = useQuery<AuthUser | null>({
     queryKey: ["/api/auth/me"],
     queryFn: async () => {
-      const currentToken = getAuthToken();
+      let currentToken = getAuthToken();
+      if (!currentToken && !(await tryRefreshToken())) return null;
+      currentToken = getAuthToken();
       if (!currentToken) return null;
 
       let res = await fetch("/api/auth/me", {
@@ -109,14 +114,13 @@ export function useAuth() {
       if (!res.ok) {
         if (res.status === 401) {
           memoryToken = null;
-          writeToken(TOKEN_KEY, null);
           setToken(null);
         }
         return null;
       }
       return res.json();
     },
-    enabled: !!token,
+    enabled: true,
     retry: false,
   });
 
@@ -134,7 +138,7 @@ export function useAuth() {
 
     const result = await res.json();
     memoryToken = result.token;
-    writeToken(TOKEN_KEY, result.token);
+    scheduleTokenRefresh();
     setToken(result.token);
     queryClient.setQueryData(["/api/auth/me"], result.user);
     return result.user;
@@ -145,7 +149,9 @@ export function useAuth() {
 
     // Clear local state immediately
     memoryToken = null;
-    writeToken(TOKEN_KEY, null);
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = null;
+    authChannel?.postMessage("logout");
     setToken(null);
     queryClient.setQueryData(["/api/auth/me"], null);
     queryClient.clear();
@@ -165,7 +171,7 @@ export function useAuth() {
 
   return {
     user,
-    isLoading: isLoading && !!token,
+    isLoading,
     isAuthenticated: !!user,
     login,
     logout,

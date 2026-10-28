@@ -6,7 +6,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { getAuthHeaders } from "@/hooks/use-auth";
+import { getAuthHeaders, refreshAccessToken } from "@/hooks/use-auth";
 import { Search, X, ChevronsUpDown, ImageOff, Box, PackageX, CheckCircle2, AlertTriangle, TrendingUp, TrendingDown, ClipboardList, Loader2, Camera } from "lucide-react";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -102,37 +102,7 @@ export function sinMovimiento(dateStr: string | null | undefined): { label: stri
 }
 
 // ── Token refresh helper (shared between apiJson / apiForm) ──────────────────
-let _refreshing: Promise<boolean> | null = null;
-
-async function tryRefreshTokenOnce(): Promise<boolean> {
-  if (_refreshing) return _refreshing;
-
-  _refreshing = (async () => {
-    try {
-      const res = await fetch("/api/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // El refresh token viaja en la cookie HttpOnly — no necesita body
-      });
-      if (!res.ok) {
-        localStorage.removeItem("auth_token");
-        return false;
-      }
-      const data = await res.json();
-      localStorage.setItem("auth_token", data.token);
-      window.dispatchEvent(new CustomEvent("app:token-refreshed"));
-      return true;
-    } catch {
-      return false;
-    }
-  })();
-
-  try {
-    return await _refreshing;
-  } finally {
-    _refreshing = null;
-  }
-}
+const tryRefreshTokenOnce = refreshAccessToken;
 
 export const apiJson = async (path: string, opts?: RequestInit) => {
   const doFetch = (headers: Record<string, string>) =>

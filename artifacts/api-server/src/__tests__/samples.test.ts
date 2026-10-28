@@ -36,7 +36,7 @@ function auth(n = 0) {
   for (let i = 0; i < n; i++) m.dbS.mockReturnValueOnce(mc([]));
 }
 function app() { const e = express(); e.use(express.json()); e.use("/api/samples", samplesRouter); return e; }
-const T = jwt.sign({ userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
+const T = jwt.sign({ tokenType: "access", userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
 
 describe("Samples API", () => {
   beforeEach(() => vi.resetAllMocks());

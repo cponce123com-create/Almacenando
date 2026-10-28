@@ -87,7 +87,7 @@ function createApp() {
 const TEST_SECRET = process.env.SESSION_SECRET!;
 function makeToken(role = "operator") {
   return jwt.sign(
-    { userId: "user-1", email: "test@test.com", role, jti: `jti-${Date.now()}` },
+    { tokenType: "access", userId: "user-1", email: "test@test.com", role, jti: `jti-${Date.now()}` },
     TEST_SECRET,
     { expiresIn: "1h" },
   );

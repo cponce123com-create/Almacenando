@@ -35,7 +35,7 @@ function auth() { dbSelectMock.mockReturnValueOnce(makeChain([{ status: "active"
 function createApp() {
   const app = express(); app.use(express.json()); app.use("/api/personnel", personnelRouter); return app;
 }
-const TOKEN = jwt.sign({ userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
+const TOKEN = jwt.sign({ tokenType: "access", userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
 
 describe("Personnel API", () => {
   beforeEach(() => vi.resetAllMocks());

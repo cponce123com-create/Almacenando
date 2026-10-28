@@ -37,6 +37,7 @@ import {
   Target,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS, ROLE_COLORS } from "@/hooks/use-auth";
+import { PAGE_ID_BY_PATH, useModulePermissions } from "@/hooks/use-module-permissions";
 import { useWarehouse, WAREHOUSES, type Warehouse as WarehouseType } from "@/contexts/WarehouseContext";
 import { NotificationBell } from "@/components/NotificationBell";
 import { GlobalSearch } from "@/components/GlobalSearch";
@@ -235,6 +236,7 @@ const ROLE_AVATAR_COLORS: Record<string, string> = {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
+  const modulePermissions = useModulePermissions();
   const { warehouse, setWarehouse } = useWarehouse();
   const [_, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -288,7 +290,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
           let isFirstRenderedGroup = true;
           return navGroups.map((group) => {
             const visibleItems = group.items.filter(
-              item => !item.roles || (user?.role && item.roles.includes(user.role as ModuleRole))
+              item => (!item.roles || (user?.role && item.roles.includes(user.role as ModuleRole)))
+                && modulePermissions.canView(PAGE_ID_BY_PATH[item.href] ?? "")
             );
             if (visibleItems.length === 0) return null;
 

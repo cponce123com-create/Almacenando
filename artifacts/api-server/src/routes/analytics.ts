@@ -11,8 +11,18 @@ import { db, productsTable, inventoryRecordsTable, immobilizedProductsTable, sam
 import { count, sql, and, gte, lte, eq, desc, ilike, or, lt, sum, asc } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
+import { logger } from "../lib/logger.js";
 
 const router = Router();
+
+async function safeMetric<T>(label: string, query: PromiseLike<T>, fallback: T, warnings: string[]): Promise<T> {
+  try { return await query; }
+  catch (error) {
+    logger.error({ err: error, metric: label }, "Dashboard metric query failed");
+    warnings.push(label);
+    return fallback;
+  }
+}
 
 /**
  * GET /api/v1/analytics/dashboard
@@ -24,6 +34,7 @@ const router = Router();
  * - Distribución por almacén
  */
 router.get("/dashboard", requireAuth, asyncHandler(async (_req, res) => {
+  const warnings: string[] = [];
   const [
     productCount,
     inventoryCount,
@@ -34,20 +45,20 @@ router.get("/dashboard", requireAuth, asyncHandler(async (_req, res) => {
     totalUsers,
     lastMovements,
   ] = await Promise.all([
-    db.select({ total: count() }).from(productsTable),
-    db.select({ total: count() }).from(inventoryRecordsTable),
-    db.select({ total: count() }).from(immobilizedProductsTable).where(eq(immobilizedProductsTable.status, "immobilized")),
-    db.select({ total: count() }).from(samplesTable),
-    db.select({ total: count() }).from(productsTable).where(
+    safeMetric("products", db.select({ total: count() }).from(productsTable), [], warnings),
+    safeMetric("movements", db.select({ total: count() }).from(inventoryRecordsTable), [], warnings),
+    safeMetric("immobilized", db.select({ total: count() }).from(immobilizedProductsTable).where(eq(immobilizedProductsTable.status, "immobilized")), [], warnings),
+    safeMetric("samples", db.select({ total: count() }).from(samplesTable), [], warnings),
+    safeMetric("lowStock", db.select({ total: count() }).from(productsTable).where(
       and(
         eq(productsTable.status, "active"),
         lt(productsTable.stock, productsTable.minimumStock),
       ),
-    ),
-    db.select({ total: count() }).from(suppliesTable),
-    db.select({ total: count() }).from(usersTable).where(eq(usersTable.status, "active")),
+    ), [], warnings),
+    safeMetric("supplies", db.select({ total: count() }).from(suppliesTable), [], warnings),
+    safeMetric("activeUsers", db.select({ total: count() }).from(usersTable).where(eq(usersTable.status, "active")), [], warnings),
     // Últimos 10 movimientos de inventario
-    db
+    safeMetric("recentMovements", db
       .select({
         id: inventoryRecordsTable.id,
         type: sql<string>`CASE
@@ -67,18 +78,18 @@ router.get("/dashboard", requireAuth, asyncHandler(async (_req, res) => {
       .from(inventoryRecordsTable)
       .leftJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
       .orderBy(desc(inventoryRecordsTable.recordDate))
-      .limit(10),
+      .limit(10), [], warnings),
   ]);
 
   // Stock agrupado por almacén
-  const warehouseStats = await db
+  const warehouseStats = await safeMetric("warehouses", db
     .select({
       warehouse: productsTable.warehouse,
       total: count(),
     })
     .from(productsTable)
     .groupBy(productsTable.warehouse)
-    .orderBy(asc(productsTable.warehouse));
+    .orderBy(asc(productsTable.warehouse)), [], warnings);
 
   res.json({
     totals: {
@@ -105,6 +116,7 @@ router.get("/dashboard", requireAuth, asyncHandler(async (_req, res) => {
       date: m.date,
       product: m.productName ? `${m.productCode ?? ""} — ${m.productName}` : null,
     })),
+    warnings,
   });
 }));
 

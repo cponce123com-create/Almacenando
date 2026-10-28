@@ -1013,6 +1013,7 @@ export default function InventoryProgressPage() {
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="w-5 h-5 text-blue-600" /> Iniciar Ciclo de Inventario
             </DialogTitle>
+            <DialogDescription className="sr-only">Configura el nombre y la descripción del nuevo ciclo de conteo.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1061,6 +1062,7 @@ export default function InventoryProgressPage() {
             <DialogTitle className="flex items-center gap-2">
               <Radio className="w-5 h-5 text-slate-600" /> Detectar "Sin Movimiento"
             </DialogTitle>
+            <DialogDescription className="sr-only">Revisa movimientos recientes para identificar productos que siguen pendientes de conteo.</DialogDescription>
           </DialogHeader>
           {detectResult ? (
             <div className="space-y-4">
@@ -1130,6 +1132,7 @@ export default function InventoryProgressPage() {
                 <DialogTitle className="flex items-center gap-2 text-emerald-700">
                   <CheckCircle2 className="w-5 h-5" /> Ciclo cerrado exitosamente
                 </DialogTitle>
+                <DialogDescription className="sr-only">Resumen de los productos incluidos en el ciclo que acaba de cerrarse.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="grid grid-cols-3 gap-2 text-center">
@@ -1175,6 +1178,7 @@ export default function InventoryProgressPage() {
                 <DialogTitle className="flex items-center gap-2 text-amber-700">
                   <Archive className="w-5 h-5" /> Cerrar Ciclo de Inventario
                 </DialogTitle>
+                <DialogDescription className="sr-only">Confirma cómo tratar los productos pendientes antes de cerrar el ciclo.</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="text-sm text-slate-600">
@@ -1268,6 +1272,7 @@ export default function InventoryProgressPage() {
               <ClipboardList className="w-5 h-5 text-blue-600" />
               {summaryData ? summaryData.cycle.name : "Resumen del Ciclo"}
             </DialogTitle>
+            <DialogDescription className="sr-only">Resumen del estado, los conteos y las diferencias del ciclo seleccionado.</DialogDescription>
           </DialogHeader>
           {!summaryData ? (
             <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-600" /></div>

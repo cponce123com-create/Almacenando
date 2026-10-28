@@ -236,10 +236,11 @@ interface AnalyticsDashboard {
   alerts: { lowStock: number; immobilized: number };
   warehouseDistribution: Array<{ warehouse: string; count: number }>;
   recentMovements: Array<{ id: string; type: string; quantity: number; date: string; product: string | null }>;
+  warnings?: string[];
 }
 
 function AnalyticsSection() {
-  const { data } = useQuery<AnalyticsDashboard>({
+  const { data, isLoading, isError, refetch } = useQuery<AnalyticsDashboard>({
     queryKey: ["/api/v1/analytics/dashboard"],
     queryFn: async () => {
       const res = await fetch("/api/v1/analytics/dashboard", { headers: getAuthHeaders() });
@@ -249,12 +250,16 @@ function AnalyticsSection() {
     refetchInterval: 5 * 60 * 1000, // cada 5 min
   });
 
-  if (!data) return null;
+  if (isLoading) return <div className="rounded-lg border bg-white p-4 text-sm text-slate-500">Cargando métricas…</div>;
+  if (isError || !data) return <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">No se pudieron cargar las métricas del panel. <button className="ml-2 underline" onClick={() => void refetch()}>Reintentar</button></div>;
 
   const totalInWarehouses = data.warehouseDistribution.reduce((s, w) => s + w.count, 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {!!data.warnings?.length && <div role="status" style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "10px 14px", color: "#92400e", fontSize: 13 }}>
+        Algunas métricas no están disponibles temporalmente; el panel muestra los datos restantes.
+      </div>}
       {/* Alerts row */}
       {(data.alerts.lowStock > 0 || data.alerts.immobilized > 0) && (
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>

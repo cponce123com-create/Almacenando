@@ -28,7 +28,7 @@ function a() { m.dbS.mockReturnValueOnce(mc([{ status: "active", role: "admin" }
 function app() {
   const e = express(); e.use(express.json()); e.use("/api/epp", eppRouter); return e;
 }
-const T = jwt.sign({ userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
+const T = jwt.sign({ tokenType: "access", userId: "u", email: "t@t.com", role: "admin", jti: "j" }, process.env.SESSION_SECRET!, { expiresIn: "1h" });
 
 describe("EPP API", () => {
   beforeEach(() => vi.clearAllMocks());
