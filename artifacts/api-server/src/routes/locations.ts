@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { and, eq, like, count, isNotNull, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
-import { locationsTable } from "@workspace/db";
+import { inventoryRecordsTable, locationsTable, pickItemsTable, productsTable } from "@workspace/db";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
 import { generateId } from "../lib/id.js";
@@ -41,6 +41,10 @@ const mapLayoutSchema = z.object({
   mapWidth: z.number().min(5).max(100),
   mapHeight: z.number().min(5).max(100),
   mapLabel: z.string().trim().min(1).max(120).optional(),
+});
+
+const locationDescriptionSchema = z.object({
+  description: z.string().trim().min(1, "La descripción no puede estar vacía.").max(120),
 });
 
 /**
@@ -116,6 +120,92 @@ router.post(
     });
 
     res.status(201).json(created);
+  }),
+);
+
+router.patch(
+  "/:id/description",
+  requireAuth,
+  requireRole("admin", "supervisor"),
+  asyncHandler(async (req, res) => {
+    const parsed = locationDescriptionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Descripción inválida." });
+      return;
+    }
+    const id = req.params.id as string;
+    const [current] = await db.select().from(locationsTable).where(eq(locationsTable.id, id)).limit(1);
+    if (!current) {
+      res.status(404).json({ error: "No se encontró la ubicación." });
+      return;
+    }
+    const [updated] = await db.update(locationsTable).set({ mapLabel: parsed.data.description })
+      .where(eq(locationsTable.id, id)).returning();
+    void writeAuditLog({
+      userId: (req as AuthenticatedRequest).userId,
+      action: "update",
+      resource: "locations",
+      resourceId: id,
+      details: { field: "description", before: current.mapLabel, after: parsed.data.description },
+      ipAddress: req.ip,
+    });
+    res.json(updated);
+  }),
+);
+
+router.delete(
+  "/:id",
+  requireAuth,
+  requireRole("admin", "supervisor"),
+  asyncHandler(async (req, res) => {
+    const id = req.params.id as string;
+    const location = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(locationsTable).where(eq(locationsTable.id, id)).limit(1);
+      if (!current) return { error: "not_found" as const };
+      if (!["zone", "rack"].includes(current.type)) return { error: "invalid_type" as const };
+
+      const [children, products, inventoryRecords, pickItems] = await Promise.all([
+        tx.select({ total: count() }).from(locationsTable).where(eq(locationsTable.parentLocationId, id)),
+        tx.select({ total: count() }).from(productsTable).where(eq(productsTable.locationId, id)),
+        tx.select({ total: count() }).from(inventoryRecordsTable).where(eq(inventoryRecordsTable.locationId, id)),
+        tx.select({ total: count() }).from(pickItemsTable).where(eq(pickItemsTable.locationId, id)),
+      ]);
+      const references = {
+        children: Number(children[0]?.total ?? 0),
+        products: Number(products[0]?.total ?? 0),
+        inventoryRecords: Number(inventoryRecords[0]?.total ?? 0),
+        pickItems: Number(pickItems[0]?.total ?? 0),
+      };
+      if (Object.values(references).some((total) => total > 0)) return { error: "in_use" as const, references };
+
+      await tx.delete(locationsTable).where(eq(locationsTable.id, id));
+      return { location: current };
+    });
+
+    if (location.error === "not_found") {
+      res.status(404).json({ error: "No se encontró la ubicación." });
+      return;
+    }
+    if (location.error === "invalid_type") {
+      res.status(400).json({ error: "Solo se pueden eliminar zonas o racks desde esta pantalla." });
+      return;
+    }
+    if (location.error === "in_use") {
+      const { children, products, inventoryRecords, pickItems } = location.references;
+      res.status(409).json({ error: `No se puede eliminar: tiene ${children} sububicaciones, ${products} productos, ${inventoryRecords} conteos y ${pickItems} movimientos vinculados.` });
+      return;
+    }
+
+    const deletedLocation = location.location;
+    void writeAuditLog({
+      userId: (req as AuthenticatedRequest).userId,
+      action: "delete",
+      resource: "locations",
+      resourceId: id,
+      details: { warehouse: deletedLocation.warehouse, zone: deletedLocation.zone, rack: deletedLocation.rack, description: deletedLocation.mapLabel },
+      ipAddress: req.ip,
+    });
+    res.json({ success: true, id });
   }),
 );
 
