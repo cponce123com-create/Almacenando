@@ -45,15 +45,15 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const WAREHOUSES = ["QA", "Q1", "QP", "QL", "QC", "QD"];
 
-const LOCATION_TYPES = ["rack", "shelf", "bin", "floor", "cooler", "hazardous"] as const;
+const LOCATION_TYPES = ["warehouse", "zone", "rack", "shelf", "position", "pallet"] as const;
 
 interface Location {
   id: string;
   warehouse: string;
-  zone: string;
-  rack: string;
-  shelf: string;
-  position: string;
+  zone: string | null;
+  rack: string | null;
+  shelf: string | null;
+  position: string | null;
   type: string;
   isActive: boolean;
   isNearScale: boolean;
@@ -77,7 +77,7 @@ const emptyForm: LocationFormData = {
   rack: "",
   shelf: "",
   position: "",
-  type: "rack",
+  type: "position",
   isNearScale: false,
 };
 
@@ -94,12 +94,12 @@ const api = async (path: string, opts?: RequestInit) => {
 };
 
 const TYPE_LABELS: Record<string, string> = {
+  warehouse: "Almacén",
+  zone: "Zona",
   rack: "Rack",
-  shelf: "Estante",
-  bin: "Bin",
-  floor: "Piso",
-  cooler: "Cámara Fría",
-  hazardous: "Peligroso",
+  shelf: "Nivel",
+  position: "Ubicación",
+  pallet: "Pallet",
 };
 
 export default function GestionDeUbicacionesPage() {
@@ -116,12 +116,14 @@ export default function GestionDeUbicacionesPage() {
 
   const perPage = 25;
 
-  const canWrite = user?.role && ["admin", "supervisor", "operator"].includes(user.role);
+  const canWrite = user?.role && ["admin", "supervisor"].includes(user.role);
 
   const { data: locationsResult, isLoading, isError } = useQuery<{ data: Location[] }>({
     queryKey: ["/api/locations", warehouse],
     queryFn: () => {
-      const params = warehouse && warehouse !== "all" ? `?warehouse=${warehouse}` : "";
+      const params = warehouse && warehouse !== "all"
+        ? `?warehouse=${encodeURIComponent(warehouse)}&limit=500`
+        : "?limit=500";
       return api(`/api/locations${params}`);
     },
   });
@@ -160,8 +162,13 @@ export default function GestionDeUbicacionesPage() {
 
   const handleSubmit = () => {
     setFormError("");
-    if (!form.warehouse || !form.zone || !form.rack || !form.shelf || !form.position) {
-      setFormError("Todos los campos obligatorios deben estar completos.");
+    const validStructure = !!form.warehouse
+      && (form.type === "warehouse" || !!form.zone)
+      && (form.type !== "rack" || !!form.rack)
+      && (form.type !== "shelf" || (!!form.rack && !!form.shelf))
+      && (form.type !== "position" || (!!form.rack && !!form.shelf && !!form.position));
+    if (!validStructure) {
+      setFormError("Completa los campos que corresponden al tipo de ubicación.");
       return;
     }
     createMutation.mutate(form);
@@ -177,7 +184,7 @@ export default function GestionDeUbicacionesPage() {
               <MapPin className="w-6 h-6 text-emerald-600" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">Gestión de Ubicaciones</h1>
+              <h1 className="text-2xl font-bold text-slate-900">Ubicaciones</h1>
               <p className="text-slate-500 text-sm">Administración de ubicaciones del almacén</p>
             </div>
           </div>
@@ -187,6 +194,15 @@ export default function GestionDeUbicacionesPage() {
               Nueva Ubicación
             </Button>
           )}
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950">
+            <b>Colorantes · Q1:</b> 5 racks con 4 niveles cada uno. Se registran los racks y sus 20 niveles; faltan los espacios por nivel.
+          </div>
+          <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-950">
+            <b>Auxiliares · Q1:</b> Zona A con niveles A, B y C y 9 ubicaciones por nivel. Zonas B, C y D con un nivel cada una; sus espacios aún no están especificados.
+          </div>
         </div>
 
         {/* Filters */}
@@ -256,10 +272,10 @@ export default function GestionDeUbicacionesPage() {
                           {loc.warehouse}
                         </span>
                       </TableCell>
-                      <TableCell className="text-slate-700 text-xs">{loc.zone}</TableCell>
-                      <TableCell className="font-medium text-slate-900 text-xs">{loc.rack}</TableCell>
-                      <TableCell className="text-slate-700 text-xs">{loc.shelf}</TableCell>
-                      <TableCell className="text-slate-700 text-xs">{loc.position}</TableCell>
+                      <TableCell className="text-slate-700 text-xs">{loc.zone || "—"}</TableCell>
+                      <TableCell className="font-medium text-slate-900 text-xs">{loc.rack || "—"}</TableCell>
+                      <TableCell className="text-slate-700 text-xs">{loc.shelf || "—"}</TableCell>
+                      <TableCell className="text-slate-700 text-xs">{loc.position || "—"}</TableCell>
                       <TableCell className="text-xs">
                         <Badge variant="outline" className="text-xs">
                           {TYPE_LABELS[loc.type] ?? loc.type}
@@ -359,7 +375,7 @@ export default function GestionDeUbicacionesPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="loc-zone">Zona *</Label>
+                <Label htmlFor="loc-zone">Zona {form.type === "warehouse" ? "(opcional)" : "*"}</Label>
                 <Input
                   id="loc-zone"
                   value={form.zone}
@@ -370,7 +386,7 @@ export default function GestionDeUbicacionesPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="loc-rack">Rack *</Label>
+                <Label htmlFor="loc-rack">Rack {form.type === "rack" || form.type === "shelf" || form.type === "position" ? "*" : "(opcional)"}</Label>
                 <Input
                   id="loc-rack"
                   value={form.rack}
@@ -379,7 +395,7 @@ export default function GestionDeUbicacionesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="loc-shelf">Estante *</Label>
+                <Label htmlFor="loc-shelf">Nivel {form.type === "shelf" || form.type === "position" ? "*" : "(opcional)"}</Label>
                 <Input
                   id="loc-shelf"
                   value={form.shelf}
@@ -390,7 +406,7 @@ export default function GestionDeUbicacionesPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="loc-position">Posición *</Label>
+                <Label htmlFor="loc-position">Ubicación {form.type === "position" ? "*" : "(opcional)"}</Label>
                 <Input
                   id="loc-position"
                   value={form.position}

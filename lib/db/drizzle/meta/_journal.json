@@ -134,6 +134,13 @@
       "when": 1793223600000,
       "tag": "0021_seed_module_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793224200000,
+      "tag": "0022_seed_q1_locations",
+      "breakpoints": true
     }
   ]
 }

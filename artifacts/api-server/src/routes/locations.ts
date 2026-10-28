@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, eq, like, count, isNotNull } from "drizzle-orm";
+import { and, eq, like, count, isNotNull, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { locationsTable } from "@workspace/db";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
@@ -54,7 +54,14 @@ router.get(
         .select()
         .from(locationsTable)
         .where(where)
-        .orderBy(locationsTable.warehouse, locationsTable.zone, locationsTable.rack, locationsTable.shelf, locationsTable.position)
+        .orderBy(
+          locationsTable.warehouse,
+          locationsTable.zone,
+          sql`CASE ${locationsTable.type} WHEN 'zone' THEN 0 WHEN 'rack' THEN 1 WHEN 'shelf' THEN 2 ELSE 3 END`,
+          locationsTable.rack,
+          locationsTable.shelf,
+          locationsTable.position,
+        )
         .limit(limit)
         .offset(offset),
     ]);
