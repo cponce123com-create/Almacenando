@@ -537,8 +537,8 @@ router.put(
         })).max(50);
         const checked = boxesSchema.safeParse(raw);
         if (!checked.success || checked.data.some(box =>
-          (box.weight !== "" && (!/^\\d+(\\.\\d+)?$/.test(box.weight) || Number(box.weight) < 0))
-          || (box.tare !== "" && (!/^\\d+(\\.\\d+)?$/.test(box.tare) || Number(box.tare) < 0))
+          (box.weight !== "" && (!/^\d+(\.\d+)?$/.test(box.weight) || Number(box.weight) < 0))
+          || (box.tare !== "" && (!/^\d+(\.\d+)?$/.test(box.tare) || Number(box.tare) < 0))
         )) {
           res.status(400).json({ error: "Revisa los pesos, taras y lotes de las cajas." });
           return;
