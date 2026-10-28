@@ -40,6 +40,7 @@ const ProfilePage                 = lazy(() => import("@/pages/profile"));
 const LocationsPage               = lazy(() => import("@/pages/modules/locations"));
 const RoundsPage                  = lazy(() => import("@/pages/modules/rounds"));
 const InventoryProgressPage       = lazy(() => import("@/pages/modules/inventory-progress"));
+const WorkCenterPage              = lazy(() => import("@/pages/modules/work-center"));
 const ScannerPage                 = lazy(() => import("@/pages/modules/scanner"));
 const PickingPage                 = lazy(() => import("@/pages/modules/picking"));
 const WarehouseMapPage            = lazy(() => import("@/pages/modules/warehouse-map"));
@@ -143,6 +144,7 @@ function Router() {
       <Route path="/locations"><ProtectedRoute component={LocationsPage} /></Route>
       <Route path="/rounds"><ProtectedRoute component={RoundsPage} /></Route>
       <Route path="/inventory-progress"><ProtectedRoute component={InventoryProgressPage} /></Route>
+      <Route path="/work-center"><ProtectedRoute component={WorkCenterPage} /></Route>
       <Route path="/scanner"><ProtectedRoute component={ScannerPage} /></Route>
       <Route path="/picking"><ProtectedRoute component={PickingPage} /></Route>
       <Route path="/warehouse-map"><ProtectedRoute component={WarehouseMapPage} /></Route>

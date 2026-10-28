@@ -13,6 +13,7 @@ export const PAGE_ID_BY_PATH: Record<string, string> = {
   "/product-out-notification": "product_out_notification",
   "/email-notifications": "email_notifications", "/locations": "locations",
   "/rounds": "rounds", "/inventory-progress": "inventory_progress",
+  "/work-center": "inventory_progress",
   "/scanner": "scanner", "/picking": "picking", "/warehouse-map": "warehouse_map",
 };
 
