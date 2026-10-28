@@ -329,10 +329,10 @@ function AnalyticsSection() {
                   width: 24, height: 24, borderRadius: 6, display: "flex",
                   alignItems: "center", justifyContent: "center", flexShrink: 0,
                   fontSize: 10, fontWeight: 700,
-                  background: m.type === "entrada" ? "#dcfce7" : "#fee2e2",
-                  color: m.type === "entrada" ? "#16a34a" : "#dc2626",
+                  background: m.type === "entrada" ? "#dcfce7" : m.type === "salida" ? "#fee2e2" : "#f1f5f9",
+                  color: m.type === "entrada" ? "#16a34a" : m.type === "salida" ? "#dc2626" : "#64748b",
                 }}>
-                  {m.type === "entrada" ? "E" : "S"}
+                  {m.type === "entrada" ? "E" : m.type === "salida" ? "S" : "C"}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, color: "#1e293b", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
