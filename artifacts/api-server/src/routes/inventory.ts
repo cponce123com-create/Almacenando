@@ -3,7 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { parseExcelBuffer, normalizeHeaders } from "../lib/excel-parser.js";
 import { db } from "@workspace/db";
-import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable } from "@workspace/db";
+import { inventoryRecordsTable, productsTable, inventoryBoxesTable, inventoryCyclesTable, inventoryCycleProductsTable, locationsTable } from "@workspace/db";
 import { eq, desc, asc, sql, and, or, inArray, count, max, isNotNull } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
@@ -52,6 +52,7 @@ const inventorySchema = z.object({
   finalBalance: z.string().default("0"),
   physicalCount: z.preprocess(v => (v === "" || v == null) ? null : v, z.string().nullable().optional()),
   location: z.string().optional(),
+  locationId: z.preprocess(value => value === "" || value == null ? null : value, z.string().nullable().optional()),
   missingLabel: z.preprocess(v => v === "true" || v === true, z.boolean().optional().default(false)),
   notes: z.string().optional(),
   boxesData: z.string().optional(),
@@ -282,6 +283,12 @@ router.post(
       return;
     }
 
+    if (parsed.data.locationId) {
+      const [location] = await db.select({ id: locationsTable.id }).from(locationsTable)
+        .where(and(eq(locationsTable.id, parsed.data.locationId), eq(locationsTable.warehouse, parsed.data.warehouse), eq(locationsTable.isActive, true))).limit(1);
+      if (!location) { res.status(400).json({ error: "La ubicación seleccionada no está activa o no pertenece al almacén elegido." }); return; }
+    }
+
     const files = (req.files ?? {}) as Files;
 
     let boxEntries: { weight: string; tare?: string; lot: string }[] = [];
@@ -351,6 +358,7 @@ router.post(
         physicalCount: physicalCount ?? null,
         photoUrl: mainPhotoUrl,
         location: parsed.data.location ?? null,
+        locationId: parsed.data.locationId ?? null,
         missingLabel: parsed.data.missingLabel ?? false,
         notes: parsed.data.notes,
         registeredBy: authedReq.userId,
@@ -501,6 +509,12 @@ router.put(
     const existingRecord = await db.select().from(inventoryRecordsTable)
       .where(eq(inventoryRecordsTable.id, id as string)).limit(1);
     if (!existingRecord[0]) { res.status(404).json({ error: "Registro no encontrado" }); return; }
+    if (parsed.data.locationId) {
+      const targetWarehouse = parsed.data.warehouse ?? existingRecord[0].warehouse;
+      const [location] = await db.select({ id: locationsTable.id }).from(locationsTable)
+        .where(and(eq(locationsTable.id, parsed.data.locationId), eq(locationsTable.warehouse, targetWarehouse), eq(locationsTable.isActive, true))).limit(1);
+      if (!location) { res.status(400).json({ error: "La ubicación seleccionada no está activa o no pertenece al almacén elegido." }); return; }
+    }
     if (existingRecord[0].roundId) {
       const [cycle] = await db.select({ status: inventoryCyclesTable.status })
         .from(inventoryCyclesTable).where(eq(inventoryCyclesTable.id, existingRecord[0].roundId)).limit(1);
