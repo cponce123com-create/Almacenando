@@ -51,9 +51,9 @@ router.get("/dashboard", requireAuth, asyncHandler(async (_req, res) => {
       .select({
         id: inventoryRecordsTable.id,
         type: sql<string>`CASE
-          WHEN ${inventoryRecordsTable.inputs} > 0 THEN 'Entrada'
-          WHEN ${inventoryRecordsTable.outputs} > 0 THEN 'Salida'
-          ELSE 'Conteo'
+          WHEN ${inventoryRecordsTable.inputs} > 0 THEN 'entrada'
+          WHEN ${inventoryRecordsTable.outputs} > 0 THEN 'salida'
+          ELSE 'conteo'
         END`,
         quantity: sql<number>`CASE
           WHEN ${inventoryRecordsTable.inputs} > 0 THEN ${inventoryRecordsTable.inputs}
