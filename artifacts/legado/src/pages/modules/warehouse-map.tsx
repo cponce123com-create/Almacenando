@@ -27,6 +27,11 @@ interface Location {
   mapLabel: string | null; mapX: number | null; mapY: number | null;
   mapWidth: number | null; mapHeight: number | null;
 }
+interface InventoryCount {
+  id: string; productId: string; productCode: string; productName: string;
+  unit: string; physicalCount: string | number; recordDate: string;
+  location: string | null; locationId: string | null;
+}
 interface Layout { x: number; y: number; width: number; height: number }
 interface DragState { id: string; mode: "move" | "resize"; startX: number; startY: number; initial: Layout; current: Layout }
 interface MapArea extends Layout {
@@ -92,6 +97,11 @@ export default function MapaDelAlmacenPage() {
   const { data: locationsResponse, isLoading: locationsLoading } = useQuery<{ data: Location[] }>({
     queryKey: ["/api/locations", warehouse],
     queryFn: () => api(`/api/locations?warehouse=${warehouse}&limit=500`),
+  });
+  const { data: selectedAreaCounts = [], isLoading: areaCountsLoading, isError: areaCountsError } = useQuery<InventoryCount[]>({
+    queryKey: ["/api/locations", selectedAreaId, "inventory-counts"],
+    queryFn: () => api(`/api/locations/${selectedAreaId}/inventory-counts`).then((response: any) => response.data ?? []),
+    enabled: Boolean(selectedAreaId),
   });
   const locations = locationsResponse?.data ?? [];
   const areas: MapArea[] = locations.filter((loc) => loc.mapSection === section
@@ -308,7 +318,15 @@ export default function MapaDelAlmacenPage() {
                 <Button size="sm" onClick={() => updateAreaLabel.mutate({ id: selectedArea.locationId, label: areaLabelDraft.trim(), layout: drafts[selectedArea.id] ?? selectedArea })} disabled={updateAreaLabel.isPending || !areaLabelDraft.trim()}>{updateAreaLabel.isPending ? "Guardando..." : "Guardar"}</Button>
                 <Button size="sm" variant="ghost" onClick={() => setEditingAreaLabel(false)} disabled={updateAreaLabel.isPending}>Cancelar</Button>
               </div> : <Button className="mt-3" size="sm" variant="outline" onClick={() => { setAreaLabelDraft(selectedArea.label); setEditingAreaLabel(true); }}>Cambiar descripción</Button>)}
-              {areaBalances.length ? <div className="mt-3 divide-y">{areaBalances.slice(0,20).map((balance) => <div key={balance.id} className="flex justify-between gap-3 py-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{balance.productDescription}</p><p className="font-mono text-xs text-slate-500">{balance.code} · {balance.locationSummary}</p></div><b className="shrink-0 text-sm">{qty(balance.quantity)} {balance.unit}</b></div>)}</div> : <p className="mt-3 rounded bg-slate-50 p-3 text-sm text-slate-500">No hay productos vinculados a esta zona todavía.</p>}
+              {areaBalances.length > 0 && <div className="mt-3 divide-y">{areaBalances.slice(0,20).map((balance) => <div key={balance.id} className="flex justify-between gap-3 py-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{balance.productDescription}</p><p className="font-mono text-xs text-slate-500">{balance.code} · {balance.locationSummary}</p></div><b className="shrink-0 text-sm">{qty(balance.quantity)} {balance.unit}</b></div>)}</div>}
+              <div className="mt-4 border-t border-slate-100 pt-3">
+                <h3 className="text-sm font-semibold text-slate-800">Conteos registrados en esta zona</h3>
+                {areaCountsLoading ? <p className="mt-2 text-xs text-slate-500">Buscando productos contados…</p>
+                  : areaCountsError ? <p className="mt-2 rounded bg-red-50 p-3 text-xs text-red-700">No se pudieron consultar los conteos de esta zona.</p>
+                  : selectedAreaCounts.length > 0 ? <div className="mt-2 divide-y">{selectedAreaCounts.slice(0,30).map((record) => <div key={record.id} className="flex justify-between gap-3 py-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{record.productName}</p><p className="font-mono text-xs text-slate-500">{record.productCode} · {record.location || selectedArea.label} · Conteo {record.recordDate}</p></div><b className="shrink-0 text-sm">{qty(record.physicalCount)} {record.unit}</b></div>)}</div>
+                  : areaBalances.length === 0 ? <p className="mt-2 rounded bg-slate-50 p-3 text-sm text-slate-500">No hay productos asociados a esta zona. Al registrar un conteo, selecciona esta zona o una de sus ubicaciones para que aparezca aquí.</p>
+                    : <p className="mt-2 text-xs text-slate-500">Todavía no hay conteos vinculados a esta zona.</p>}
+              </div>
             </> : <p className="mt-2 text-sm text-slate-600">Elige un bloque del plano para ver su detalle. {section === "colorantes" ? "Los cinco racks tienen cuatro niveles." : "Auxiliares A tiene tres niveles y nueve ubicaciones por nivel."}</p>}
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="flex items-center gap-2 font-bold text-slate-800"><PackageSearch className="h-4 w-4 text-teal-700" />Estado de datos</h2>

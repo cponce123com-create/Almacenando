@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, eq, like, count, isNotNull, sql } from "drizzle-orm";
+import { and, eq, like, count, isNotNull, inArray, desc, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { inventoryRecordsTable, locationsTable, pickItemsTable, productsTable } from "@workspace/db";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
@@ -85,6 +85,72 @@ router.get(
     ]);
 
     res.json({ data, total: countResult[0]?.total ?? 0, page, limit });
+  }),
+);
+
+/**
+ * Lista los últimos conteos físicos vinculados a una zona/rack del plano,
+ * incluyendo conteos hechos en sus sububicaciones.
+ */
+router.get(
+  "/:id/inventory-counts",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const id = req.params.id as string;
+    const [area] = await db.select().from(locationsTable).where(eq(locationsTable.id, id)).limit(1);
+    if (!area) { res.status(404).json({ error: "No se encontró la zona seleccionada." }); return; }
+
+    const warehouseLocations = await db.select({
+      id: locationsTable.id,
+      parentLocationId: locationsTable.parentLocationId,
+      zone: locationsTable.zone,
+      rack: locationsTable.rack,
+      shelf: locationsTable.shelf,
+      position: locationsTable.position,
+    }).from(locationsTable).where(eq(locationsTable.warehouse, area.warehouse));
+    const locationIds = new Set<string>([area.id]);
+    let frontier = new Set<string>([area.id]);
+    while (frontier.size > 0) {
+      const next = warehouseLocations.filter(location => location.parentLocationId && frontier.has(location.parentLocationId) && !locationIds.has(location.id));
+      frontier = new Set(next.map(location => location.id));
+      for (const location of next) locationIds.add(location.id);
+    }
+
+    // Algunos registros comparten zona/rack aunque no tengan parentLocationId.
+    for (const location of warehouseLocations) {
+      const sameZone = area.zone && location.zone === area.zone;
+      const sameRack = area.rack && location.rack === area.rack;
+      const sameShelf = area.shelf && location.shelf === area.shelf;
+      if ((sameRack && (!area.zone || sameZone)) || (sameShelf && (!area.rack || sameRack) && (!area.zone || sameZone))) locationIds.add(location.id);
+    }
+
+    const rows = await db.select({
+      id: inventoryRecordsTable.id,
+      productId: inventoryRecordsTable.productId,
+      productCode: productsTable.code,
+      productName: productsTable.name,
+      unit: productsTable.unit,
+      physicalCount: inventoryRecordsTable.physicalCount,
+      recordDate: inventoryRecordsTable.recordDate,
+      location: inventoryRecordsTable.location,
+      locationId: inventoryRecordsTable.locationId,
+      createdAt: inventoryRecordsTable.createdAt,
+    })
+      .from(inventoryRecordsTable)
+      .innerJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
+      .where(and(
+        eq(inventoryRecordsTable.warehouse, area.warehouse),
+        inArray(inventoryRecordsTable.locationId, [...locationIds]),
+        isNotNull(inventoryRecordsTable.physicalCount),
+      ))
+      .orderBy(desc(inventoryRecordsTable.recordDate), desc(inventoryRecordsTable.createdAt));
+
+    const latestByProductLocation = new Map<string, typeof rows[number]>();
+    for (const row of rows) {
+      const key = `${row.productId}::${row.locationId ?? ""}`;
+      if (!latestByProductLocation.has(key)) latestByProductLocation.set(key, row);
+    }
+    res.json({ data: [...latestByProductLocation.values()] });
   }),
 );
 
