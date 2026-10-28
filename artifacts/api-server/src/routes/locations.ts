@@ -27,6 +27,19 @@ const locationSchema = z.object({
   parentLocationId: z.string().optional(),
   isActive: z.boolean().default(true),
   isNearScale: z.boolean().default(false),
+  mapSection: z.enum(["colorantes", "auxiliares", "reference"]).optional(),
+  mapLabel: z.string().trim().max(120).optional(),
+  mapX: z.number().min(0).max(100).optional(),
+  mapY: z.number().min(0).max(100).optional(),
+  mapWidth: z.number().min(5).max(100).optional(),
+  mapHeight: z.number().min(5).max(100).optional(),
+});
+
+const mapLayoutSchema = z.object({
+  mapX: z.number().min(0).max(95),
+  mapY: z.number().min(0).max(95),
+  mapWidth: z.number().min(5).max(100),
+  mapHeight: z.number().min(5).max(100),
 });
 
 /**
@@ -102,6 +115,31 @@ router.post(
     });
 
     res.status(201).json(created);
+  }),
+);
+
+router.patch(
+  "/:id/map-layout",
+  requireAuth,
+  requireRole("admin", "supervisor"),
+  asyncHandler(async (req, res) => {
+    const parsed = mapLayoutSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Tamaño o posición inválidos." });
+      return;
+    }
+    const layout = parsed.data;
+    if (layout.mapX + layout.mapWidth > 100 || layout.mapY + layout.mapHeight > 100) {
+      res.status(400).json({ error: "La zona debe quedar dentro del plano." });
+      return;
+    }
+    const [updated] = await db.update(locationsTable).set(layout)
+      .where(eq(locationsTable.id, req.params.id as string)).returning();
+    if (!updated) {
+      res.status(404).json({ error: "No se encontró la zona del mapa." });
+      return;
+    }
+    res.json(updated);
   }),
 );
 

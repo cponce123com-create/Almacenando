@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
@@ -7,232 +8,199 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
-  AlertCircle,
-  ArrowLeftRight,
-  Boxes,
-  FlaskConical,
-  MapPin,
-  PackageSearch,
-  Search,
-  Scale,
-  Warehouse,
+  Boxes, FlaskConical, MapPin, Move, PackageSearch, Pencil,
+  Plus, Search, Scale, Warehouse, X,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
+type MapSection = "colorantes" | "auxiliares" | "reference";
 interface Balance {
-  id: string;
-  warehouse: string;
-  code: string;
-  productDescription: string;
-  unit: string;
-  quantity: string | number;
-  locationSummary: string | null;
-  zoneSummary: string | null;
-  ultimoConsumo: string | null;
+  id: string; warehouse: string; code: string; productDescription: string;
+  unit: string; quantity: string | number; locationSummary: string | null;
+  zoneSummary: string | null; ultimoConsumo: string | null;
 }
-
 interface Location {
-  id: string;
-  warehouse: string;
-  zone: string | null;
-  rack: string | null;
-  shelf: string | null;
-  position: string | null;
-  barcode: string | null;
-  type: string;
+  id: string; warehouse: string; zone: string | null; rack: string | null;
+  shelf: string | null; position: string | null; barcode: string | null;
+  type: string; parentLocationId: string | null; mapSection: MapSection | null;
+  mapLabel: string | null; mapX: number | null; mapY: number | null;
+  mapWidth: number | null; mapHeight: number | null;
 }
-
-interface MapArea {
-  id: string;
-  label: string;
-  section: "colorantes" | "auxiliares" | "reference";
-  rack?: string;
-  zone?: string;
-  kind: "rack" | "landmark";
-  className: string;
-  subtitle?: string;
+interface Layout { x: number; y: number; width: number; height: number }
+interface DragState { id: string; mode: "move" | "resize"; startX: number; startY: number; initial: Layout; current: Layout }
+interface MapArea extends Layout {
+  id: string; label: string; section: MapSection; rack: string | null;
+  zone: string | null; kind: "storage" | "reference"; locationId: string;
+  description?: string;
 }
-
-const COLORANT_AREAS: MapArea[] = [
-  { id: "rack-5", label: "RACK 5", section: "colorantes", rack: "RACK 5", kind: "rack", className: "col-start-3 col-span-7 row-start-1", subtitle: "4 niveles" },
-  { id: "rack-4", label: "RACK 4", section: "colorantes", rack: "RACK 4", kind: "rack", className: "col-start-11 col-span-2 row-start-2 row-span-3 [writing-mode:vertical-rl]", subtitle: "4 niveles" },
-  { id: "lockers", label: "Casilleros personal", section: "colorantes", kind: "landmark", className: "col-start-1 col-span-2 row-start-2", subtitle: "Referencia" },
-  { id: "scale-colorants", label: "Balanza", section: "reference", kind: "landmark", className: "col-start-1 col-span-2 row-start-4", subtitle: "Referencia" },
-  { id: "rack-1", label: "RACK 1", section: "colorantes", rack: "RACK 1", kind: "rack", className: "col-start-1 col-span-3 row-start-6", subtitle: "4 niveles" },
-  { id: "rack-2", label: "RACK 2", section: "colorantes", rack: "RACK 2", kind: "rack", className: "col-start-4 col-span-3 row-start-6", subtitle: "4 niveles" },
-  { id: "rack-3", label: "RACK 3", section: "colorantes", rack: "RACK 3", kind: "rack", className: "col-start-7 col-span-3 row-start-6", subtitle: "4 niveles" },
-];
-
-const AUXILIARY_AREAS: MapArea[] = [
-  { id: "rack-a", label: "AUXILIARES · A", section: "auxiliares", rack: "RACK 1", zone: "AUXILIARES A", kind: "rack", className: "col-start-3 col-span-7 row-start-1", subtitle: "Niveles A, B y C · 9 ubicaciones por nivel" },
-  { id: "immobilized", label: "Inmovilizados", section: "reference", kind: "landmark", className: "col-start-1 col-span-2 row-start-1", subtitle: "Referencia" },
-  { id: "rack-b", label: "AUXILIARES · B", section: "auxiliares", zone: "AUXILIARES B", kind: "rack", className: "col-start-1 col-span-6 row-start-3", subtitle: "Un nivel" },
-  { id: "rack-c", label: "AUXILIARES · C", section: "auxiliares", zone: "AUXILIARES C", kind: "rack", className: "col-start-1 col-span-6 row-start-4", subtitle: "Un nivel" },
-  { id: "rack-d", label: "AUXILIARES · D", section: "auxiliares", zone: "AUXILIARES D", kind: "rack", className: "col-start-1 col-span-6 row-start-6", subtitle: "Un nivel" },
-  { id: "oxygen", label: "Agua oxigenada", section: "reference", kind: "landmark", className: "col-start-8 col-span-2 row-start-2", subtitle: "Referencia" },
-  { id: "blends-2", label: "Blends 2", section: "reference", kind: "landmark", className: "col-start-10 col-span-2 row-start-2", subtitle: "Referencia" },
-  { id: "work-table", label: "Mesa de trabajo", section: "reference", kind: "landmark", className: "col-start-8 col-span-3 row-start-3", subtitle: "Referencia" },
-  { id: "scale-1", label: "Balanza 1", section: "reference", kind: "landmark", className: "col-start-8 col-span-2 row-start-4", subtitle: "Referencia" },
-  { id: "blends-1", label: "Blends 1", section: "reference", kind: "landmark", className: "col-start-10 col-span-2 row-start-4", subtitle: "Referencia" },
-  { id: "caustic-soda", label: "Soda cáustica", section: "reference", kind: "landmark", className: "col-start-8 col-span-3 row-start-6", subtitle: "Referencia" },
-];
 
 const normalize = (value: string | null | undefined) => (value ?? "")
-  .normalize("NFD")
-  .replace(/[\u0300-\u036f]/g, "")
-  .trim()
-  .toLocaleLowerCase("es");
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("es");
 
-const api = async <T,>(path: string, options?: RequestInit): Promise<T> => {
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     ...options,
     headers: { ...getAuthHeaders(), ...(options?.headers ?? {}) },
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error ?? "No se pudieron cargar los datos del mapa.");
+    throw new Error(error.error ?? "No se pudo completar la operación.");
   }
   return response.json() as Promise<T>;
-};
-
-function productArea(balance: Balance, locations: Location[]): string | null {
-  const locationCode = normalize(balance.locationSummary);
-  const zoneCode = normalize(balance.zoneSummary);
-  if (!locationCode && !zoneCode) return null;
-
-  const match = locations.find((location) => {
-    const fields = [location.barcode, location.position, location.shelf, location.rack, location.zone]
-      .map(normalize)
-      .filter(Boolean);
-    return fields.some((field) => field === locationCode || field === zoneCode);
-  });
-  if (!match) return null;
-  if (match.zone === "COLORANTES" && match.rack) return `rack-${match.rack.replace(/\D/g, "")}`;
-  if (match.zone?.startsWith("AUXILIARES") && match.zone.endsWith(" A")) return "rack-a";
-  if (match.zone?.startsWith("AUXILIARES") && match.zone.endsWith(" B")) return "rack-b";
-  if (match.zone?.startsWith("AUXILIARES") && match.zone.endsWith(" C")) return "rack-c";
-  if (match.zone?.startsWith("AUXILIARES") && match.zone.endsWith(" D")) return "rack-d";
-  return null;
 }
 
-const formatQuantity = (quantity: string | number) => {
-  const value = Number(quantity);
-  return Number.isFinite(value)
-    ? new Intl.NumberFormat("es-PE", { maximumFractionDigits: 3 }).format(value)
-    : String(quantity);
+function productArea(balance: Balance, locations: Location[]): string | null {
+  const locCode = normalize(balance.locationSummary);
+  const zoneCode = normalize(balance.zoneSummary);
+  const match = locations.find((loc) => [loc.barcode, loc.position, loc.shelf, loc.rack, loc.zone]
+    .map(normalize).filter(Boolean).some((field) => field === locCode || field === zoneCode));
+  if (!match) return null;
+  if (match.mapSection) return match.id;
+  return match.parentLocationId;
+}
+
+const qty = (value: string | number) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? new Intl.NumberFormat("es-PE", { maximumFractionDigits: 3 }).format(number) : String(value);
 };
 
 export default function MapaDelAlmacenPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const planeRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragState | null>(null);
   const [section, setSection] = useState<"colorantes" | "auxiliares">("colorantes");
   const [search, setSearch] = useState("");
   const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [selectedBalanceId, setSelectedBalanceId] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, Layout>>({});
+  const [newZoneName, setNewZoneName] = useState("");
+  const [showNewZone, setShowNewZone] = useState(false);
+  const warehouse = "Q1";
+  const canEdit = user?.role === "admin" || user?.role === "supervisor";
 
-  const currentWarehouse = "Q1";
   const { data: balances = [], isLoading: balancesLoading, isError: balancesError } = useQuery<Balance[]>({
-    queryKey: ["/api/balances/latest", currentWarehouse],
-    queryFn: () => api(`/api/balances/latest?warehouse=${encodeURIComponent(currentWarehouse)}`),
+    queryKey: ["/api/balances/latest", warehouse],
+    queryFn: () => api(`/api/balances/latest?warehouse=${warehouse}`),
   });
-  const { data: locationsResult, isLoading: locationsLoading } = useQuery<{ data: Location[] }>({
-    queryKey: ["/api/locations", currentWarehouse],
-    queryFn: () => api(`/api/locations?warehouse=${encodeURIComponent(currentWarehouse)}&limit=500`),
+  const { data: locationsResponse, isLoading: locationsLoading } = useQuery<{ data: Location[] }>({
+    queryKey: ["/api/locations", warehouse],
+    queryFn: () => api(`/api/locations?warehouse=${warehouse}&limit=500`),
   });
-  const locations = locationsResult?.data ?? [];
+  const locations = locationsResponse?.data ?? [];
+  const areas: MapArea[] = locations.filter((loc) => loc.mapSection === section
+    && loc.mapX != null && loc.mapY != null && loc.mapWidth != null && loc.mapHeight != null)
+    .map((loc) => ({
+      id: loc.id,
+      locationId: loc.id,
+      label: loc.mapLabel || loc.rack || loc.zone || loc.shelf || "Zona",
+      section,
+      rack: loc.rack,
+      zone: loc.zone,
+      kind: loc.zone === "REFERENCIAS" ? "reference" : "storage",
+      x: Number(loc.mapX), y: Number(loc.mapY),
+      width: Number(loc.mapWidth), height: Number(loc.mapHeight),
+      description: loc.type === "rack" ? "Rack" : loc.type === "zone" ? "Zona" : "Ubicación",
+    }));
 
-  const areas = section === "colorantes" ? COLORANT_AREAS : AUXILIARY_AREAS;
-  const selectedArea = areas.find((area) => area.id === selectedAreaId) ?? null;
+  useEffect(() => {
+    setDrafts(Object.fromEntries(areas.map((area) => [area.id, {
+      x: area.x, y: area.y, width: area.width, height: area.height,
+    }])));
+  // Refresh the local editor after the locations query is updated.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationsResponse, section]);
+
   const matchedBalances = useMemo(() => balances.map((balance) => ({
-    ...balance,
-    mapAreaId: productArea(balance, locations),
+    ...balance, mapAreaId: productArea(balance, locations),
   })), [balances, locations]);
-  const normalizedSearch = normalize(search);
-  const searchResults = useMemo(() => {
-    if (normalizedSearch.length < 2) return [];
-    return matchedBalances
-      .filter((balance) => normalize(`${balance.code} ${balance.productDescription}`).includes(normalizedSearch))
-      .slice(0, 8);
-  }, [matchedBalances, normalizedSearch]);
+  const searchTerm = normalize(search);
+  const searchResults = useMemo(() => searchTerm.length < 2 ? [] : matchedBalances
+    .filter((balance) => normalize(`${balance.code} ${balance.productDescription}`).includes(searchTerm))
+    .slice(0, 10), [matchedBalances, searchTerm]);
   const selectedBalance = matchedBalances.find((balance) => balance.id === selectedBalanceId) ?? null;
-  const areaBalances = selectedArea
-    ? matchedBalances.filter((balance) => balance.mapAreaId === selectedArea.id)
-    : [];
-  const unlinkedCount = matchedBalances.filter((balance) =>
-    (balance.locationSummary || balance.zoneSummary) && !balance.mapAreaId,
-  ).length;
-  const canManageLocations = user?.role === "admin" || user?.role === "supervisor";
-  const existingLocationCode = selectedBalance?.locationSummary
-    ? locations.some((location) => normalize(location.barcode) === normalize(selectedBalance.locationSummary)
-      || normalize(location.position) === normalize(selectedBalance.locationSummary))
-    : false;
-  const associationMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedBalance?.locationSummary || !selectedArea || selectedArea.kind !== "rack") throw new Error("Selecciona un producto y un rack o zona.");
-      const zone = selectedArea.zone ?? "COLORANTES";
-      const parent = locations.find((location) => location.type === (selectedArea.rack ? "rack" : "zone")
-        && location.zone === zone
-        && (!selectedArea.rack || location.rack === selectedArea.rack));
+  const selectedArea = areas.find((area) => area.id === selectedAreaId) ?? null;
+  const selectedLayout = selectedArea ? drafts[selectedArea.id] ?? selectedArea : null;
+  const areaBalances = selectedArea ? matchedBalances.filter((balance) => balance.mapAreaId === selectedArea.id) : [];
+  const unlinked = matchedBalances.filter((balance) => (balance.locationSummary || balance.zoneSummary) && !balance.mapAreaId).length;
+
+  const saveLayout = useMutation({
+    mutationFn: ({ id, layout }: { id: string; layout: Layout }) => api(`/api/locations/${id}/map-layout`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mapX: layout.x, mapY: layout.y, mapWidth: layout.width, mapHeight: layout.height }),
+    }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/locations", warehouse] }),
+    onError: (error: Error) => toast({ title: "No se guardó el plano", description: error.message, variant: "destructive" }),
+  });
+  const createZone = useMutation({
+    mutationFn: () => {
+      const label = newZoneName.trim();
+      if (!label) throw new Error("Escribe el nombre de la zona.");
       return api("/api/locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          warehouse: "Q1",
-          zone,
-          rack: selectedArea.rack,
-          position: selectedBalance.locationSummary,
-          barcode: selectedBalance.locationSummary,
-          type: "position",
-          parentLocationId: parent?.id,
+          warehouse, zone: label, shelf: label, type: "zone", mapSection: section,
+          mapLabel: label, mapX: 8, mapY: 8, mapWidth: 22, mapHeight: 12,
         }),
       });
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["/api/locations", "Q1"] });
-      toast({ title: "Ubicación asociada", description: "El código de NOW quedó vinculado al rack del plano." });
+      await queryClient.invalidateQueries({ queryKey: ["/api/locations", warehouse] });
+      setNewZoneName(""); setShowNewZone(false);
+      toast({ title: "Zona creada", description: "Ya puedes moverla y cambiar su tamaño en el plano." });
     },
-    onError: (error: Error) => toast({ title: "No se pudo asociar", description: error.message, variant: "destructive" }),
+    onError: (error: Error) => toast({ title: "No se creó la zona", description: error.message, variant: "destructive" }),
+  });
+  const associateCode = useMutation({
+    mutationFn: () => {
+      if (!selectedBalance?.locationSummary || !selectedArea || selectedArea.kind === "reference") throw new Error("Selecciona un producto y una zona de almacenamiento.");
+      return api("/api/locations", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          warehouse, zone: selectedArea.zone ?? selectedArea.label, rack: selectedArea.rack ?? undefined,
+          position: selectedBalance.locationSummary, barcode: selectedBalance.locationSummary,
+          type: "position", parentLocationId: selectedArea.locationId,
+        }),
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/locations", warehouse] });
+      toast({ title: "Código de NOW vinculado", description: `Ubicación asociada a ${selectedArea?.label}.` });
+    },
+    onError: (error: Error) => toast({ title: "No se pudo vincular", description: error.message, variant: "destructive" }),
   });
 
   const selectProduct = (balance: typeof matchedBalances[number]) => {
     setSelectedBalanceId(balance.id);
     setSelectedAreaId(balance.mapAreaId);
-    if (balance.mapAreaId?.startsWith("rack-a") || balance.mapAreaId?.startsWith("rack-b") || balance.mapAreaId?.startsWith("rack-c") || balance.mapAreaId?.startsWith("rack-d")) {
-      setSection("auxiliares");
-    } else if (balance.mapAreaId?.startsWith("rack-")) {
-      setSection("colorantes");
-    }
+    const areaLocation = locations.find((item) => item.id === balance.mapAreaId);
+    if (areaLocation?.mapSection === "auxiliares") setSection("auxiliares");
+    else if (areaLocation?.mapSection === "colorantes") setSection("colorantes");
   };
 
-  const renderArea = (area: MapArea) => {
-    const active = area.id === selectedAreaId;
-    const isRack = area.kind === "rack";
-    const count = matchedBalances.filter((balance) => balance.mapAreaId === area.id).length;
-    return (
-      <button
-        key={area.id}
-        type="button"
-        onClick={() => {
-          setSelectedAreaId(isRack ? area.id : null);
-          if (!selectedBalance) setSelectedBalanceId(null);
-        }}
-        aria-label={isRack ? `${area.label}: ver detalle${count ? `, ${count} productos asociados` : ""}` : area.label}
-        aria-pressed={active}
-        className={`${area.className} flex min-h-14 flex-col items-center justify-center rounded-xl border-2 px-2 py-2 text-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 ${
-          isRack
-            ? active
-              ? "border-teal-700 bg-teal-100 text-teal-950 shadow-md"
-              : "border-teal-300 bg-teal-50 text-teal-950 hover:border-teal-600 hover:bg-teal-100"
-            : "border-slate-300 bg-white/90 text-slate-600 hover:border-slate-500"
-        }`}
-      >
-        <span className="text-xs font-bold leading-tight sm:text-sm">{area.label}</span>
-        {area.subtitle && <span className="mt-1 text-[10px] leading-tight opacity-75 sm:text-xs">{area.subtitle}</span>}
-        {isRack && count > 0 && <span className="mt-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-teal-800">{count} producto{count === 1 ? "" : "s"} asociados</span>}
-      </button>
-    );
+  const startDrag = (event: PointerEvent<HTMLElement>, area: MapArea, mode: DragState["mode"]) => {
+    if (!editing || !canEdit || !planeRef.current) return;
+    event.preventDefault(); event.stopPropagation();
+    const layout = drafts[area.id] ?? area;
+    dragRef.current = { id: area.id, mode, startX: event.clientX, startY: event.clientY, initial: layout, current: layout };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const moveDrag = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current; const rect = planeRef.current?.getBoundingClientRect();
+    if (!drag || !rect) return;
+    const dx = (event.clientX - drag.startX) / rect.width * 100;
+    const dy = (event.clientY - drag.startY) / rect.height * 100;
+    const next = drag.mode === "move"
+      ? { ...drag.initial, x: Math.max(0, Math.min(100 - drag.initial.width, drag.initial.x + dx)), y: Math.max(0, Math.min(100 - drag.initial.height, drag.initial.y + dy)) }
+      : { ...drag.initial, width: Math.max(6, Math.min(100 - drag.initial.x, drag.initial.width + dx)), height: Math.max(6, Math.min(100 - drag.initial.y, drag.initial.height + dy)) };
+    drag.current = next; setDrafts((current) => ({ ...current, [drag.id]: next }));
+  };
+  const endDrag = () => {
+    const drag = dragRef.current; if (!drag) return;
+    dragRef.current = null;
+    if (JSON.stringify(drag.initial) !== JSON.stringify(drag.current)) saveLayout.mutate({ id: drag.id, layout: drag.current });
   };
 
   return (
@@ -240,189 +208,82 @@ export default function MapaDelAlmacenPage() {
       <div className="mx-auto max-w-7xl space-y-5 pb-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
-              <MapPin className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Mapa del Almacén</h1>
-              <p className="text-sm text-slate-500">Busca un químico y encuentra su zona, rack y ubicación registrada</p>
-            </div>
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-100 text-teal-700"><MapPin className="h-6 w-6" /></div>
+            <div><h1 className="text-2xl font-bold text-slate-900">Mapa del Almacén</h1><p className="text-sm text-slate-500">Busca químicos y organiza el plano de Q1</p></div>
           </div>
-          <Badge variant="outline" className="gap-1.5 bg-white px-3 py-1.5 text-slate-600">
-            <Warehouse className="h-3.5 w-3.5" />
-            Almacén {currentWarehouse}
-          </Badge>
+          <Badge variant="outline" className="gap-1.5 bg-white px-3 py-1.5 text-slate-600"><Warehouse className="h-3.5 w-3.5" /> Almacén Q1</Badge>
         </div>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <label htmlFor="warehouse-product-search" className="mb-2 block text-sm font-semibold text-slate-800">
-            Buscar producto por código o descripción
-          </label>
+          <label htmlFor="warehouse-product-search" className="mb-2 block text-sm font-semibold text-slate-800">Buscar producto por código o descripción</label>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              id="warehouse-product-search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Ej.: 0101-0001 o almidón modificado"
-              className="h-11 pl-9"
-              autoComplete="off"
-            />
-            {searchResults.length > 0 && (
-              <div className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
-                {searchResults.map((balance) => (
-                  <button
-                    type="button"
-                    key={balance.id}
-                    onClick={() => selectProduct(balance)}
-                    className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-3 text-left last:border-b-0 hover:bg-teal-50"
-                  >
-                    <span className="min-w-0">
-                      <span className="block font-mono text-xs font-bold text-slate-700">{balance.code}</span>
-                      <span className="block truncate text-sm text-slate-900">{balance.productDescription}</span>
-                    </span>
-                    <span className="shrink-0 text-right">
-                      <span className="block text-sm font-semibold text-slate-800">{formatQuantity(balance.quantity)} {balance.unit}</span>
-                      <span className="block max-w-48 truncate text-xs text-slate-500">{balance.locationSummary || "Ubicación NOW sin dato"}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <Input id="warehouse-product-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ej.: 0101-0001 o almidón modificado" className="h-11 pl-9" autoComplete="off" />
+            {searchResults.length > 0 && <div className="absolute z-20 mt-1 max-h-80 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+              {searchResults.map((balance) => <button type="button" key={balance.id} onClick={() => selectProduct(balance)} className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-3 text-left last:border-b-0 hover:bg-teal-50">
+                <span className="min-w-0"><span className="block font-mono text-xs font-bold text-slate-700">{balance.code}</span><span className="block truncate text-sm text-slate-900">{balance.productDescription}</span></span>
+                <span className="shrink-0 text-right"><span className="block text-sm font-semibold text-slate-800">{qty(balance.quantity)} {balance.unit}</span><span className="block max-w-48 truncate text-xs text-slate-500">{balance.locationSummary || "Sin ubicación NOW"}</span></span>
+              </button>)}
+            </div>}
           </div>
-          {normalizedSearch.length >= 2 && !balancesLoading && searchResults.length === 0 && (
-            <p className="mt-2 text-sm text-slate-500">No se encontraron productos con ese código o descripción en el saldo más reciente.</p>
-          )}
-          {selectedBalance && (
-            <div className={`mt-3 rounded-lg border p-3 ${selectedBalance.mapAreaId ? "border-teal-200 bg-teal-50" : "border-amber-200 bg-amber-50"}`}>
-              <div className="flex items-start gap-2">
-                {selectedBalance.mapAreaId ? <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />}
-                <div className="min-w-0 text-sm">
-                  <p className="font-semibold text-slate-900">{selectedBalance.code} · {selectedBalance.productDescription}</p>
-                  <p className="mt-1 text-slate-700">
-                    NOW: <b>{selectedBalance.locationSummary || "sin ubicación"}</b>
-                    {selectedBalance.zoneSummary ? ` · ${selectedBalance.zoneSummary}` : ""}
-                    <span className="mx-2 text-slate-400">|</span>
-                    Saldo: <b>{formatQuantity(selectedBalance.quantity)} {selectedBalance.unit}</b>
-                  </p>
-                  <p className="mt-1 text-xs text-slate-600">
-                    {selectedBalance.mapAreaId
-                      ? "Área resaltada en el plano según la ubicación asociada."
-                      : "La ubicación NOW todavía no está asociada a un rack del plano; se muestra el código real para evitar señalar un lugar incorrecto."}
-                  </p>
-                  {canManageLocations && selectedBalance.locationSummary && !selectedBalance.mapAreaId && selectedArea?.kind === "rack" && (
-                    existingLocationCode ? (
-                      <p className="mt-2 text-xs font-medium text-amber-800">Este código ya está registrado; revisa su rack en Ubicaciones.</p>
-                    ) : (
-                      <Button className="mt-3 h-9" size="sm" onClick={() => associationMutation.mutate()} disabled={associationMutation.isPending || locationsLoading}>
-                        {associationMutation.isPending ? "Asociando..." : `Vincular ${selectedBalance.locationSummary} a ${selectedArea.label}`}
-                      </Button>
-                    )
-                  )}
-                  {canManageLocations && selectedBalance.locationSummary && !selectedBalance.mapAreaId && !selectedArea && (
-                    <p className="mt-2 text-xs font-medium text-teal-800">Toca el rack correcto en el plano para asociar este código NOW.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+          {searchTerm.length >= 2 && !balancesLoading && searchResults.length === 0 && <p className="mt-2 text-sm text-slate-500">No se encontraron productos.</p>}
+          {selectedBalance && <div className={`mt-3 rounded-lg border p-3 ${selectedBalance.mapAreaId ? "border-teal-200 bg-teal-50" : "border-amber-200 bg-amber-50"}`}>
+            <div className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" /><div className="min-w-0 text-sm">
+              <p className="font-semibold text-slate-900">{selectedBalance.code} · {selectedBalance.productDescription}</p>
+              <p className="mt-1 text-slate-700">NOW: <b>{selectedBalance.locationSummary || "Sin ubicación"}</b>{selectedBalance.zoneSummary ? ` · ${selectedBalance.zoneSummary}` : ""} <span className="mx-2 text-slate-400">|</span> Saldo: <b>{qty(selectedBalance.quantity)} {selectedBalance.unit}</b></p>
+              <p className="mt-1 text-xs text-slate-600">{selectedBalance.mapAreaId ? "Zona resaltada en el plano." : "Selecciona la zona correcta en el plano para vincular este código NOW."}</p>
+              {canEdit && selectedBalance.locationSummary && !selectedBalance.mapAreaId && selectedArea?.kind === "storage" && <Button className="mt-3 h-9" size="sm" onClick={() => associateCode.mutate()} disabled={associateCode.isPending}>{associateCode.isPending ? "Vinculando..." : `Vincular ${selectedBalance.locationSummary} a ${selectedArea.label}`}</Button>}
+            </div></div>
+          </div>}
         </section>
 
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Sectores del almacén Q1">
-          <button type="button" role="tab" aria-selected={section === "colorantes"} onClick={() => { setSection("colorantes"); setSelectedAreaId(null); }} className={`rounded-lg px-4 py-2 text-sm font-semibold ${section === "colorantes" ? "bg-violet-700 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
-            <FlaskConical className="mr-2 inline h-4 w-4" />Colorantes
-          </button>
-          <button type="button" role="tab" aria-selected={section === "auxiliares"} onClick={() => { setSection("auxiliares"); setSelectedAreaId(null); }} className={`rounded-lg px-4 py-2 text-sm font-semibold ${section === "auxiliares" ? "bg-teal-700 text-white" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
-            <Boxes className="mr-2 inline h-4 w-4" />Auxiliares
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-2" role="tablist" aria-label="Sectores del almacén Q1">
+            <button type="button" role="tab" aria-selected={section === "colorantes"} onClick={() => { setSection("colorantes"); setSelectedAreaId(null); }} className={`rounded-lg px-4 py-2 text-sm font-semibold ${section === "colorantes" ? "bg-violet-700 text-white" : "border bg-white text-slate-700"}`}><FlaskConical className="mr-2 inline h-4 w-4" />Colorantes</button>
+            <button type="button" role="tab" aria-selected={section === "auxiliares"} onClick={() => { setSection("auxiliares"); setSelectedAreaId(null); }} className={`rounded-lg px-4 py-2 text-sm font-semibold ${section === "auxiliares" ? "bg-teal-700 text-white" : "border bg-white text-slate-700"}`}><Boxes className="mr-2 inline h-4 w-4" />Auxiliares</button>
+          </div>
+          {canEdit && <div className="flex gap-2">
+            <Button size="sm" variant={editing ? "default" : "outline"} onClick={() => { setEditing(!editing); setShowNewZone(false); }} className="gap-2"><Pencil className="h-4 w-4" />{editing ? "Terminar edición" : "Editar plano"}</Button>
+            {editing && <Button size="sm" variant="outline" onClick={() => setShowNewZone(true)} className="gap-2"><Plus className="h-4 w-4" />Nueva zona</Button>}
+          </div>}
         </div>
 
+        {editing && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><Move className="mr-2 inline h-4 w-4" />Arrastra los bloques para moverlos y la esquina marcada para cambiar su tamaño. Los cambios se guardan automáticamente.</div>}
+        {showNewZone && <form className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4" onSubmit={(event) => { event.preventDefault(); createZone.mutate(); }}>
+          <label className="min-w-56 flex-1 text-sm font-medium text-slate-700">Nombre de la nueva zona<Input className="mt-1" autoFocus value={newZoneName} onChange={(event) => setNewZoneName(event.target.value)} placeholder="Ej.: Auxiliares E" maxLength={120} /></label>
+          <Button type="submit" disabled={createZone.isPending}>{createZone.isPending ? "Creando..." : "Crear zona"}</Button><Button type="button" variant="ghost" onClick={() => setShowNewZone(false)}><X className="h-4 w-4" /></Button>
+        </form>}
+
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
-            <div>
-              <h2 className="font-bold text-slate-800">Plano esquemático · {section === "colorantes" ? "Colorantes" : "Auxiliares"} Q1</h2>
-              <p className="text-xs text-slate-500">Distribución basada en tu croquis; el plano no está a escala.</p>
-            </div>
-            <span className="text-xs text-slate-500">Toca un rack para consultar su detalle</span>
-          </div>
-          <div className="overflow-x-auto p-3 sm:p-5">
-            <div className="grid min-h-[390px] min-w-[680px] grid-cols-12 grid-rows-6 gap-2 rounded-xl border border-dashed border-slate-300 bg-[linear-gradient(135deg,#f8fafc_25%,#f1f5f9_25%,#f1f5f9_50%,#f8fafc_50%,#f8fafc_75%,#f1f5f9_75%,#f1f5f9_100%)] bg-[length:28px_28px] p-3">
-              {areas.map(renderArea)}
-              <div className="pointer-events-none col-start-4 col-span-6 row-start-5 flex items-center justify-center rounded-full border border-dashed border-slate-300 bg-white/50 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                Pasillo
-              </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3"><div><h2 className="font-bold text-slate-800">Plano · {section === "colorantes" ? "Colorantes" : "Auxiliares"} Q1</h2><p className="text-xs text-slate-500">Según tu croquis; no está a escala.</p></div><span className="text-xs text-slate-500">{areas.length} bloques</span></div>
+          <div className="overflow-auto p-3 sm:p-5">
+            <div ref={planeRef} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag} className="relative aspect-[16/10] min-h-[480px] min-w-[680px] overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50 bg-[linear-gradient(90deg,rgba(148,163,184,.08)_1px,transparent_1px),linear-gradient(rgba(148,163,184,.08)_1px,transparent_1px)] bg-[size:24px_24px]">
+              {areas.map((area) => {
+                const layout = drafts[area.id] ?? area;
+                const active = selectedAreaId === area.id;
+                const isStorage = area.kind === "storage";
+                const count = matchedBalances.filter((row) => row.mapAreaId === area.id).length;
+                return <button key={area.id} type="button" onClick={() => { setSelectedAreaId(area.id); if (area.section === "auxiliares" || area.section === "colorantes") setSelectedBalanceId((id) => id); }} onPointerDown={(event) => startDrag(event, area, "move")} aria-pressed={active} title={editing ? "Arrastra para mover" : `Abrir ${area.label}`} className={`absolute flex min-h-8 flex-col items-center justify-center overflow-hidden rounded-xl border-2 px-2 py-1.5 text-center transition-colors ${isStorage ? "font-semibold" : "border-slate-300 bg-white/95 text-slate-600"} ${active ? "border-teal-700 bg-teal-100 text-teal-950 shadow-md" : isStorage ? "border-teal-300 bg-teal-50 text-teal-950 hover:border-teal-600" : "hover:border-slate-500"} ${editing ? "cursor-move touch-none ring-1 ring-amber-300" : "cursor-pointer"}`} style={{ left: `${layout.x}%`, top: `${layout.y}%`, width: `${layout.width}%`, height: `${layout.height}%` }}>
+                  <span className="max-w-full truncate text-[11px] sm:text-sm">{area.label}</span>{area.description && <span className="text-[10px] opacity-70">{area.description}</span>}{isStorage && count > 0 && <span className="mt-0.5 text-[10px]">{count} productos</span>}
+                  {editing && <span onPointerDown={(event) => startDrag(event, area, "resize")} className="absolute bottom-0 right-0 flex h-5 w-5 cursor-nwse-resize touch-none items-center justify-center rounded-tl-md bg-teal-700 text-[9px] text-white" aria-label="Cambiar tamaño"><Scale className="h-3 w-3" /></span>}
+                </button>;
+              })}
+              {areas.length === 0 && <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">No hay áreas en este sector.</div>}
             </div>
           </div>
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.72fr)]">
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="font-bold text-slate-800">{selectedArea ? selectedArea.label : "Estructura del sector"}</h2>
-              {selectedArea && <Badge variant="outline">{areaBalances.length} producto{areaBalances.length === 1 ? "" : "s"} asociados</Badge>}
-            </div>
-            {selectedArea ? (
-              <>
-                <p className="mt-1 text-xs text-slate-500">{selectedArea.subtitle}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {locations.filter((location) => location.rack === selectedArea.rack && (!selectedArea.zone || location.zone === selectedArea.zone))
-                    .map((location) => (
-                      <span key={location.id} className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700">
-                        {location.type === "shelf" ? location.shelf : location.position || location.rack || location.zone}
-                        {location.type === "position" && location.shelf ? ` · ${location.shelf}` : ""}
-                      </span>
-                    ))}
-                </div>
-                {areaBalances.length > 0 ? (
-                  <div className="mt-4 divide-y divide-slate-100">
-                    {areaBalances.slice(0, 20).map((balance) => (
-                      <div key={balance.id} className="flex items-center justify-between gap-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-900">{balance.productDescription}</p>
-                          <p className="font-mono text-xs text-slate-500">{balance.code} · {balance.locationSummary || "sin código de ubicación"}</p>
-                        </div>
-                        <p className="shrink-0 text-sm font-semibold text-slate-800">{formatQuantity(balance.quantity)} {balance.unit}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-500">
-                    No hay productos vinculados exactamente a este rack. La lista aparecerá cuando el código de ubicación de NOW se asocie con el rack.
-                  </p>
-                )}
-              </>
-            ) : (
-              <div className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-                {section === "colorantes" ? <>
-                  <p>5 racks de colorantes</p><p>4 niveles por rack</p><p>20 niveles registrados en total</p><p>La balanza y los casilleros son referencias del croquis</p>
-                </> : <>
-                  <p>Zona A: 3 niveles · 9 ubicaciones por nivel</p><p>Zonas B, C y D: un nivel cada una</p><p>Áreas de apoyo mostradas según el croquis</p><p>Los espacios de B, C y D se completarán al recibir sus cantidades</p>
-                </>}
-              </div>
-            )}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="font-bold text-slate-800">{selectedArea?.label ?? "Detalle del plano"}</h2>
+            {selectedArea ? <><p className="mt-1 text-xs text-slate-500">{selectedArea.description} · {selectedArea.zone || "Sin zona asignada"}{selectedArea.rack ? ` · ${selectedArea.rack}` : ""}</p>
+              {areaBalances.length ? <div className="mt-3 divide-y">{areaBalances.slice(0,20).map((balance) => <div key={balance.id} className="flex justify-between gap-3 py-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{balance.productDescription}</p><p className="font-mono text-xs text-slate-500">{balance.code} · {balance.locationSummary}</p></div><b className="shrink-0 text-sm">{qty(balance.quantity)} {balance.unit}</b></div>)}</div> : <p className="mt-3 rounded bg-slate-50 p-3 text-sm text-slate-500">No hay productos vinculados a esta zona todavía.</p>}
+            </> : <p className="mt-2 text-sm text-slate-600">Elige un bloque del plano para ver su detalle. {section === "colorantes" ? "Los cinco racks tienen cuatro niveles." : "Auxiliares A tiene tres niveles y nueve ubicaciones por nivel."}</p>}
           </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="flex items-center gap-2 font-bold text-slate-800"><PackageSearch className="h-4 w-4 text-teal-700" />Estado de datos</h2>
-            {balancesLoading || locationsLoading ? (
-              <p className="mt-3 text-sm text-slate-500">Cargando saldos y ubicaciones...</p>
-            ) : balancesError ? (
-              <p className="mt-3 text-sm text-red-700">No se pudo leer el saldo más reciente. Intenta recargar la página.</p>
-            ) : (
-              <div className="mt-3 space-y-3 text-sm">
-                <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5"><span>Productos con saldo cargado</span><b>{balances.length}</b></div>
-                <div className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2.5 text-amber-900"><span>Con código NOW pendiente de asociar</span><b>{unlinkedCount}</b></div>
-                <p className="text-xs leading-relaxed text-slate-500">El mapa muestra el código de ubicación de NOW tal cual. Solo resalta un rack cuando existe una asociación exacta en Ubicaciones; así no dirige al personal a una posición equivocada.</p>
-                <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
-                  <ArrowLeftRight className="h-4 w-4 shrink-0" />
-                  Selecciona un producto y luego el rack o zona correcta para vincular su código NOW al plano.
-                </div>
-                <div className="flex items-start gap-2 text-xs text-slate-500">
-                  <Scale className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  La vista es un plano 2D esquemático pensado para localizar rápido desde computadora o celular.
-                </div>
-              </div>
-            )}
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h2 className="flex items-center gap-2 font-bold text-slate-800"><PackageSearch className="h-4 w-4 text-teal-700" />Estado de datos</h2>
+            {balancesLoading || locationsLoading ? <p className="mt-3 text-sm text-slate-500">Cargando saldos y plano...</p> : balancesError ? <p className="mt-3 text-sm text-red-700">No se pudo leer el saldo reciente.</p> : <div className="mt-3 space-y-3 text-sm">
+              <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2.5"><span>Productos con saldo Q1</span><b>{balances.length}</b></div><div className="flex justify-between rounded-lg bg-amber-50 px-3 py-2.5 text-amber-900"><span>Ubicaciones NOW sin asociar</span><b>{unlinked}</b></div>
+              <p className="text-xs text-slate-500">El plano resalta un área solo cuando el código NOW está asociado a una zona o rack.</p>
+            </div>}
           </section>
         </div>
       </div>

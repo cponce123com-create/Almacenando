@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, pgEnum, doublePrecision } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -18,6 +18,12 @@ export const locationsTable = pgTable("locations", {
   parentLocationId: text("parent_location_id"),
   isActive: boolean("is_active").notNull().default(true),
   isNearScale: boolean("is_near_scale").notNull().default(false),
+  mapSection: text("map_section"),
+  mapLabel: text("map_label"),
+  mapX: doublePrecision("map_x"),
+  mapY: doublePrecision("map_y"),
+  mapWidth: doublePrecision("map_width"),
+  mapHeight: doublePrecision("map_height"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
