@@ -38,6 +38,7 @@ const rowSchema = z.object({
   q1Balance: z.string().max(40),
   availability: z.string().max(40),
   qaLot: z.string().max(120),
+  qaBalance: z.string().max(40).optional(),
   qaQuantity: z.string().max(40),
   qaZone: z.string().max(120),
   qaLocation: z.string().max(120),

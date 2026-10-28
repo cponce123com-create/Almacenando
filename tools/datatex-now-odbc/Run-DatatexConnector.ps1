@@ -146,7 +146,7 @@ ORDER BY MIN(H.LONGDESCRIPTION)
             balances = @"
 SELECT LOGICALWAREHOUSECODE || '|' || DECOSUBCODE01 || '-' || DECOSUBCODE02 AS ITEMKEY,
        SUM(BASEPRIMARYQUANTITYUNIT) AS TOTAL
-FROM NOW.BALANCE WHERE ITEMTYPECODE='Q' AND LOGICALWAREHOUSECODE IN ('Q1','QD')
+FROM NOW.BALANCE WHERE ITEMTYPECODE='Q' AND LOGICALWAREHOUSECODE IN ('QA','Q1','QD')
 GROUP BY LOGICALWAREHOUSECODE, DECOSUBCODE01, DECOSUBCODE02
 "@
             documents = @"
@@ -233,6 +233,7 @@ ORDER BY A.LOTCREATIONDATE ASC
             $qa = $maps.qaLots[$code]
             $qaLot = ""; $qaQuantity = ""; $qaZone = ""; $qaLocation = ""
             if ($qa) { $qaLot = $qa.lot; $qaQuantity = $qa.quantity; $qaZone = $qa.zone; $qaLocation = $qa.location }
+            $qaBalance = Get-AvailabilityValue $maps.balances "QA|$code"
             [pscustomobject]@{
                 code = $code; description = $_.description; lineStatus = $_.lineStatus; unit = $_.unit
                 productionReservations = Format-AvailabilityNumber $production
@@ -244,6 +245,7 @@ ORDER BY A.LOTCREATIONDATE ASC
                 q1Balance = Format-AvailabilityNumber $q1Balance
                 availability = Format-AvailabilityNumber $availability
                 qaLot = $qaLot
+                qaBalance = Format-AvailabilityNumber $qaBalance
                 qaQuantity = $qaQuantity
                 qaZone = $qaZone
                 qaLocation = $qaLocation
