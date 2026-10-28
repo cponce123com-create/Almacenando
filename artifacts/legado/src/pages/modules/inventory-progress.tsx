@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { jsPDF } from "jspdf";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -381,11 +382,110 @@ export default function InventoryProgressPage() {
     }
     return counts;
   }, [pendingProgress?.products]);
-  const filteredRecommendations = useMemo(() => pendingRecommendationProducts
+  const filteredRecommendationCandidates = useMemo(() => pendingRecommendationProducts
     .filter(product => recommendationFilter === "all" || inactivityBucket(product.currentUltimoConsumo) === recommendationFilter)
-    .sort((a, b) => b.priority - a.priority || a.code.localeCompare(b.code))
-    .slice(0, 5),
+    .sort((a, b) => b.priority - a.priority || a.code.localeCompare(b.code)),
   [pendingProgress?.products, recommendationFilter]);
+  const filteredRecommendations = filteredRecommendationCandidates.slice(0, 5);
+
+  const exportRecommendationsPdf = () => {
+    const products = filteredRecommendationCandidates.slice(0, 10);
+    if (products.length === 0) return;
+
+    const now = new Date();
+    const dateParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Lima",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now).reduce<Record<string, string>>((parts, part) => {
+      parts[part.type] = part.value;
+      return parts;
+    }, {});
+    const fileDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+    const displayDate = new Intl.DateTimeFormat("es-PE", {
+      timeZone: "America/Lima",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    }).format(now);
+    const rangeLabel = inactivityFilterOptions.find(option => option.value === recommendationFilter)?.label ?? "Todos";
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 10;
+    const columns = [
+      { title: ["Código"], width: 22 },
+      { title: ["Descripción"], width: 62 },
+      { title: ["Fecha último", "consumo"], width: 32 },
+      { title: ["Saldo", "sistema"], width: 34 },
+      { title: ["Peso", "físico"], width: 40 },
+    ];
+    const headerY = 48;
+    const headerHeight = 12;
+    const rowHeight = 20;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.setTextColor(15, 23, 42);
+    doc.text("INVENTARIO DE QUÍMICOS", margin, 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`Almacén Q1  ·  Fecha: ${displayDate}`, margin, 26);
+    doc.setFontSize(8.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Selección: ${rangeLabel}  ·  ${products.length} productos priorizados`, margin, 33);
+    doc.text("Anote el peso físico medido en la última columna.", margin, 39);
+
+    let x = margin;
+    doc.setFillColor(15, 118, 110);
+    doc.setDrawColor(148, 163, 184);
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    for (const column of columns) {
+      doc.rect(x, headerY, column.width, headerHeight, "FD");
+      const textY = column.title.length === 1 ? headerY + 7.5 : headerY + 5.3;
+      doc.text(column.title, x + column.width / 2, textY, { align: "center" });
+      x += column.width;
+    }
+
+    products.forEach((product, index) => {
+      const y = headerY + headerHeight + index * rowHeight;
+      const cells = [
+        product.code,
+        product.productName,
+        product.currentUltimoConsumo && product.currentUltimoConsumo > "2013-01-01"
+          ? product.currentUltimoConsumo
+          : "Sin fecha",
+        product.currentQuantity === null
+          ? "Sin saldo"
+          : `${product.currentQuantity.toLocaleString("es-PE", { maximumFractionDigits: 3 })} ${product.unit}`,
+        "",
+      ];
+      let cellX = margin;
+      doc.setDrawColor(180, 190, 200);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(30, 41, 59);
+      columns.forEach((column, columnIndex) => {
+        doc.setFillColor(index % 2 === 0 ? 255 : 248, index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 252);
+        doc.rect(cellX, y, column.width, rowHeight, "FD");
+        if (columnIndex < 4) {
+          const value = cells[columnIndex] ?? "";
+          const lines = doc.splitTextToSize(value, column.width - 4).slice(0, 3);
+          doc.text(lines, cellX + 2, y + 6);
+        }
+        cellX += column.width;
+      });
+    });
+
+    const footerY = headerY + headerHeight + products.length * rowHeight + 7;
+    doc.setFontSize(8);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Pesador: ____________________________________", margin, footerY);
+    doc.text("Firma: __________________________", pageWidth - margin, footerY, { align: "right" });
+    doc.save(`Inventario_Quimicos_Q1_${fileDate}.pdf`);
+  };
   const stats = progress?.stats ?? { pending: 0, counted: 0, verified: 0, consumptionAlert: 0, withoutMovement: 0, skipped: 0, total: 0 };
   const totalDone = stats.counted + stats.verified + stats.withoutMovement + stats.skipped;
   const pctComplete = stats.total > 0 ? Math.round((totalDone / stats.total) * 100) : 0;
@@ -545,6 +645,10 @@ export default function InventoryProgressPage() {
               <span className="text-xs text-blue-500 sm:ml-auto">
                 {recommendationCounts[recommendationFilter]} pendientes en esta selección; muestra hasta {filteredRecommendations.length} para contar.
               </span>
+              <Button type="button" size="sm" variant="outline" onClick={exportRecommendationsPdf}
+                disabled={filteredRecommendationCandidates.length === 0} className="bg-white">
+                <FileSpreadsheet className="mr-1.5 h-4 w-4" /> Exportar PDF · {Math.min(10, filteredRecommendationCandidates.length)} productos
+              </Button>
             </div>
             <div className="mb-4 flex flex-wrap gap-2">
               {inactivityFilterOptions.map(option => (
