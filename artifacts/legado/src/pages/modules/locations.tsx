@@ -132,11 +132,17 @@ export default function GestionDeUbicacionesPage() {
 
   const { data: locationsResult, isLoading, isError } = useQuery<{ data: Location[] }>({
     queryKey: ["/api/locations", warehouse],
-    queryFn: () => {
-      const params = warehouse && warehouse !== "all"
-        ? `?warehouse=${encodeURIComponent(warehouse)}&limit=500`
-        : "?limit=500";
-      return api(`/api/locations${params}`);
+    queryFn: async () => {
+      const warehouseParam = warehouse && warehouse !== "all" ? `&warehouse=${encodeURIComponent(warehouse)}` : "";
+      const first = await api(`/api/locations?limit=500${warehouseParam}`) as { data?: Location[]; total?: number };
+      const data = [...(first.data ?? [])];
+      const total = Number(first.total ?? data.length);
+      for (let page = 2; data.length < total; page++) {
+        const next = await api(`/api/locations?limit=500&page=${page}${warehouseParam}`) as { data?: Location[] };
+        if (!next.data?.length) break;
+        data.push(...next.data);
+      }
+      return { data };
     },
   });
   const locations = locationsResult?.data ?? [];

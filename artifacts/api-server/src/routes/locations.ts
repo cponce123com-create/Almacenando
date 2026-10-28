@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { and, eq, like, count, isNotNull, inArray, desc, sql } from "drizzle-orm";
+import { and, eq, like, count, isNotNull, inArray, desc, sql, or } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { inventoryRecordsTable, locationsTable, pickItemsTable, productsTable } from "@workspace/db";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
@@ -107,6 +107,9 @@ router.get(
       rack: locationsTable.rack,
       shelf: locationsTable.shelf,
       position: locationsTable.position,
+      barcode: locationsTable.barcode,
+      mapLabel: locationsTable.mapLabel,
+      type: locationsTable.type,
     }).from(locationsTable).where(eq(locationsTable.warehouse, area.warehouse));
     const locationIds = new Set<string>([area.id]);
     let frontier = new Set<string>([area.id]);
@@ -118,11 +121,31 @@ router.get(
 
     // Algunos registros comparten zona/rack aunque no tengan parentLocationId.
     for (const location of warehouseLocations) {
-      const sameZone = area.zone && location.zone === area.zone;
-      const sameRack = area.rack && location.rack === area.rack;
-      const sameShelf = area.shelf && location.shelf === area.shelf;
-      if ((sameRack && (!area.zone || sameZone)) || (sameShelf && (!area.rack || sameRack) && (!area.zone || sameZone))) locationIds.add(location.id);
+      const sameZone = Boolean(area.zone && location.zone === area.zone);
+      const sameRack = Boolean(area.rack && location.rack === area.rack);
+      const sameShelf = Boolean(area.shelf && location.shelf === area.shelf);
+      if ((area.type === "zone" && sameZone)
+        || (area.type === "rack" && sameRack && (!area.zone || sameZone))
+        || (area.type === "shelf" && sameShelf && (!area.rack || sameRack) && (!area.zone || sameZone))) {
+        locationIds.add(location.id);
+      }
     }
+
+    const typeLabels: Record<string, string> = {
+      warehouse: "Almacén", zone: "Zona", rack: "Rack", shelf: "Nivel", position: "Ubicación", pallet: "Pallet",
+    };
+    const legacyLocationLabels = [...new Set(warehouseLocations
+      .filter(location => locationIds.has(location.id))
+      .flatMap(location => {
+        const parts = [location.zone, location.rack, location.shelf, location.position]
+          .map(value => value?.trim()).filter((value): value is string => Boolean(value));
+        const uniqueParts = parts.filter((part, index) => parts.findIndex(value => value.toLocaleLowerCase() === part.toLocaleLowerCase()) === index);
+        const path = uniqueParts.join(" / ") || location.mapLabel?.trim() || typeLabels[location.type] || location.type;
+        return [
+          `${path} · ${typeLabels[location.type] ?? "Ubicación"}`,
+          location.zone, location.rack, location.shelf, location.position, location.barcode, location.mapLabel,
+        ].map(value => value?.trim()).filter((value): value is string => Boolean(value));
+      }))];
 
     const rows = await db.select({
       id: inventoryRecordsTable.id,
@@ -140,14 +163,17 @@ router.get(
       .innerJoin(productsTable, eq(inventoryRecordsTable.productId, productsTable.id))
       .where(and(
         eq(inventoryRecordsTable.warehouse, area.warehouse),
-        inArray(inventoryRecordsTable.locationId, [...locationIds]),
+        or(
+          inArray(inventoryRecordsTable.locationId, [...locationIds]),
+          inArray(inventoryRecordsTable.location, legacyLocationLabels),
+        ),
         isNotNull(inventoryRecordsTable.physicalCount),
       ))
       .orderBy(desc(inventoryRecordsTable.recordDate), desc(inventoryRecordsTable.createdAt));
 
     const latestByProductLocation = new Map<string, typeof rows[number]>();
     for (const row of rows) {
-      const key = `${row.productId}::${row.locationId ?? ""}`;
+      const key = `${row.productId}::${row.locationId ?? row.location ?? ""}`;
       if (!latestByProductLocation.has(key)) latestByProductLocation.set(key, row);
     }
     res.json({ data: [...latestByProductLocation.values()] });
@@ -168,6 +194,20 @@ router.post(
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Datos inválidos" });
       return;
+    }
+
+    if (parsed.data.parentLocationId) {
+      const [parent] = await db.select({ id: locationsTable.id, isActive: locationsTable.isActive })
+        .from(locationsTable)
+        .where(and(
+          eq(locationsTable.id, parsed.data.parentLocationId),
+          eq(locationsTable.warehouse, parsed.data.warehouse),
+        ))
+        .limit(1);
+      if (!parent || !parent.isActive) {
+        res.status(400).json({ error: "La ubicación superior no existe, está inactiva o pertenece a otro almacén." });
+        return;
+      }
     }
 
     const id = generateId();

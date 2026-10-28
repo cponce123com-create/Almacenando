@@ -56,13 +56,39 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 function productArea(balance: Balance, locations: Location[]): string | null {
+  const locationsById = new Map(locations.map(location => [location.id, location]));
+  const resolveArea = (location: Location): string | null => {
+    let current: Location | undefined = location;
+    const visited = new Set<string>();
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      if (current.mapSection) return current.id;
+      current = current.parentLocationId ? locationsById.get(current.parentLocationId) : undefined;
+    }
+    return null;
+  };
+
   const locCode = normalize(balance.locationSummary);
-  const zoneCode = normalize(balance.zoneSummary);
-  const match = locations.find((loc) => [loc.barcode, loc.position, loc.shelf, loc.rack, loc.zone]
-    .map(normalize).filter(Boolean).some((field) => field === locCode || field === zoneCode));
-  if (!match) return null;
-  if (match.mapSection) return match.id;
-  return match.parentLocationId;
+  if (!locCode) return null;
+  // NOW's location code should identify the physical position; follow its
+  // complete parent chain to the block shown on the map.
+  const exactMatches = locations.filter(location =>
+    [location.barcode, location.position].map(normalize).filter(Boolean).includes(locCode));
+  const areaIds = [...new Set(exactMatches.map(resolveArea).filter((id): id is string => Boolean(id)))];
+  if (areaIds.length === 1) return areaIds[0]!;
+  if (areaIds.length > 1) {
+    const zoneCode = normalize(balance.zoneSummary);
+    const narrowed = exactMatches.filter(location => normalize(location.zone) === zoneCode)
+      .map(resolveArea).filter((id): id is string => Boolean(id));
+    const narrowedIds = [...new Set(narrowed)];
+    return narrowedIds.length === 1 ? narrowedIds[0]! : null;
+  }
+
+  // Some NOW records carry a rack/shelf code instead of a position code.
+  const structuralMatches = locations.filter(location =>
+    [location.shelf, location.rack, location.zone].map(normalize).filter(Boolean).includes(locCode));
+  const structuralAreaIds = [...new Set(structuralMatches.map(resolveArea).filter((id): id is string => Boolean(id)))];
+  return structuralAreaIds.length === 1 ? structuralAreaIds[0]! : null;
 }
 
 const qty = (value: string | number) => {
@@ -96,7 +122,17 @@ export default function MapaDelAlmacenPage() {
   });
   const { data: locationsResponse, isLoading: locationsLoading } = useQuery<{ data: Location[] }>({
     queryKey: ["/api/locations", warehouse],
-    queryFn: () => api(`/api/locations?warehouse=${warehouse}&limit=500`),
+    queryFn: async () => {
+      const first = await api(`/api/locations?warehouse=${warehouse}&limit=500`) as { data?: Location[]; total?: number };
+      const data = [...(first.data ?? [])];
+      const total = Number(first.total ?? data.length);
+      for (let page = 2; data.length < total; page++) {
+        const next = await api(`/api/locations?warehouse=${warehouse}&limit=500&page=${page}`) as { data?: Location[] };
+        if (!next.data?.length) break;
+        data.push(...next.data);
+      }
+      return { data };
+    },
   });
   const { data: selectedAreaCounts = [], isLoading: areaCountsLoading, isError: areaCountsError } = useQuery<InventoryCount[]>({
     queryKey: ["/api/locations", selectedAreaId, "inventory-counts"],

@@ -47,6 +47,19 @@ function inventoryLocationLabel(location: InventoryLocation): string {
   const typeLabel: Record<string, string> = { warehouse: "Almacén", zone: "Zona", rack: "Rack", shelf: "Nivel", position: "Ubicación", pallet: "Pallet" };
   return `${path} · ${typeLabel[location.type] ?? "Ubicación"}`;
 }
+async function fetchAllPages<T>(path: string, limit = 500): Promise<T[]> {
+  const separator = path.includes("?") ? "&" : "?";
+  const first = await apiJson(`${path}${separator}limit=${limit}&page=1`) as { data?: T[]; total?: number } | T[];
+  const results = Array.isArray(first) ? [...first] : [...(first.data ?? [])];
+  const total = Array.isArray(first) ? results.length : Number(first.total ?? results.length);
+  for (let page = 2; results.length < total; page++) {
+    const next = await apiJson(`${path}${separator}limit=${limit}&page=${page}`) as { data?: T[] } | T[];
+    const data = Array.isArray(next) ? next : next.data ?? [];
+    if (!data.length) break;
+    results.push(...data);
+  }
+  return results;
+}
 export default function TomaDeInventarioPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -135,6 +148,7 @@ export default function TomaDeInventarioPage() {
       setShowImportResult(true);
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
       qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
+      qc.invalidateQueries({ queryKey: ["/api/locations"] });
       toast({ title: "Importación completada", description: `${data.inserted} registros creados, ${data.errors?.length ?? 0} errores` });
     } catch (err) {
       toast({ title: "Error al importar", description: String(err), variant: "destructive" });
@@ -179,10 +193,16 @@ export default function TomaDeInventarioPage() {
     if (fileRefs[i]?.current) fileRefs[i]!.current!.value = "";
   };
 
-  const totalPhysical = useMemo(
-    () => boxes.reduce((sum, b) => sum + (parseFloat(b.weight) || 0), 0),
-    [boxes]
-  );
+  // Each entered box weight is gross weight. The saved physical balance must
+  // use net product weight after subtracting that box's tare.
+  const totalPhysical = useMemo(() => Number(boxes.reduce((sum, box) => {
+    const tare = box.tare === "otro" ? box.customTare ?? "" : box.tare;
+    return sum + (Number(calcNetWeight(box.weight, tare)) || 0);
+  }, 0).toFixed(3)), [boxes]);
+  const hasInvalidTare = boxes.some(box => {
+    const tare = Number(box.tare === "otro" ? box.customTare ?? "0" : box.tare || "0");
+    return Number(box.weight) > 0 && tare > Number(box.weight);
+  });
   const hasBoxData = boxes.some(b => b.weight || b.lot) || boxPhotos.some(Boolean);
   const hasMeasuredBoxes = boxes.some(box => Number(box.weight) > 0);
   const displayedPhysicalCount = hasMeasuredBoxes ? totalPhysical
@@ -204,21 +224,14 @@ export default function TomaDeInventarioPage() {
   // Queries
   const { data: products = EMPTY_PRODUCTS } = useQuery<Product[]>({
     queryKey: ["/api/products", selectedWarehouse],
-    queryFn: () => apiJson(`/api/products?warehouse=${selectedWarehouse}&limit=500`).then((r: any) => r.data ?? r),
+    queryFn: () => fetchAllPages<Product>(`/api/products?warehouse=${selectedWarehouse}`),
   });
 
   const { data: inventoryLocations = [], isLoading: locationsLoading, isError: locationsError } = useQuery<InventoryLocation[]>({
     queryKey: ["/api/locations", selectedWarehouse],
     queryFn: async () => {
-      const firstPage = await apiJson(`/api/locations?warehouse=${selectedWarehouse}&limit=500`) as { data?: InventoryLocation[]; total?: number };
-      const results = [...(firstPage.data ?? [])];
-      const total = Number(firstPage.total ?? results.length);
-      for (let page = 2; results.length < total; page++) {
-        const nextPage = await apiJson(`/api/locations?warehouse=${selectedWarehouse}&limit=500&page=${page}`) as { data?: InventoryLocation[] };
-        if (!nextPage.data?.length) break;
-        results.push(...nextPage.data);
-      }
-      return results.filter(location => location.isActive);
+      return (await fetchAllPages<InventoryLocation>(`/api/locations?warehouse=${selectedWarehouse}`))
+        .filter(location => location.isActive);
     },
   });
   const locationOptions = useMemo(() => inventoryLocations.map(location => ({ id: location.id, label: inventoryLocationLabel(location), type: location.type })), [inventoryLocations]);
@@ -238,7 +251,7 @@ export default function TomaDeInventarioPage() {
 
   const { data: records = [], isLoading, isError } = useQuery<InventoryRecord[]>({
     queryKey: ["/api/inventory", selectedWarehouse],
-    queryFn: () => apiJson(`/api/inventory?warehouse=${selectedWarehouse}&limit=500`).then((r: any) => r.data ?? r),
+    queryFn: () => fetchAllPages<InventoryRecord>(`/api/inventory?warehouse=${selectedWarehouse}`),
   });
 
   const { data: stats, isLoading: statsLoading } = useQuery<InventoryStats>({
@@ -407,6 +420,7 @@ export default function TomaDeInventarioPage() {
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
       qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
       qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
+      qc.invalidateQueries({ queryKey: ["/api/locations"] });
       toast({ title: "Inventario guardado", description: "El registro de inventario fue guardado correctamente." });
       setShowForm(false);
       resetForm();
@@ -422,6 +436,7 @@ export default function TomaDeInventarioPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/inventory"] });
       qc.invalidateQueries({ queryKey: ["/api/inventory/stats"] });
+      qc.invalidateQueries({ queryKey: ["/api/locations"] });
       toast({ title: "Registro eliminado" });
       setDeleteTarget(null);
     },
@@ -462,6 +477,7 @@ export default function TomaDeInventarioPage() {
       qc.invalidateQueries({ queryKey: ["/api/inventory-cycles"] });
       qc.invalidateQueries({ queryKey: ["/api/inventory/progress"] });
       qc.invalidateQueries({ queryKey: ["/api/reports/summary"] });
+      qc.invalidateQueries({ queryKey: ["/api/locations"] });
       toast({ title: "Conteo actualizado", description: "Se guardaron los cambios del registro." });
       setShowForm(false);
       resetForm();
@@ -502,8 +518,8 @@ export default function TomaDeInventarioPage() {
     setShowForm(true);
   };
 
-  const canSubmit = form.productId && (hasBoxData || form.previousBalance);
-  const canEditSubmit = Boolean(form.productId) && Boolean(form.previousBalance || manualPhysicalCount || hasBoxData);
+  const canSubmit = !hasInvalidTare && form.productId && (hasBoxData || form.previousBalance);
+  const canEditSubmit = !hasInvalidTare && Boolean(form.productId) && Boolean(form.previousBalance || manualPhysicalCount || hasBoxData);
 
   return (
     <AppLayout>
@@ -960,6 +976,7 @@ export default function TomaDeInventarioPage() {
                           </select>
                           {box.tare === "otro" && <Input type="number" step="0.1" min="0" placeholder="Tara manual (kg)" value={box.customTare ?? ""} onChange={e => updateBox(i, "customTare", e.target.value)} className="h-7 text-xs" />}
                           {box.weight && (box.tare || box.customTare) && <span className="text-[10px] text-emerald-600 font-medium whitespace-nowrap">Neto: {calcNetWeight(box.weight, box.tare === "otro" ? box.customTare ?? "" : box.tare)}</span>}
+                          {Number(box.weight) > 0 && Number(box.tare === "otro" ? box.customTare ?? "0" : box.tare || "0") > Number(box.weight) && <span className="text-[10px] font-medium text-red-600">La tara supera el peso bruto.</span>}
                         </div>
                       </div>
                       <div className="flex flex-col items-start gap-0.5">
