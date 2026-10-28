@@ -165,15 +165,16 @@ export default function MapaDelAlmacenPage() {
   ).length;
   const canManageLocations = user?.role === "admin" || user?.role === "supervisor";
   const existingLocationCode = selectedBalance?.locationSummary
-    ? locations.some((location) => normalize(location.barcode) === normalize(selectedBalance.locationSummary))
+    ? locations.some((location) => normalize(location.barcode) === normalize(selectedBalance.locationSummary)
+      || normalize(location.position) === normalize(selectedBalance.locationSummary))
     : false;
   const associationMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedBalance?.locationSummary || !selectedArea?.rack) throw new Error("Selecciona un producto y un rack.");
+      if (!selectedBalance?.locationSummary || !selectedArea || selectedArea.kind !== "rack") throw new Error("Selecciona un producto y un rack o zona.");
       const zone = selectedArea.zone ?? "COLORANTES";
-      const parent = locations.find((location) => location.type === "rack"
+      const parent = locations.find((location) => location.type === (selectedArea.rack ? "rack" : "zone")
         && location.zone === zone
-        && location.rack === selectedArea.rack);
+        && (!selectedArea.rack || location.rack === selectedArea.rack));
       return api("/api/locations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -313,7 +314,7 @@ export default function MapaDelAlmacenPage() {
                     existingLocationCode ? (
                       <p className="mt-2 text-xs font-medium text-amber-800">Este código ya está registrado; revisa su rack en Ubicaciones.</p>
                     ) : (
-                      <Button className="mt-3 h-9" size="sm" onClick={() => associationMutation.mutate()} disabled={associationMutation.isPending}>
+                      <Button className="mt-3 h-9" size="sm" onClick={() => associationMutation.mutate()} disabled={associationMutation.isPending || locationsLoading}>
                         {associationMutation.isPending ? "Asociando..." : `Vincular ${selectedBalance.locationSummary} a ${selectedArea.label}`}
                       </Button>
                     )
@@ -414,7 +415,7 @@ export default function MapaDelAlmacenPage() {
                 <p className="text-xs leading-relaxed text-slate-500">El mapa muestra el código de ubicación de NOW tal cual. Solo resalta un rack cuando existe una asociación exacta en Ubicaciones; así no dirige al personal a una posición equivocada.</p>
                 <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
                   <ArrowLeftRight className="h-4 w-4 shrink-0" />
-                  Próximo paso para ubicar con precisión: asociar los códigos de ubicación NOW (por ejemplo, Q09C003) a cada rack/posición del plano.
+                  Selecciona un producto y luego el rack o zona correcta para vincular su código NOW al plano.
                 </div>
                 <div className="flex items-start gap-2 text-xs text-slate-500">
                   <Scale className="mt-0.5 h-3.5 w-3.5 shrink-0" />
