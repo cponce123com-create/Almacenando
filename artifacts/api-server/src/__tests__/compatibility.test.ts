@@ -43,7 +43,7 @@ function createApp() {
 
 const TEST_SECRET = process.env.SESSION_SECRET!;
 function makeToken() {
-  return jwt.sign({ userId: "u1", email: "t@t.com", role: "admin", jti: "j" }, TEST_SECRET, { expiresIn: "1h" });
+  return jwt.sign({ tokenType: "access", userId: "u1", email: "t@t.com", role: "admin", jti: "j" }, TEST_SECRET, { expiresIn: "1h" });
 }
 
 describe("Compatibility API", () => {

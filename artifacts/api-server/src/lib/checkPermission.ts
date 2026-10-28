@@ -1,80 +1,75 @@
-import type { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
 import { db, userPermissionsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import type { WarehouseRole } from "@workspace/db";
-import type { AuthenticatedRequest } from "./auth.js";
+import { and, eq } from "drizzle-orm";
+import { requireAuth, type AuthenticatedRequest } from "./auth.js";
 
-// Cache en memoria: key = `${role}:${pageId}`, value = permission row, TTL = 30s
-const permissionCache = new Map<string, { data: Record<string, boolean>; expiresAt: number }>();
-const CACHE_TTL = 30_000; // 30 segundos
+export const MODULE_PAGE_IDS = [
+  "dashboard", "products", "inventory", "balances", "availability", "cuadre",
+  "immobilized", "samples", "dye_lots", "lot_evals", "disposition", "epp",
+  "personnel", "documents", "supplies", "surplus", "reports", "notifications",
+  "admin_users", "msds", "compatibility", "lot_change_notification",
+  "product_out_notification", "email_notifications", "locations", "rounds",
+  "inventory_progress", "scanner", "picking", "warehouse_map",
+] as const;
 
-function getCachedPermission(role: string, pageId: string): Record<string, boolean> | null {
-  const key = `${role}:${pageId}`;
-  const cached = permissionCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.data;
-  permissionCache.delete(key);
-  return null;
+type PageId = typeof MODULE_PAGE_IDS[number];
+type PermissionAction = "canView" | "canImport" | "canExport" | "canEdit" | "canDelete";
+const routeModules: Array<[string, PageId]> = [
+  ["/balances/now/products", "products"], ["/balances/now", "balances"],
+  ["/inventory-cycles", "inventory_progress"], ["/inventory", "inventory"],
+  ["/products", "products"], ["/balances", "balances"], ["/availability", "availability"],
+  ["/cuadre", "cuadre"], ["/immobilized", "immobilized"], ["/samples", "samples"],
+  ["/dye-lots", "dye_lots"], ["/lot-evaluations", "lot_evals"], ["/disposition", "disposition"],
+  ["/documents", "documents"], ["/epp", "epp"], ["/personnel", "personnel"],
+  ["/reports", "reports"], ["/admin/users", "admin_users"],
+  ["/notifications/lot-change", "lot_change_notification"],
+  ["/notifications/product-out", "product_out_notification"],
+  ["/notifications/stock-colorante", "email_notifications"],
+  ["/notifications/stock-auxiliar", "email_notifications"],
+  ["/notifications/order-approval", "email_notifications"],
+  ["/notifications/plastic-bag", "email_notifications"],
+  ["/notifications", "notifications"],
+  ["/supplies", "supplies"], ["/surplus", "surplus"], ["/msds", "msds"],
+  ["/compatibility", "compatibility"], ["/locations", "locations"], ["/barcode", "scanner"],
+  ["/picking", "picking"], ["/reorganization", "warehouse_map"], ["/rounds", "rounds"],
+  ["/analytics", "dashboard"],
+];
+
+function permissionForRequest(req: Request): PermissionAction {
+  const path = req.path.toLowerCase();
+  if (req.method === "GET" && /(?:export|download|template)/.test(path)) return "canExport";
+  if (req.method === "POST" && /(?:import|upload)/.test(path)) return "canImport";
+  if (req.method === "DELETE" || /(?:reset|archive|purge)/.test(path)) return "canDelete";
+  if (["POST", "PUT", "PATCH"].includes(req.method)) return "canEdit";
+  return "canView";
 }
 
-function setCachedPermission(role: string, pageId: string, data: Record<string, boolean>): void {
-  const key = `${role}:${pageId}`;
-  permissionCache.set(key, { data, expiresAt: Date.now() + CACHE_TTL });
-}
+/** Enforces the configured role/module matrix for every API route. */
+export function checkModulePermission(req: Request, res: Response, next: NextFunction): void {
+  const route = routeModules.find(([prefix]) => req.path === prefix || req.path.startsWith(`${prefix}/`));
+  if (!route) { next(); return; }
 
-/**
- * Middleware que verifica si el rol del usuario autenticado tiene un permiso
- * específico sobre una página/módulo.
- *
- * @param pageId - Identificador de la página (ej: "products", "inventory")
- * @param action - Acción requerida: "canEdit", "canDelete", "canImport", "canExport"
- */
-export function checkPermission(pageId: string, action: "canEdit" | "canDelete" | "canImport" | "canExport") {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    try {
-      const authedReq = req as AuthenticatedRequest;
-      if (!authedReq.userId) {
-        res.status(401).json({ error: "No autorizado" });
+  // NOW connector calls authenticate with their own dedicated shared secret.
+  if (req.header("x-datatex-token") && (
+    req.path.startsWith("/balances/now/connector/") ||
+    req.path.startsWith("/balances/now/products/") ||
+    req.path.startsWith("/availability/connector/")
+  )) { next(); return; }
+
+  requireAuth(req, res, () => {
+    void (async () => {
+      const authed = req as AuthenticatedRequest;
+      if (authed.userRole === "admin") { next(); return; }
+      const [permission] = await db.select().from(userPermissionsTable).where(and(
+        eq(userPermissionsTable.role, authed.userRole),
+        eq(userPermissionsTable.pageId, route[1]),
+      )).limit(1);
+      const action = permissionForRequest(req);
+      if (!permission?.canView || !permission[action]) {
+        res.status(403).json({ error: "No tienes permiso para realizar esta acción en este módulo.", pageId: route[1], action });
         return;
       }
-
-      // Admin tiene acceso total — saltear verificación
-      if (authedReq.userRole === "admin") {
-        next();
-        return;
-      }
-
-      // Buscar en caché o en DB
-      let perms = getCachedPermission(authedReq.userRole, pageId);
-      if (!perms) {
-        const rows = await db
-          .select({
-            canEdit: userPermissionsTable.canEdit,
-            canDelete: userPermissionsTable.canDelete,
-            canImport: userPermissionsTable.canImport,
-            canExport: userPermissionsTable.canExport,
-          })
-          .from(userPermissionsTable)
-          .where(eq(userPermissionsTable.role, authedReq.userRole as WarehouseRole))
-          .limit(1);
-
-        if (rows.length === 0) {
-          // Sin permisos configurados para este rol — denegar
-          res.status(403).json({ error: "Acceso denegado: permisos no configurados para este rol" });
-          return;
-        }
-
-        perms = rows[0]!;
-        setCachedPermission(authedReq.userRole, pageId, perms);
-      }
-
-      if (!perms[action]) {
-        res.status(403).json({ error: `Acceso denegado: no tienes permiso para ${action} en ${pageId}` });
-        return;
-      }
-
       next();
-    } catch (err) {
-      next(err);
-    }
-  };
+    })().catch(next);
+  });
 }

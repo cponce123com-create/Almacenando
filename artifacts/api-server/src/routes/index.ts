@@ -32,6 +32,7 @@ import searchRouter from "./search.js";
 import analyticsRouter from "./analytics.js";
 import inventoryCyclesRouter from "./inventory-cycles.js";
 import roundsRouter from "./rounds.js";
+import { checkModulePermission } from "../lib/checkPermission.js";
 
 // ---------------------------------------------------------------------------
 // v1 API — versión actual del API.
@@ -42,6 +43,8 @@ import roundsRouter from "./rounds.js";
 // ---------------------------------------------------------------------------
 const v1Router: IRouter = Router();
 
+// Enforce role/module permissions for API calls, including direct URL/API access.
+v1Router.use(checkModulePermission);
 v1Router.use(healthRouter);
 v1Router.use("/auth", authRouter);
 v1Router.use("/products", productsRouter);

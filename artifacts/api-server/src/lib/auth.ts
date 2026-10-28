@@ -97,6 +97,12 @@ export type AuthenticatedRequest = Request & {
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
+    // A router-level authorization guard may already have authenticated this
+    // request. Keep route-local guards compatible without repeating DB reads.
+    if ((req as Partial<AuthenticatedRequest>).userId) {
+      next();
+      return;
+    }
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       res.status(401).json({ error: "No autorizado" });
@@ -105,7 +111,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
     const token = authHeader.substring(7);
     const payload = verifyToken(token);
-    if (!payload) {
+    if (!payload || payload.tokenType !== "access") {
       res.status(401).json({ error: "Token inválido o expirado" });
       return;
     }

@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Suspense, lazy, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { PAGE_ID_BY_PATH, useModulePermissions } from "@/hooks/use-module-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { WarehouseProvider } from "@/contexts/WarehouseContext";
@@ -69,7 +70,9 @@ function PageLoader() {
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isAuthenticated, isLoading } = useAuth();
-  const [_, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const permissions = useModulePermissions();
+  const pageId = PAGE_ID_BY_PATH[location.split("?")[0] ?? ""];
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -77,8 +80,11 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     }
   }, [isLoading, isAuthenticated]);
 
-  if (isLoading) return <PageLoader />;
+  if (isLoading || (pageId && permissions.isLoading)) return <PageLoader />;
   if (!isAuthenticated) return null;
+  if (pageId && (permissions.isError || !permissions.canView(pageId))) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6"><div className="max-w-md rounded-xl border bg-white p-6 text-center shadow-sm"><h1 className="text-lg font-semibold text-slate-900">Acceso no habilitado</h1><p className="mt-2 text-sm text-slate-600">Tu rol no tiene permiso para ver este módulo. Solicita acceso al administrador.</p><button className="mt-4 rounded-md bg-teal-700 px-4 py-2 text-sm text-white" onClick={() => setLocation("/dashboard")}>Volver al inicio</button></div></div>;
+  }
 
   return (
     <Suspense fallback={<PageLoader />}>

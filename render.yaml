@@ -10,7 +10,7 @@ services:
     # -----------------------------------------------------------------------
     # Nota: pnpm v10 reintroducido porque v11 tiene un bug con onlyBuiltDependencies
     buildCommand: >
-      pnpm install --no-frozen-lockfile &&
+      pnpm install --frozen-lockfile &&
       BASE_PATH=/ NODE_ENV=production pnpm --filter @workspace/legado build &&
       pnpm --filter @workspace/api-server build &&
       pnpm --filter @workspace/db migrate

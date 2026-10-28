@@ -109,7 +109,7 @@ const mockUser = {
 
 function makeToken(overrides: Record<string, unknown> = {}) {
   return jwt.sign(
-    { userId: mockUser.id, email: mockUser.email, role: mockUser.role, jti: "test-jti-1", ...overrides },
+    { tokenType: "access", userId: mockUser.id, email: mockUser.email, role: mockUser.role, jti: "test-jti-1", ...overrides },
     TEST_SECRET,
     { expiresIn: "1h" }
   );
@@ -204,6 +204,14 @@ describe("Auth Routes", () => {
       const res = await request(createApp())
         .get("/api/auth/me")
         .set("Authorization", "Bearer not.a.real.jwt");
+      expect(res.status).toBe(401);
+    });
+
+    it("rejects a valid refresh token when used as a bearer access token", async () => {
+      const token = makeToken({ tokenType: "refresh" });
+      const res = await request(createApp())
+        .get("/api/auth/me")
+        .set("Authorization", `Bearer ${token}`);
       expect(res.status).toBe(401);
     });
 

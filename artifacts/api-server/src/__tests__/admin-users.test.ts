@@ -106,7 +106,7 @@ const TEST_SECRET = process.env.SESSION_SECRET!;
 
 function makeToken(role: string, userId = "admin-1") {
   return jwt.sign(
-    { userId, email: "admin@almacen.com", role, jti: `jti-${role}-${userId}` },
+    { tokenType: "access", userId, email: "admin@almacen.com", role, jti: `jti-${role}-${userId}` },
     TEST_SECRET,
     { expiresIn: "1h" }
   );

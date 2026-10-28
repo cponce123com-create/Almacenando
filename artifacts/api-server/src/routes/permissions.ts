@@ -7,6 +7,7 @@ import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
 import { asyncHandler } from "../lib/async-handler.js";
 import type { WarehouseRole } from "@workspace/db";
+import { MODULE_PAGE_IDS } from "../lib/checkPermission.js";
 
 /**
  * Admin — Permisos
@@ -15,14 +16,12 @@ import type { WarehouseRole } from "@workspace/db";
 
 const router = Router();
 
-const permissionUpdateSchema = z.array(z.object({
-  pageId: z.string().min(1),
-  canView: z.boolean().default(true),
-  canImport: z.boolean().default(false),
-  canExport: z.boolean().default(false),
-  canEdit: z.boolean().default(false),
-  canDelete: z.boolean().default(false),
-}));
+const actionSchema = z.enum(["import", "export", "delete", "edit"]);
+const permissionUpdateSchema = z.object({
+  pages: z.array(z.enum(MODULE_PAGE_IDS)).max(MODULE_PAGE_IDS.length),
+  actions: z.array(actionSchema).max(4),
+});
+const roleSchema = z.enum(["admin", "supervisor", "operator", "quality", "readonly"]);
 
 // ---------------------------------------------------------------------------
 // IMPORTANT: /my-permissions MUST be declared BEFORE /:role.
@@ -52,41 +51,36 @@ router.get("/:role", requireAuth, requireRole("admin", "supervisor"), asyncHandl
 router.put("/:role", requireAuth, requireRole("admin"), asyncHandler(async (req, res) => {
   const authedReq = req as AuthenticatedRequest;
   const { role } = req.params;
+  const validRole = roleSchema.safeParse(role);
   const parsed = permissionUpdateSchema.safeParse(req.body);
-  if (!parsed.success) {
+  if (!parsed.success || !validRole.success) {
     res.status(400).json({ error: "Datos inválidos" });
     return;
   }
 
   const now = new Date();
-  const values = parsed.data.map((p) => ({
+  const actions = new Set(parsed.data.actions);
+  const pages = new Set(parsed.data.pages);
+  const values = MODULE_PAGE_IDS.map((pageId) => ({
     id: generateId(),
     role: role as WarehouseRole,
-    pageId: p.pageId,
-    canView: p.canView,
-    canImport: p.canImport,
-    canExport: p.canExport,
-    canEdit: p.canEdit,
-    canDelete: p.canDelete,
+    pageId,
+    canView: pages.has(pageId),
+    canImport: pages.has(pageId) && actions.has("import"),
+    canExport: pages.has(pageId) && actions.has("export"),
+    canEdit: pages.has(pageId) && actions.has("edit"),
+    canDelete: pages.has(pageId) && actions.has("delete"),
     updatedBy: authedReq.userId,
     updatedAt: now,
   }));
 
   await db.transaction(async (tx) => {
     for (const v of values) {
-      await tx.insert(userPermissionsTable).values(v)
-        .onConflictDoUpdate({
-          target: [userPermissionsTable.role, userPermissionsTable.pageId],
-          set: {
-            canView: v.canView,
-            canImport: v.canImport,
-            canExport: v.canExport,
-            canEdit: v.canEdit,
-            canDelete: v.canDelete,
-            updatedBy: v.updatedBy,
-            updatedAt: v.updatedAt,
-          },
-        });
+      await tx.insert(userPermissionsTable).values(v).onConflictDoUpdate({
+        target: [userPermissionsTable.role, userPermissionsTable.pageId],
+        set: { canView: v.canView, canImport: v.canImport, canExport: v.canExport,
+          canEdit: v.canEdit, canDelete: v.canDelete, updatedBy: v.updatedBy, updatedAt: v.updatedAt },
+      });
     }
   });
 

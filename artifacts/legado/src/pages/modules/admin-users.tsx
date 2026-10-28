@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth, ROLE_LABELS, ROLE_COLORS, type WarehouseRole } from "@/hooks/use-auth";
@@ -67,6 +67,17 @@ const PAGES_CONFIG = [
   { id: "reports",       label: "Reportes",             icon: "📈", group: "Reportes" },
   { id: "notifications", label: "Notificaciones",       icon: "🔔", group: "Sistema" },
   { id: "admin_users",   label: "Gestión de Usuarios",  icon: "👥", group: "Sistema" },
+  { id: "msds", label: "MSDS", icon: "🧾", group: "Calidad" },
+  { id: "compatibility", label: "Compatibilidad", icon: "⚗️", group: "Calidad" },
+  { id: "lot_change_notification", label: "Cambio de Lote", icon: "🔔", group: "Sistema" },
+  { id: "product_out_notification", label: "Salida de Producto", icon: "🔔", group: "Sistema" },
+  { id: "email_notifications", label: "Envío de Correos", icon: "✉️", group: "Sistema" },
+  { id: "locations", label: "Ubicaciones", icon: "📍", group: "Inventario" },
+  { id: "rounds", label: "Rondas", icon: "🔄", group: "Inventario" },
+  { id: "inventory_progress", label: "Conteo Cíclico", icon: "🎯", group: "Inventario" },
+  { id: "scanner", label: "Escáner", icon: "▦", group: "Operaciones" },
+  { id: "picking", label: "Preparación de Pedidos", icon: "📦", group: "Operaciones" },
+  { id: "warehouse_map", label: "Mapa del Almacén", icon: "🗺️", group: "Inventario" },
 ];
 
 const ACTIONS_CONFIG = [
@@ -79,8 +90,8 @@ const ACTIONS_CONFIG = [
 const DEFAULT_PERMS: Record<string, { pages: string[]; actions: string[] }> = {
   admin:      { pages: PAGES_CONFIG.map(p => p.id), actions: ACTIONS_CONFIG.map(a => a.id) },
   supervisor: { pages: PAGES_CONFIG.filter(p => p.id !== "admin_users").map(p => p.id), actions: ["import","export","delete","edit"] },
-  operator:   { pages: ["dashboard","products","inventory","balances","availability","cuadre","immobilized","epp","personnel","supplies","surplus","notifications"], actions: ["edit"] },
-  quality:    { pages: ["dashboard","products","samples","dye_lots","lot_evals","disposition","epp","reports","notifications"], actions: ["import","export","edit"] },
+  operator:   { pages: ["dashboard","products","inventory","balances","availability","cuadre","immobilized","epp","personnel","supplies","surplus","notifications","lot_change_notification","product_out_notification","email_notifications","locations","rounds","inventory_progress","scanner","picking","warehouse_map"], actions: ["edit"] },
+  quality:    { pages: ["dashboard","products","samples","dye_lots","lot_evals","disposition","epp","reports","notifications","msds","compatibility","documents"], actions: ["import","export","edit"] },
   readonly:   { pages: ["dashboard","products","inventory","balances","reports"], actions: [] },
 };
 
@@ -400,6 +411,18 @@ function PermissionsTab({
   const { toast } = useToast();
   const [selectedRole, setSelectedRole] = useState<string>("operator");
   const [saving, setSaving] = useState(false);
+  const { data: savedRows, isLoading: permissionsLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/permissions", selectedRole],
+    queryFn: () => api(`/api/admin/permissions/${selectedRole}`),
+  });
+  const [loadedRole, setLoadedRole] = useState<string | null>(null);
+  useEffect(() => {
+    if (!savedRows) return;
+    const pages = savedRows.filter(row => row.canView).map(row => row.pageId);
+    const actions = ["import", "export", "delete", "edit"].filter(action => savedRows.some(row => row[`can${action[0]!.toUpperCase()}${action.slice(1)}`]));
+    setPerms(prev => ({ ...prev, [selectedRole]: { pages, actions } }));
+    setLoadedRole(selectedRole);
+  }, [savedRows, selectedRole, setPerms]);
   const groups = groupedPages();
   const rp = perms[selectedRole];
   const ri = ROLES_CONFIG.find(r => r.id === selectedRole)!;
@@ -442,6 +465,7 @@ function PermissionsTab({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(perms[selectedRole]),
       });
+      setLoadedRole(selectedRole);
       toast({ title: "Permisos guardados", description: `Los permisos de ${ri.label} fueron actualizados.` });
     } catch (e: any) {
       toast({ title: "Error al guardar", description: e.message, variant: "destructive" });
@@ -547,7 +571,7 @@ function PermissionsTab({
 
           <Button
             onClick={savePermissions}
-            disabled={saving}
+            disabled={saving || permissionsLoading || loadedRole !== selectedRole}
             className="mt-3 w-full bg-violet-700 hover:bg-violet-800"
           >
             {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
