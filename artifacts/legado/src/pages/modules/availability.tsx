@@ -18,7 +18,7 @@ interface AvailabilityRow {
   code: string; description: string; lineStatus: "Linea" | "No Linea"; unit: string;
   productionReservations: string; internalOrders: string; internalDocuments: string; consumptionTwoDays: string;
   qpMovements: string; q1Movements: string; q1Balance: string; availability: string;
-  qaLot: string; qaQuantity: string; qaZone: string; qaLocation: string; qdBalance: string; qdPreparation: string;
+  qaLot: string; qaBalance?: string; qaQuantity: string; qaZone: string; qaLocation: string; qdBalance: string; qdPreparation: string;
 }
 interface AvailabilityStatus { latest: AvailabilityRun | null; connectorOnline: boolean; connectorLastSeenAt: string | null; }
 interface AvailabilityData { id: string | null; extractedAt: string | null; config: AvailabilityConfig | null; rows: AvailabilityRow[]; }
@@ -118,9 +118,9 @@ export default function AvailabilityPage() {
     const when = dateTime(dataQuery.data?.extractedAt);
     const lines = selectedRows.map(row => {
       const qty = requested[row.code]?.trim() || "Por definir";
-      return `${row.code}\t${row.description}\t${fmt(row.availability)} ${row.unit}\t${qty} ${row.unit}`;
+      return `${row.code}\t${row.description}\t${fmt(row.productionReservations)} ${row.unit}\t${row.qaBalance == null ? "—" : `${fmt(row.qaBalance)} ${row.unit}`}\t${row.qaLot || "—"}\t${row.qaLocation || "—"}\t${fmt(row.availability)} ${row.unit}\t${qty} ${row.unit}`;
     });
-    return `Disponibilidad de químicos Q1\nActualizado: ${when}\n\nCódigo\tProducto\tDisponible\tSolicitado\n${lines.join("\n")}`;
+    return `Disponibilidad de químicos Q1\nActualizado: ${when}\n\nCódigo\tProducto\tReserva prod. Q1\tSaldo QA\tLote QA\tUbicación QA\tDisponible Q1\tSolicitado\n${lines.join("\n")}`;
   };
   const copyEmail = async () => {
     if (selectedRows.length === 0) { toast({ title: "Selecciona productos", description: "Marca al menos un producto para preparar el correo." }); return; }
@@ -221,14 +221,16 @@ export default function AvailabilityPage() {
                 <tr>
                   <th className="w-8 px-1 py-2"><Checkbox checked={visibleRows.length > 0 && visibleRows.every(row => selected.has(row.code))} onCheckedChange={value => toggleVisible(value === true)} aria-label="Seleccionar productos visibles" /></th>
                   <th className="w-[82px] px-1 py-2 text-left">Código</th>
-                  <th className="px-1 py-2 text-left">Producto</th>
-                  <th className="w-[62px] px-1 py-2 text-left">Línea</th>
+                  <th className="w-[165px] px-1 py-2 text-left">Producto</th>
                   <th className="w-[38px] px-1 py-2 text-left">UM</th>
+                  <th className="w-[76px] px-1 py-2 text-right">Reserva prod.</th>
+                  <th className="w-[70px] px-1 py-2 text-right">Saldo QA</th>
+                  <th className="w-[100px] px-1 py-2 text-left">Lote QA</th>
+                  <th className="w-[92px] px-1 py-2 text-left">Ubic. QA</th>
                   <th className="w-[68px] px-1 py-2 text-right">Saldo Q1</th>
-                  <th className="w-[70px] px-1 py-2 text-right">Cons. 2d</th>
                   <th className="w-[82px] px-1 py-2 text-right">Disponible</th>
-                  <th className="w-[112px] px-1 py-2 text-right">Sugerir ({coverageDays}d)</th>
-                  <th className="w-[112px] px-1 py-2 text-left">Solicitar</th>
+                  <th className="w-[84px] px-1 py-2 text-right">Sugerir ({coverageDays}d)</th>
+                  <th className="w-[100px] px-1 py-2 text-left">Solicitar</th>
                   <th className="w-[48px] px-1 py-2 text-center">Más</th>
                 </tr>
               </thead>
@@ -239,7 +241,7 @@ export default function AvailabilityPage() {
                   const isExpanded = expanded.has(row.code);
                   return <FragmentRow key={row.code} row={row} selected={isSelected} onSelect={checked => toggleRow(row.code, checked)} available={available} requested={requested[row.code] ?? ""} onRequest={value => setRequested(current => ({ ...current, [row.code]: value }))} suggested={suggested} onUseSuggestion={() => useRecommendation(row)} expanded={isExpanded} onToggleExpanded={() => setExpanded(current => { const next = new Set(current); next.has(row.code) ? next.delete(row.code) : next.add(row.code); return next; })} />;
                 })}
-                {visibleRows.length === 0 && <tr><td colSpan={11} className="py-12 text-center text-slate-500">No hay productos que coincidan con la búsqueda.</td></tr>}
+                {visibleRows.length === 0 && <tr><td colSpan={12} className="py-12 text-center text-slate-500">No hay productos que coincidan con la búsqueda.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -264,15 +266,14 @@ function FragmentRow({
   expanded: boolean; onToggleExpanded: () => void;
 }) {
   const details: Array<[string, string]> = [
-    ["Reserva producción Q1", fmt(row.productionReservations)],
+    ["Línea", row.lineStatus],
     ["Órdenes internas pendientes", fmt(row.internalOrders)],
     ["Documentos internos (0/1)", fmt(row.internalDocuments)],
+    ["Consumo estimado 2 días", fmt(row.consumptionTwoDays)],
     ["Movimientos QP", fmt(row.qpMovements)],
     ["Movimientos Q1", fmt(row.q1Movements)],
-    ["Lote QA", row.qaLot || "—"],
-    ["Cantidad QA", row.qaQuantity ? fmt(row.qaQuantity) : "—"],
+    ["Cantidad del lote QA mostrado", row.qaQuantity ? fmt(row.qaQuantity) : "—"],
     ["Zona QA", row.qaZone || "—"],
-    ["Ubicación QA", row.qaLocation || "—"],
     ["Saldo QD", fmt(row.qdBalance)],
     ["Preparación QD", fmt(row.qdPreparation)],
   ];
@@ -280,11 +281,13 @@ function FragmentRow({
     <tr className={`hover:bg-teal-50/60 ${available < 0 ? "bg-rose-50/70" : ""}`}>
       <td className="px-1 py-2 text-center"><Checkbox checked={selected} onCheckedChange={value => onSelect(value === true)} aria-label={`Seleccionar ${row.code}`} /></td>
       <td className="px-1 py-2 font-mono font-semibold whitespace-nowrap" title={row.code}>{row.code}</td>
-      <td className="px-1 py-2"><div className="truncate" title={row.description}>{row.description}</div></td>
-      <td className="px-1 py-2"><span className={`inline-block rounded-full px-1.5 py-0.5 text-[10px] ${row.lineStatus === "Linea" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{row.lineStatus === "Linea" ? "Línea" : "No"}</span></td>
+      <td className="px-1 py-2"><div className="max-w-[150px] truncate" title={row.description}>{row.description}</div></td>
       <td className="px-1 py-2 whitespace-nowrap">{row.unit}</td>
+      <td className="px-1 py-2 text-right tabular-nums">{fmt(row.productionReservations)}</td>
+      <td className="px-1 py-2 text-right font-semibold tabular-nums">{row.qaBalance == null ? "—" : fmt(row.qaBalance)}</td>
+      <td className="px-1 py-2"><div className="truncate" title={row.qaLot ? `Primer lote QA: ${row.qaLot}` : "—"}>{row.qaLot || "—"}</div></td>
+      <td className="px-1 py-2"><div className="truncate" title={row.qaLocation || "—"}>{row.qaLocation || "—"}</div></td>
       <td className="px-1 py-2 text-right tabular-nums">{fmt(row.q1Balance)}</td>
-      <td className="px-1 py-2 text-right tabular-nums">{fmt(row.consumptionTwoDays)}</td>
       <td className={`px-1 py-2 text-right font-bold tabular-nums ${available < 0 ? "text-rose-700" : "text-emerald-700"}`}>{fmt(row.availability)}</td>
       <td className="px-1 py-2 text-right">
         {suggested > 0 ? <Button type="button" variant="ghost" size="sm" onClick={onUseSuggestion} title="Usar la cantidad sugerida" className="h-7 px-1.5 text-[10px] text-violet-700 hover:bg-violet-50"><Sparkles className="mr-1 h-3 w-3" />{fmt(suggested)}</Button> : <span className="text-slate-400">—</span>}
@@ -293,7 +296,7 @@ function FragmentRow({
       <td className="px-1 py-2 text-center"><Button type="button" variant="ghost" size="icon" onClick={onToggleExpanded} aria-label={expanded ? `Ocultar detalle ${row.code}` : `Ver detalle ${row.code}`} className="h-7 w-7">{expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</Button></td>
     </tr>
     {expanded && <tr className="bg-slate-50">
-      <td colSpan={11} className="px-3 py-2">
+      <td colSpan={13} className="px-3 py-2">
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {details.map(([label, value]) => <div key={label} className="flex min-w-0 justify-between gap-2 border-b border-slate-200/70 py-1 text-[10px]">
             <span className="truncate text-slate-500" title={label}>{label}</span><b className="shrink-0 text-slate-800">{value}</b>
