@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { db, balanceConnectorStateTable, balanceRecordsTable, balanceSyncRunsTable } from "@workspace/db";
-import { and, asc, desc, eq, inArray, lte, notLike } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, notLike, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { asyncHandler } from "../lib/async-handler.js";
@@ -289,6 +289,68 @@ router.post("/:id/confirm", requireAuth, requireRole("supervisor", "admin"), asy
       ultimoConsumo: row.ultimoConsumo ?? null,
       registeredBy: req.userId,
     })));
+    const q1ConsumptionByCode = new Map<string, { ultimoConsumo: string | null; quantity: number }>();
+    for (const row of payload.rows) {
+      if (row.warehouse !== "Q1" || row.type !== "Q") continue;
+      const current = q1ConsumptionByCode.get(row.code) ?? { ultimoConsumo: null, quantity: 0 };
+      current.quantity += Number(row.quantity);
+      if (row.ultimoConsumo && (!current.ultimoConsumo || row.ultimoConsumo > current.ultimoConsumo)) {
+        current.ultimoConsumo = row.ultimoConsumo;
+      }
+      q1ConsumptionByCode.set(row.code, current);
+    }
+    const q1ConsumptionRows = [...q1ConsumptionByCode.entries()].map(([code, current]) => ({
+      code,
+      type: "Q",
+      ultimo_consumo: current.ultimoConsumo,
+      quantity: current.quantity,
+    }));
+    if (q1ConsumptionRows.length > 0) {
+      await tx.execute(sql`
+        WITH refreshed AS (
+          SELECT code, type, ultimo_consumo, quantity
+          FROM jsonb_to_recordset(${JSON.stringify(q1ConsumptionRows)}::jsonb)
+            AS item(code text, type text, ultimo_consumo date, quantity numeric)
+        )
+        UPDATE inventory_cycle_products cp
+        SET status = 'consumption_alert',
+            final_ultimo_consumo = refreshed.ultimo_consumo,
+            final_balance_batch_id = ${run.id},
+            updated_at = NOW()
+        FROM inventory_cycles cycle, products product, refreshed
+        WHERE cp.cycle_id = cycle.id
+          AND cp.product_id = product.id
+          AND cycle.warehouse = 'Q1'
+          AND cycle.status = 'active'
+          AND product.warehouse = 'Q1'
+          AND product.type = 'Q'
+          AND product.code = refreshed.code
+          AND product.type = refreshed.type
+          AND cp.status IN ('counted', 'verified', 'consumption_alert')
+          AND (
+            refreshed.ultimo_consumo > COALESCE(
+              cp.final_ultimo_consumo,
+              cp.initial_ultimo_consumo,
+              cp.counted_date
+            )
+            OR (
+              cp.physical_count IS NOT NULL
+              AND cp.difference IS NOT NULL
+              AND refreshed.quantity < cp.physical_count - cp.difference
+              AND refreshed.ultimo_consumo >= cp.counted_date
+            )
+          )
+      `);
+      await tx.execute(sql`
+        UPDATE inventory_cycles cycle
+        SET counted_products = (
+          SELECT COUNT(*)::int
+          FROM inventory_cycle_products cp
+          WHERE cp.cycle_id = cycle.id AND cp.status IN ('counted', 'verified')
+        ), updated_at = NOW()
+        WHERE cycle.warehouse = 'Q1' AND cycle.status = 'active'
+      `);
+    }
     await tx.update(balanceSyncRunsTable).set({
       status: "completed",
       completedAt: new Date(),

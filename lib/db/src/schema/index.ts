@@ -23,4 +23,5 @@ export * from "./pick-items";
 export * from "./pick-notifications";
 export * from "./inventory-cycles";
 export * from "./inventory-rounds";
+export * from "./inventory-reset-archives";
 export * from "./balance-sync-runs";

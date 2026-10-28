@@ -6,6 +6,9 @@ import {
   productsTable,
   balanceRecordsTable,
   inventoryRecordsTable,
+  inventoryBoxesTable,
+  inventoryRoundsTable,
+  inventoryResetArchivesTable,
   usersTable,
 } from "@workspace/db";
 import { eq, and, desc, asc, count, sql, inArray, not, isNull, lte } from "drizzle-orm";
@@ -98,14 +101,18 @@ router.get("/active", requireAuth, asyncHandler(async (req, res) => {
     pending: 0,
     counted: 0,
     verified: 0,
+    consumptionAlert: 0,
     withoutMovement: 0,
     skipped: 0,
     total: 0,
   };
 
   for (const s of statusCounts) {
-    const key = s.status as keyof typeof stats;
-    if (key in stats) stats[key] = Number(s.count);
+    if (s.status === "consumption_alert") stats.consumptionAlert = Number(s.count);
+    else {
+      const key = s.status as keyof typeof stats;
+      if (key in stats) stats[key] = Number(s.count);
+    }
     stats.total += Number(s.count);
   }
 
@@ -151,7 +158,8 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
     .from(productsTable)
     .where(and(
       eq(productsTable.warehouse, warehouse),
-      eq(productsTable.status, "active")
+      eq(productsTable.status, "active"),
+      eq(productsTable.type, "Q"),
     ));
 
   if (products.length === 0) {
@@ -269,6 +277,158 @@ router.post("/", requireAuth, requireRole("supervisor", "admin"), asyncHandler(a
   });
 }));
 
+// ── Reset Q1 inventory and start a clean chemical count board ───────────────
+
+router.post("/reset", requireAuth, requireRole("admin"), asyncHandler(async (req: AuthenticatedRequest, res) => {
+  const confirmation = z.object({ confirmation: z.literal("REINICIAR Q1") }).safeParse(req.body);
+  if (!confirmation.success) {
+    res.status(400).json({ error: "Para confirmar, escribe REINICIAR Q1." });
+    return;
+  }
+
+  const products = await db.select({
+    id: productsTable.id,
+    code: productsTable.code,
+    type: productsTable.type,
+  }).from(productsTable).where(and(
+    eq(productsTable.warehouse, "Q1"),
+    eq(productsTable.status, "active"),
+    eq(productsTable.type, "Q"),
+  ));
+  if (products.length === 0) {
+    res.status(400).json({ error: "No hay productos Q activos en el maestro del almacén Q1." });
+    return;
+  }
+
+  const cycleId = generateId();
+  const archiveId = generateId();
+  const today = new Date().toISOString().slice(0, 10);
+  const result = await db.transaction(async (tx) => {
+    const recordIdResult = await tx.execute(sql`
+      SELECT ir.id
+      FROM inventory_records ir
+      LEFT JOIN products p ON p.id = ir.product_id
+      WHERE ir.warehouse = 'Q1' OR p.warehouse = 'Q1'
+    `);
+    const recordIds = (recordIdResult.rows as { id: string }[]).map(row => row.id);
+    const inventoryRecords = recordIds.length
+      ? await tx.select().from(inventoryRecordsTable).where(inArray(inventoryRecordsTable.id, recordIds))
+      : [];
+    const inventoryBoxes = recordIds.length
+      ? await tx.select().from(inventoryBoxesTable).where(inArray(inventoryBoxesTable.inventoryRecordId, recordIds))
+      : [];
+    const inventoryCycles = await tx.select().from(inventoryCyclesTable)
+      .where(eq(inventoryCyclesTable.warehouse, "Q1"));
+    const cycleIds = inventoryCycles.map(cycle => cycle.id);
+    const inventoryCycleProducts = cycleIds.length
+      ? await tx.select().from(inventoryCycleProductsTable).where(inArray(inventoryCycleProductsTable.cycleId, cycleIds))
+      : [];
+    const inventoryRounds = await tx.select().from(inventoryRoundsTable)
+      .where(eq(inventoryRoundsTable.warehouse, "Q1"));
+
+    const snapshot = await tx.execute(sql`
+      WITH latest_snapshot AS (
+        SELECT batch_id, balance_date
+        FROM balance_records
+        WHERE warehouse = 'Q1'
+        ORDER BY balance_date DESC, created_at DESC, id DESC
+        LIMIT 1
+      )
+      SELECT br.code, br.type,
+        SUM(br.quantity)::text AS quantity,
+        MAX(br.ultimo_consumo)::text AS ultimo_consumo,
+        MAX(br.batch_id) AS batch_id
+      FROM balance_records br
+      JOIN latest_snapshot s
+        ON br.balance_date = s.balance_date
+       AND br.batch_id IS NOT DISTINCT FROM s.batch_id
+      WHERE br.warehouse = 'Q1' AND br.type = 'Q'
+      GROUP BY br.code, br.type
+    `);
+    const balanceByCode = new Map<string, { quantity: number | null; lastConsumption: string | null; batchId: string | null }>();
+    for (const row of snapshot.rows as { code: string; type: string; quantity: string | null; ultimo_consumo: string | null; batch_id: string | null }[]) {
+      balanceByCode.set(`${row.type}::${row.code}`, {
+        quantity: row.quantity === null ? null : Number(row.quantity),
+        lastConsumption: row.ultimo_consumo,
+        batchId: row.batch_id,
+      });
+    }
+
+    const cycleProducts = products.map(product => {
+      const balance = balanceByCode.get(`Q::${product.code}`);
+      const daysInactive = balance?.lastConsumption
+        ? Math.max(0, Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${balance.lastConsumption}T00:00:00Z`)) / 86_400_000))
+        : null;
+      const priority = daysInactive === null ? 500
+        : daysInactive >= 365 ? 400
+          : daysInactive >= 270 ? 300
+            : daysInactive >= 180 ? 200
+              : daysInactive >= 90 ? 100 : daysInactive;
+      return {
+        id: generateId(),
+        cycleId,
+        productId: product.id,
+        initialBalanceBatchId: balance?.batchId ?? null,
+        initialQuantity: balance?.quantity ?? null,
+        initialUltimoConsumo: balance?.lastConsumption ?? null,
+        status: "pending" as const,
+        priority,
+      };
+    });
+
+    const hasExistingInventory = inventoryRecords.length > 0 || inventoryCycles.length > 0 || inventoryRounds.length > 0;
+    if (hasExistingInventory) {
+      await tx.insert(inventoryResetArchivesTable).values({
+        id: archiveId,
+        warehouse: "Q1",
+        archivedBy: req.userId!,
+        inventoryRecordCount: inventoryRecords.length,
+        inventoryCycleCount: inventoryCycles.length,
+        inventoryRoundCount: inventoryRounds.length,
+        payload: { inventoryRecords, inventoryBoxes, inventoryRounds, inventoryCycles, inventoryCycleProducts },
+      });
+    }
+
+    if (cycleIds.length) await tx.delete(inventoryCyclesTable).where(inArray(inventoryCyclesTable.id, cycleIds));
+    if (recordIds.length) await tx.delete(inventoryRecordsTable).where(inArray(inventoryRecordsTable.id, recordIds));
+    await tx.delete(inventoryRoundsTable).where(eq(inventoryRoundsTable.warehouse, "Q1"));
+
+    const [cycle] = await tx.insert(inventoryCyclesTable).values({
+      id: cycleId,
+      warehouse: "Q1",
+      name: `Conteo cíclico Q1 · ${today}`,
+      description: "Tablero de conteo físico de químicos, priorizado por último consumo registrado.",
+      startDate: today,
+      totalProducts: cycleProducts.length,
+      createdBy: req.userId!,
+    }).returning();
+    await tx.insert(inventoryCycleProductsTable).values(cycleProducts);
+
+    return {
+      cycle,
+      archived: { id: hasExistingInventory ? archiveId : null, records: inventoryRecords.length, cycles: inventoryCycles.length, rounds: inventoryRounds.length },
+      productCount: cycleProducts.length,
+    };
+  });
+
+  void writeAuditLog({
+    userId: req.userId,
+    action: "delete",
+    resource: "inventory_q1_reset",
+    resourceId: result.archived.id ?? cycleId,
+    details: { warehouse: "Q1", archiveId: result.archived.id, ...result.archived, newCycleId: cycleId, newProductCount: result.productCount },
+    ipAddress: req.ip,
+  });
+
+  res.json({
+    message: "Inventario Q1 reiniciado. Se guardó un respaldo y se creó un tablero limpio.",
+    archiveId: result.archived.id,
+    archived: result.archived,
+    cycle: result.cycle,
+    productCount: result.productCount,
+  });
+}));
+
 // ── Get cycle progress ──────────────────────────────────────────────────────
 
 router.get("/:id/progress", requireAuth, asyncHandler(async (req, res) => {
@@ -318,14 +478,47 @@ router.get("/:id/progress", requireAuth, asyncHandler(async (req, res) => {
     .groupBy(inventoryCycleProductsTable.status);
 
   const stats = {
-    pending: 0, counted: 0, verified: 0,
+    pending: 0, counted: 0, verified: 0, consumptionAlert: 0,
     withoutMovement: 0, skipped: 0, total: 0,
   };
 
   for (const s of statusCounts) {
-    const key = s.status as keyof typeof stats;
-    if (key in stats) stats[key] = Number(s.count);
+    if (s.status === "consumption_alert") stats.consumptionAlert = Number(s.count);
+    else {
+      const key = s.status as keyof typeof stats;
+      if (key in stats) stats[key] = Number(s.count);
+    }
     stats.total += Number(s.count);
+  }
+
+  const currentSnapshot = await db.execute(sql`
+    WITH latest_snapshot AS (
+      SELECT batch_id, balance_date
+      FROM balance_records
+      WHERE warehouse = ${cycle.warehouse}
+      ORDER BY balance_date DESC, created_at DESC, id DESC
+      LIMIT 1
+    )
+    SELECT br.type, br.code,
+      SUM(br.quantity)::text AS quantity,
+      MAX(br.balance_date)::text AS balance_date,
+      MAX(br.ultimo_consumo)::text AS ultimo_consumo,
+      STRING_AGG(DISTINCT NULLIF(CONCAT_WS(' · ', br.location_summary, br.zone_summary), ''), ', ') AS locations
+    FROM balance_records br
+    JOIN latest_snapshot s
+      ON br.balance_date = s.balance_date
+     AND br.batch_id IS NOT DISTINCT FROM s.batch_id
+    WHERE br.warehouse = ${cycle.warehouse}
+    GROUP BY br.type, br.code
+  `);
+  const currentByCode = new Map<string, { quantity: number; balanceDate: string | null; lastConsumption: string | null; locations: string | null }>();
+  for (const row of currentSnapshot.rows as { type: string | null; code: string; quantity: string; balance_date: string | null; ultimo_consumo: string | null; locations: string | null }[]) {
+    currentByCode.set(`${row.type ?? ""}::${row.code}`, {
+      quantity: Number(row.quantity),
+      balanceDate: row.balance_date,
+      lastConsumption: row.ultimo_consumo,
+      locations: row.locations,
+    });
   }
 
   res.json({
@@ -337,9 +530,12 @@ router.get("/:id/progress", requireAuth, asyncHandler(async (req, res) => {
       productName: r.product.name,
       unit: r.product.unit,
       warehouse: r.product.warehouse,
-      location: r.product.location,
+      location: currentByCode.get(`${r.product.type ?? ""}::${r.product.code}`)?.locations ?? r.product.location,
       category: r.product.category,
       hazardClass: r.product.hazardClass,
+      currentQuantity: currentByCode.get(`${r.product.type ?? ""}::${r.product.code}`)?.quantity ?? null,
+      currentBalanceDate: currentByCode.get(`${r.product.type ?? ""}::${r.product.code}`)?.balanceDate ?? null,
+      currentUltimoConsumo: currentByCode.get(`${r.product.type ?? ""}::${r.product.code}`)?.lastConsumption ?? null,
     })),
   });
 }));

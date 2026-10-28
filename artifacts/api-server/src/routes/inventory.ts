@@ -98,15 +98,16 @@ async function uploadBoxPhotos(files: Files, productLabel: string, date: string)
 
 router.get("/progress", requireAuth, asyncHandler(async (req, res) => {
   const warehouse = req.query.warehouse as string | undefined;
+  const type = req.query.type as string | undefined;
 
   // Total productos activos en el almacén
-  const warehouseCondition = warehouse && warehouse !== "all"
-    ? eq(productsTable.warehouse, warehouse)
-    : undefined;
+  const productConditions = [eq(productsTable.status, "active")];
+  if (warehouse && warehouse !== "all") productConditions.push(eq(productsTable.warehouse, warehouse));
+  if (type) productConditions.push(eq(productsTable.type, type));
 
   const [totalProducts] = await db.select({ total: count() })
     .from(productsTable)
-    .where(warehouseCondition ? and(eq(productsTable.status, "active"), warehouseCondition) : eq(productsTable.status, "active"));
+    .where(and(...productConditions));
 
   // Productos que ya tienen al menos un registro de inventario
   // NOTA: Usamos p.warehouse en vez de ir.warehouse porque la columna warehouse
@@ -116,7 +117,8 @@ router.get("/progress", requireAuth, asyncHandler(async (req, res) => {
     SELECT COUNT(DISTINCT ir.product_id)::int AS inventoried
     FROM inventory_records ir
     INNER JOIN products p ON p.id = ir.product_id AND p.status = 'active'
-    ${warehouse && warehouse !== "all" ? sql`WHERE p.warehouse = ${warehouse}` : sql``}
+    ${warehouse && warehouse !== "all" ? sql`WHERE p.warehouse = ${warehouse}` : type ? sql`WHERE p.type = ${type}` : sql``}
+    ${warehouse && warehouse !== "all" && type ? sql`AND p.type = ${type}` : sql``}
   `);
   const inventoried = (inventoriedResult.rows[0] as { inventoried: number } | undefined)?.inventoried ?? 0;
   const total = Number(totalProducts?.total ?? 0);
@@ -295,7 +297,7 @@ router.post(
     }
 
     // Get product info for photo naming
-    const [product] = await db.select({ code: productsTable.code, name: productsTable.name })
+    const [product] = await db.select({ code: productsTable.code, name: productsTable.name, type: productsTable.type, warehouse: productsTable.warehouse })
       .from(productsTable).where(eq(productsTable.id, parsed.data.productId)).limit(1);
     const productLabel = product?.code ?? product?.name ?? parsed.data.productId;
     const recordDate = parsed.data.recordDate;
@@ -385,6 +387,26 @@ router.post(
         .limit(1);
 
       if (activeCycle && created) {
+        const currentMovement = await db.execute(sql`
+          WITH latest_snapshot AS (
+            SELECT batch_id, balance_date
+            FROM balance_records
+            WHERE warehouse = ${parsed.data.warehouse}
+            ORDER BY balance_date DESC, created_at DESC, id DESC
+            LIMIT 1
+          )
+          SELECT SUM(br.quantity)::text AS quantity,
+            MAX(br.ultimo_consumo)::text AS ultimo_consumo,
+            MAX(br.batch_id) AS batch_id
+          FROM balance_records br
+          JOIN latest_snapshot s
+            ON br.balance_date = s.balance_date
+           AND br.batch_id IS NOT DISTINCT FROM s.batch_id
+          WHERE br.warehouse = ${parsed.data.warehouse}
+            AND br.type = ${product?.type ?? "Q"}
+            AND br.code = ${product?.code ?? ""}
+        `);
+        const movementBaseline = currentMovement.rows[0] as { quantity: string | null; ultimo_consumo: string | null; batch_id: string | null } | undefined;
         const [existingCp] = await db.select({
           id: inventoryCycleProductsTable.id,
           initialQuantity: inventoryCycleProductsTable.initialQuantity,
@@ -401,6 +423,8 @@ router.post(
             status: "counted" as const,
             countedDate: created.recordDate,
             countedBy: authedReq.userId,
+            finalUltimoConsumo: movementBaseline?.ultimo_consumo ?? null,
+            finalBalanceBatchId: movementBaseline?.batch_id ?? null,
             updatedAt: new Date(),
             inventoryRecordId: id,
           };
@@ -408,13 +432,13 @@ router.post(
             const pCount = parseFloat(physicalCount);
             updateData.physicalCount = pCount;
             updateData.finalQuantity = pCount;
-            // Usar initialQuantity del ciclo para la diferencia
-            let initQty: number | null = existingCp.initialQuantity;
-            if (initQty === null && created.previousBalance) {
-              initQty = Number(created.previousBalance);
-            }
-            if (initQty !== null) {
-              updateData.difference = pCount - initQty;
+            // Compare the physical count with NOW as of the inventory record,
+            // not with the possibly stale balance from when the cycle began.
+            const systemQty = movementBaseline?.quantity !== null && movementBaseline?.quantity !== undefined
+              ? Number(movementBaseline.quantity)
+              : created.previousBalance !== null ? Number(created.previousBalance) : existingCp.initialQuantity;
+            if (systemQty !== null) {
+              updateData.difference = pCount - systemQty;
             }
           }
           await db.update(inventoryCycleProductsTable)
