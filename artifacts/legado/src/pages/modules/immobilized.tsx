@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { getAuthHeaders, useAuth } from "@/hooks/use-auth";
@@ -13,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Lock, Plus, Loader2, AlertCircle, Unlock, Trash2, ChevronsUpDown, Check } from "lucide-react";
+import { Lock, Plus, Loader2, AlertCircle, Unlock, Trash2, ChevronsUpDown, Check, Clock3, ClipboardCheck, Search, MapPin } from "lucide-react";
 
 interface Product { id: string; code: string; name: string; unit: string; }
 interface ImmobilizedRecord {
@@ -21,6 +22,13 @@ interface ImmobilizedRecord {
   immobilizedDate: string; status: string; notes?: string | null;
   releasedAt?: string | null; registeredBy: string;
 }
+interface StagnantProduct {
+  productId: string; warehouse: string; type: string | null; code: string; name: string; unit: string;
+  productStatus: string; balance: string; balanceDate: string; lastMovement: string | null;
+  yearsWithoutMovement: number | null; daysWithoutMovement: number | null; sourceLocation: string | null;
+  lastInventoryDate: string | null; lastPhysicalCount: string | null;
+}
+type InactivityFilter = "all" | "unknown" | number;
 
 const api = async (path: string, opts?: RequestInit) => {
   const res = await fetch(path, { ...opts, headers: { ...getAuthHeaders(), ...(opts?.headers ?? {}) } });
@@ -109,6 +117,11 @@ export default function ProductosInmovilizadosPage() {
   const [releaseTarget, setReleaseTarget] = useState<ImmobilizedRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ImmobilizedRecord | null>(null);
   const [filterStatus, setFilterStatus] = useState("all");
+  const [activeView, setActiveView] = useState<"stagnant" | "manual">(() =>
+    new URLSearchParams(window.location.search).get("view") === "manual" ? "manual" : "stagnant"
+  );
+  const [inactivityFilter, setInactivityFilter] = useState<InactivityFilter>("all");
+  const [inactivitySearch, setInactivitySearch] = useState("");
 
   const [form, setForm] = useState({
     productId: "", quantity: "", reason: "", immobilizedDate: today(), status: "immobilized", notes: "",
@@ -121,10 +134,50 @@ export default function ProductosInmovilizadosPage() {
   const { data: records = [], isLoading, isError } = useQuery<ImmobilizedRecord[]>({
     queryKey: ["/api/immobilized"], queryFn: () => api("/api/immobilized"),
   });
+  const { data: stagnantProducts = [], isLoading: stagnantLoading, isError: stagnantError } = useQuery<StagnantProduct[]>({
+    queryKey: ["/api/immobilized/stagnant-stock", "Q1"],
+    queryFn: () => api("/api/immobilized/stagnant-stock"),
+  });
 
   const productMap = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
   const filtered = useMemo(() =>
     filterStatus === "all" ? records : records.filter(r => r.status === filterStatus), [records, filterStatus]);
+
+  const inactivityYears = useMemo(() => [...new Set(stagnantProducts
+    .map(product => product.yearsWithoutMovement == null ? null : Number(product.yearsWithoutMovement))
+    .filter((years): years is number => years !== null && years >= 1))].sort((a, b) => b - a), [stagnantProducts]);
+  const filteredStagnantProducts = useMemo(() => {
+    const query = inactivitySearch.trim().toLocaleLowerCase();
+    return stagnantProducts
+      .filter(product => {
+        const years = product.yearsWithoutMovement == null ? null : Number(product.yearsWithoutMovement);
+        const matchesAge = inactivityFilter === "all"
+          || (inactivityFilter === "unknown" ? years === null : years === inactivityFilter);
+        const matchesSearch = !query || `${product.code} ${product.name}`.toLocaleLowerCase().includes(query);
+        return matchesAge && matchesSearch;
+      })
+      .sort((a, b) => {
+        const yearsA = a.yearsWithoutMovement == null ? -1 : Number(a.yearsWithoutMovement);
+        const yearsB = b.yearsWithoutMovement == null ? -1 : Number(b.yearsWithoutMovement);
+        return yearsB - yearsA || a.code.localeCompare(b.code, "es");
+      });
+  }, [stagnantProducts, inactivityFilter, inactivitySearch]);
+  const knownAgeCount = stagnantProducts.filter(product => product.yearsWithoutMovement != null).length;
+  const unknownAgeCount = stagnantProducts.length - knownAgeCount;
+
+  const formatDate = (value: string | null | undefined) => {
+    if (!value) return "—";
+    const [year, month, day] = value.slice(0, 10).split("-");
+    return year && month && day ? `${day}/${month}/${year}` : value;
+  };
+  const switchView = (view: "stagnant" | "manual") => {
+    setActiveView(view);
+    const params = new URLSearchParams(window.location.search);
+    if (view === "manual") params.set("view", "manual");
+    else params.delete("view");
+    const query = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  };
 
   const createMutation = useMutation({
     mutationFn: (data: typeof form) => api("/api/immobilized", {
@@ -175,16 +228,149 @@ export default function ProductosInmovilizadosPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">Productos Inmovilizados</h1>
-              <p className="text-slate-500 text-sm">Control de productos bloqueados para uso normal</p>
+              <p className="text-slate-500 text-sm">Revisión automática de saldos sin movimiento y control de bloqueos</p>
             </div>
           </div>
-          {canWrite && (
+          {canWrite && activeView === "manual" && (
             <Button onClick={() => setShowForm(true)} className="gap-2 bg-orange-600 hover:bg-orange-700">
-              <Plus className="w-4 h-4" /> Inmovilizar Producto
+              <Plus className="w-4 h-4" /> Registrar bloqueo
             </Button>
           )}
         </div>
 
+        <div className="flex flex-wrap gap-2 rounded-xl border border-slate-100 bg-white p-2">
+          <Button variant={activeView === "stagnant" ? "default" : "ghost"} onClick={() => switchView("stagnant")} className="gap-2">
+            <Clock3 className="h-4 w-4" /> Sin movimiento ≥ 1 año
+            <Badge variant="secondary" className="ml-1">{knownAgeCount}</Badge>
+          </Button>
+          <Button variant={activeView === "manual" ? "default" : "ghost"} onClick={() => switchView("manual")} className="gap-2">
+            <Lock className="h-4 w-4" /> Bloqueos manuales
+            <Badge variant="secondary" className="ml-1">{countByStatus("immobilized")}</Badge>
+          </Button>
+        </div>
+
+        {activeView === "stagnant" ? (
+          <section className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[
+                { label: "Productos con antigüedad confirmada", value: knownAgeCount, color: "text-amber-700" },
+                { label: "Sin fecha confiable", value: unknownAgeCount, color: "text-slate-700" },
+                { label: "Corte de saldo Q1", value: stagnantProducts[0]?.balanceDate ? formatDate(stagnantProducts[0].balanceDate) : "—", color: "text-slate-700" },
+              ].map(card => (
+                <div key={card.label} className="rounded-xl border border-slate-100 bg-white p-4">
+                  <p className="mb-1 text-xs text-slate-500">{card.label}</p>
+                  <p className={`text-xl font-bold ${card.color}`}>{card.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-slate-100 bg-white p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <h2 className="font-semibold text-slate-900">Saldo positivo sin movimiento</h2>
+                  <p className="text-xs text-slate-500">Se calcula con el último corte de Q1 y la última fecha confiable de consumo.</p>
+                </div>
+                <div className="relative w-full lg:max-w-xs">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input value={inactivitySearch} onChange={e => setInactivitySearch(e.target.value)} placeholder="Buscar código o producto" className="pl-9" />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant={inactivityFilter === "all" ? "default" : "outline"} onClick={() => setInactivityFilter("all")}>
+                  Todos ({stagnantProducts.length})
+                </Button>
+                {inactivityYears.map(years => (
+                  <Button key={years} size="sm" variant={inactivityFilter === years ? "default" : "outline"} onClick={() => setInactivityFilter(years)}>
+                    {years} {years === 1 ? "año" : "años"} ({stagnantProducts.filter(product => Number(product.yearsWithoutMovement) === years).length})
+                  </Button>
+                ))}
+                {unknownAgeCount > 0 && (
+                  <Button size="sm" variant={inactivityFilter === "unknown" ? "default" : "outline"} onClick={() => setInactivityFilter("unknown")}>
+                    Sin fecha ({unknownAgeCount})
+                  </Button>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Los productos sin fecha confiable se muestran aparte; no se les asigna una antigüedad estimada. La fecha provisional 01/01/2013 de NOW se considera sin fecha.
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+              {stagnantLoading ? (
+                <div className="flex items-center justify-center gap-3 py-16 text-slate-500"><Loader2 className="h-5 w-5 animate-spin" /> Calculando productos con saldo inmovilizado…</div>
+              ) : stagnantError ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                  <AlertCircle className="h-8 w-8 text-red-400" />
+                  <p className="text-sm text-slate-600">No se pudo calcular la lista automática desde el último saldo de Q1.</p>
+                </div>
+              ) : filteredStagnantProducts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-slate-400">
+                  <Clock3 className="h-9 w-9" />
+                  <p className="text-sm font-medium">No hay productos que coincidan con este filtro</p>
+                  <p className="text-xs">Se requieren saldo actual mayor que cero y al menos un año sin movimiento, o una fecha de movimiento no disponible.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1120px]">
+                    <TableHeader>
+                      <TableRow className="bg-slate-50">
+                        <TableHead>Producto</TableHead>
+                        <TableHead className="text-right">Saldo</TableHead>
+                        <TableHead>Último movimiento</TableHead>
+                        <TableHead>Antigüedad</TableHead>
+                        <TableHead>Ubicación del saldo</TableHead>
+                        <TableHead>Último conteo</TableHead>
+                        <TableHead className="text-right">Acción</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredStagnantProducts.map(product => {
+                        const years = product.yearsWithoutMovement == null ? null : Number(product.yearsWithoutMovement);
+                        return (
+                          <TableRow key={product.productId}>
+                            <TableCell className="max-w-[270px]">
+                              <p className="truncate text-sm font-medium text-slate-900" title={product.name}>{product.name}</p>
+                              <p className="font-mono text-xs text-slate-500">{product.code} · {product.type || "Sin tipo"}</p>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-right font-mono font-semibold">{Number(product.balance).toLocaleString("es-PE", { maximumFractionDigits: 3 })} <span className="text-xs font-normal text-slate-500">{product.unit}</span></TableCell>
+                            <TableCell className="whitespace-nowrap text-sm">{formatDate(product.lastMovement)}</TableCell>
+                            <TableCell>
+                              {years === null
+                                ? <Badge variant="outline" className="text-slate-600">Sin fecha confiable</Badge>
+                                : <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">{years} {years === 1 ? "año" : "años"}</Badge>}
+                              {product.daysWithoutMovement != null && <p className="mt-1 text-xs text-slate-500">{Number(product.daysWithoutMovement).toLocaleString("es-PE")} días</p>}
+                            </TableCell>
+                            <TableCell className="max-w-[210px] truncate text-sm text-slate-600" title={product.sourceLocation ?? undefined}>
+                              {product.sourceLocation ? <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3 shrink-0" />{product.sourceLocation}</span> : "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-sm text-slate-600">
+                              {product.lastInventoryDate ? <>{formatDate(product.lastInventoryDate)}{product.lastPhysicalCount != null && <p className="text-xs text-slate-400">Físico: {product.lastPhysicalCount} {product.unit}</p>}</> : <span className="text-slate-400">Sin conteo</span>}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {canWrite ? (
+                                <Button asChild size="sm" className="gap-1.5">
+                                  <Link href={`/inventory?productId=${encodeURIComponent(product.productId)}`}><ClipboardCheck className="h-4 w-4" /> Inventariar</Link>
+                                </Button>
+                              ) : <span className="text-xs text-slate-400">Solo lectura</span>}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              {!stagnantLoading && !stagnantError && stagnantProducts.length > 0 && (
+                <div className="border-t bg-slate-50 px-4 py-2 text-xs text-slate-500">
+                  {filteredStagnantProducts.length} de {stagnantProducts.length} productos · Saldo del corte Q1 mostrado; la antigüedad usa el último movimiento confiable.
+                </div>
+              )}
+            </div>
+          </section>
+        ) : (
+          <>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Total Registros", val: records.length, color: "text-slate-900" },
@@ -290,6 +476,8 @@ export default function ProductosInmovilizadosPage() {
             </div>
           )}
         </div>
+          </>
+        )}
 
         <Dialog open={showForm} onOpenChange={setShowForm}>
           <DialogContent className="max-w-lg">
