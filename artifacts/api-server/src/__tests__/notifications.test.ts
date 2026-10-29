@@ -112,37 +112,15 @@ describe("Notifications API", () => {
       expect(res.status).toBe(401);
     });
 
-    it("returns recipient config", async () => {
+    it("does not expose recipient environment variables", async () => {
       setCurrentUser("admin");
-      process.env.NOTIFY_LOT_CHANGE = "test@test.com";
-      process.env.NOTIFY_PRODUCT_OUT = "out@test.com";
-      process.env.NOTIFY_STOCK_COLOR = "color@test.com";
 
       const res = await request(createApp())
         .get("/api/notifications/recipients")
         .set("Authorization", `Bearer ${makeToken("admin")}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveProperty("lotChange");
-      expect(res.body).toHaveProperty("productOut");
-      expect(res.body).toHaveProperty("stockColor");
-      expect(res.body).toHaveProperty("stockAux");
-      expect(res.body).toHaveProperty("orderApproval");
-      expect(res.body).toHaveProperty("plasticBag");
-    });
-
-    it("returns empty arrays when no env vars set", async () => {
-      setCurrentUser("admin");
-      delete process.env.NOTIFY_LOT_CHANGE;
-      delete process.env.NOTIFY_PRODUCT_OUT;
-      delete process.env.NOTIFY_STOCK_COLOR;
-
-      const res = await request(createApp())
-        .get("/api/notifications/recipients")
-        .set("Authorization", `Bearer ${makeToken("admin")}`);
-
-      expect(res.status).toBe(200);
-      expect(res.body.lotChange).toEqual([]);
+      expect(res.body).toEqual({ recipientsAreProvidedAtSendTime: true });
     });
   });
 
@@ -156,7 +134,7 @@ describe("Notifications API", () => {
       const res = await request(createApp())
         .post("/api/notifications/product-out")
         .set("Authorization", `Bearer ${makeToken()}`)
-        .send({ productCode: "P-001", productName: "Test Product" });
+        .send({ productCode: "P-001", productName: "Test Product", to: "receiver@example.com", cc: "" });
 
       expect(res.status).toBe(200);
     });

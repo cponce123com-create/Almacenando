@@ -38,12 +38,12 @@ interface TemplateConfig {
   color: string;
   bgColor: string;
   endpoint: string;
-  to: string[];
-  cc?: string[];
   itemSource: "product" | "supply" | "both" | "inventory";
   hasNotes: boolean;
   isSingleProduct?: boolean;
 }
+
+interface RecipientFields { to: string; cc: string; }
 
 const TEMPLATES: TemplateConfig[] = [
   {
@@ -54,8 +54,6 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-red-600",
     bgColor: "bg-red-50",
     endpoint: "/api/notifications/product-out",
-    to: ["configurado-en-backend vía NOTIFY_PRODUCT_OUT"],
-    cc: ["configurado-en-backend vía NOTIFY_PRODUCT_OUT_CC"],
     itemSource: "product",
     hasNotes: false,
     isSingleProduct: true,
@@ -68,8 +66,6 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-blue-600",
     bgColor: "bg-blue-50",
     endpoint: "/api/notifications/stock-colorante",
-    to: ["configurado-en-backend vía NOTIFY_STOCK_COLOR"],
-    cc: ["configurado-en-backend vía NOTIFY_STOCK_COLOR_CC"],
     itemSource: "inventory",
     hasNotes: false,
   },
@@ -81,8 +77,6 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-violet-600",
     bgColor: "bg-violet-50",
     endpoint: "/api/notifications/stock-auxiliar",
-    to: ["configurado-en-backend vía NOTIFY_STOCK_AUX"],
-    cc: ["configurado-en-backend vía NOTIFY_STOCK_AUX_CC"],
     itemSource: "inventory",
     hasNotes: false,
   },
@@ -94,7 +88,6 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-amber-600",
     bgColor: "bg-amber-50",
     endpoint: "/api/notifications/order-approval",
-    to: ["configurado-en-backend vía NOTIFY_ORDER_APPROVAL"],
     itemSource: "supply",
     hasNotes: true,
   },
@@ -106,8 +99,6 @@ const TEMPLATES: TemplateConfig[] = [
     color: "text-emerald-600",
     bgColor: "bg-emerald-50",
     endpoint: "/api/notifications/plastic-bag",
-    to: ["configurado-en-backend vía NOTIFY_PLASTIC_BAG"],
-    cc: ["configurado-en-backend vía NOTIFY_PLASTIC_BAG_CC"],
     itemSource: "supply",
     hasNotes: true,
   },
@@ -197,13 +188,14 @@ function SupplyCombobox({ value, supplies, loading, onChange }: {
 
 // ─── Template form for item-list templates ────────────────────────────────────
 function ItemListForm({
-  template, products, supplies, loadingProducts, loadingSupplies, onSuccess,
+  template, products, supplies, loadingProducts, loadingSupplies, recipients, onSuccess,
 }: {
   template: TemplateConfig;
   products: Product[];
   supplies: Supply[];
   loadingProducts: boolean;
   loadingSupplies: boolean;
+  recipients: RecipientFields;
   onSuccess: () => void;
 }) {
   const { toast } = useToast();
@@ -229,7 +221,7 @@ function ItemListForm({
       return api(template.endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, notes: notes.trim() || undefined }),
+        body: JSON.stringify({ items, notes: notes.trim() || undefined, ...recipients }),
       });
     },
     onSuccess: () => {
@@ -340,8 +332,9 @@ function ItemListForm({
 }
 
 // ─── Single-product form (fin de producto) ────────────────────────────────────
-function SingleProductForm({ template, products, loadingProducts }: {
+function SingleProductForm({ template, products, loadingProducts, recipients }: {
   template: TemplateConfig; products: Product[]; loadingProducts: boolean;
+  recipients: RecipientFields;
 }) {
   const { toast } = useToast();
   const [mode, setMode] = useState<"catalog" | "manual">("catalog");
@@ -359,7 +352,7 @@ function SingleProductForm({ template, products, loadingProducts }: {
       const payload = mode === "catalog"
         ? { productCode: selectedProduct?.code ?? "", productName: selectedProduct?.name ?? "" }
         : { productCode: manual.code.trim(), productName: manual.name.trim() };
-      return api(template.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      return api(template.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, ...recipients }) });
     },
     onSuccess: () => {
       toast({ title: "Correo enviado correctamente" });
@@ -418,8 +411,17 @@ function SingleProductForm({ template, products, loadingProducts }: {
 export default function EmailNotificationsPage() {
   const { warehouse } = useWarehouse();
   const [activeTemplate, setActiveTemplate] = useState<TemplateId>("product-out");
+  const [recipientsByTemplate, setRecipientsByTemplate] = useState<Record<TemplateId, RecipientFields>>({
+    "product-out": { to: "", cc: "" }, "stock-colorante": { to: "", cc: "" },
+    "stock-auxiliar": { to: "", cc: "" }, "order-approval": { to: "", cc: "" },
+    "plastic-bag": { to: "", cc: "" },
+  });
 
   const template = TEMPLATES.find(t => t.id === activeTemplate)!;
+  const recipients = recipientsByTemplate[activeTemplate];
+  const setRecipient = (field: keyof RecipientFields, value: string) => setRecipientsByTemplate(current => ({
+    ...current, [activeTemplate]: { ...current[activeTemplate], [field]: value },
+  }));
 
   const { data: allProducts = [], isLoading: loadingProducts } = useQuery<Product[]>({
     queryKey: ["/api/products/all-active"],
@@ -493,23 +495,24 @@ export default function EmailNotificationsPage() {
                 </div>
               </div>
 
-              {/* Recipients summary */}
-              <div className="bg-slate-50 rounded-lg px-4 py-3 space-y-2 text-xs">
-                <div className="flex gap-2">
-                  <span className="font-semibold text-slate-500 w-6">Para:</span>
-                  <span className="text-slate-700">{template.to.join(", ")}</span>
+              {/* Recipient entry per email */}
+              <div className="grid gap-3 sm:grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="email-to">Para <span className="text-red-500">*</span></Label>
+                  <Input id="email-to" type="text" autoComplete="off" placeholder="persona@empresa.com, otra@empresa.com"
+                    value={recipients.to} onChange={e => setRecipient("to", e.target.value)} />
+                  <p className="text-xs text-slate-500">Separa varios correos con coma o punto y coma.</p>
                 </div>
-                {template.cc && template.cc.length > 0 && (
-                  <div className="flex gap-2">
-                    <span className="font-semibold text-slate-500 w-6">CC:</span>
-                    <span className="text-slate-600">{template.cc.join(", ")}</span>
-                  </div>
-                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="email-cc">CC <span className="text-slate-400 font-normal">(opcional)</span></Label>
+                  <Input id="email-cc" type="text" autoComplete="off" placeholder="copia@empresa.com"
+                    value={recipients.cc} onChange={e => setRecipient("cc", e.target.value)} />
+                </div>
               </div>
 
               {/* Form */}
               {template.isSingleProduct ? (
-                <SingleProductForm template={template} products={products} loadingProducts={loadingProducts} />
+                <SingleProductForm template={template} products={products} loadingProducts={loadingProducts} recipients={recipients} />
               ) : (
                 <ItemListForm
                   key={activeTemplate}
@@ -518,6 +521,7 @@ export default function EmailNotificationsPage() {
                   supplies={supplies.filter(s => s.status === "active")}
                   loadingProducts={loadingProducts}
                   loadingSupplies={loadingSupplies}
+                  recipients={recipients}
                   onSuccess={resetForm}
                 />
               )}

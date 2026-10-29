@@ -9,13 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { PackageX, Loader2, ChevronsUpDown, Check, Mail, AlertCircle, Database, PenLine } from "lucide-react";
+import { PackageX, Loader2, ChevronsUpDown, Check, AlertCircle, Database, PenLine } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-// Destinatarios configurados en backend vía NOTIFY_PRODUCT_OUT / NOTIFY_PRODUCT_OUT_CC
-const PRODUCT_OUT_TO = "configurado-en-backend";
-const PRODUCT_OUT_CC = [] as readonly string[];
 
 interface Product {
   id: string;
@@ -43,6 +39,7 @@ export default function ProductOutNotificationPage() {
   const [productOpen, setProductOpen] = useState(false);
   const [selectedId, setSelectedId] = useState("");
   const [manual, setManual] = useState(emptyManual);
+  const [recipients, setRecipients] = useState({ to: "", cc: "" });
   const [errors, setErrors] = useState<{ product?: string; productName?: string }>({});
 
   const { data: allProducts = [], isLoading: loadingProducts } = useQuery<Product[]>({
@@ -76,7 +73,7 @@ export default function ProductOutNotificationPage() {
       return api("/api/notifications/product-out", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, ...recipients }),
       });
     },
     onSuccess: (_data, _variables) => {
@@ -230,6 +227,20 @@ export default function ProductOutNotificationPage() {
             </div>
           )}
 
+          <div className="grid gap-3 sm:grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="product-out-to">Para <span className="text-red-500">*</span></Label>
+              <Input id="product-out-to" placeholder="persona@empresa.com, otra@empresa.com" value={recipients.to}
+                onChange={e => setRecipients(r => ({ ...r, to: e.target.value }))} />
+              <p className="text-xs text-slate-500">Separa varios correos con coma o punto y coma.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="product-out-cc">CC <span className="text-slate-400 font-normal">(opcional)</span></Label>
+              <Input id="product-out-cc" placeholder="copia@empresa.com" value={recipients.cc}
+                onChange={e => setRecipients(r => ({ ...r, cc: e.target.value }))} />
+            </div>
+          </div>
+
           {/* Preview of what will be sent */}
           {((mode === "catalog" && selectedProduct) || (mode === "manual" && manual.productName.trim())) && (
             <div className="bg-slate-50 rounded-lg px-4 py-3 text-sm text-slate-600 border border-slate-200">
@@ -255,44 +266,6 @@ export default function ProductOutNotificationPage() {
             }
           </Button>
         </form>
-
-        {/* Recipients info box */}
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Mail className="w-4 h-4 text-slate-500" />
-            <p className="text-sm font-semibold text-slate-700">Destinatarios del correo</p>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Para</p>
-              <div className="flex items-center gap-2 text-sm text-slate-700">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
-                <span className="font-medium">Judith Yachachín</span>
-                <span className="font-mono text-xs text-slate-400">&lt;{PRODUCT_OUT_TO}&gt;</span>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Con copia (CC)</p>
-              <ul className="space-y-1.5">
-                {[
-                  { name: "Laboratorio Tintorería", email: PRODUCT_OUT_CC[0] },
-                  { name: "Laboratorista Tintorería", email: PRODUCT_OUT_CC[1] },
-                  { name: "Ruben Roldan", email: PRODUCT_OUT_CC[2] },
-                  { name: "Denis Miranda", email: PRODUCT_OUT_CC[3] },
-                ].map(r => (
-                  <li key={r.email} className="flex items-center gap-2 text-sm text-slate-600">
-                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 flex-shrink-0" />
-                    <span className="font-medium">{r.name}</span>
-                    <span className="font-mono text-xs text-slate-400">&lt;{r.email}&gt;</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-200">
-            Remitente: <span className="font-medium text-slate-500">Carlos Ponce — Supervisor de Cocina Colores</span>
-          </p>
-        </div>
 
       </div>
     </AppLayout>
