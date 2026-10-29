@@ -683,19 +683,19 @@ export default function TomaDeInventarioPage() {
             </div>
           ) : (
             <div className="min-w-0">
-              <Table className="min-w-[1400px] table-fixed">
+              <Table className="min-w-[1280px] table-fixed">
                 <colgroup>
-                  <col className="w-[96px]" />
-                  <col className="w-[235px]" />
-                  <col className="w-[105px]" />
-                  <col className="w-[100px]" />
-                  <col className="w-[110px]" />
-                  <col className="w-[70px]" />
+                  <col className="w-[95px]" />
                   <col className="w-[215px]" />
-                  <col className="w-[115px]" />
-                  <col className="w-[120px]" />
-                  <col className="w-[190px]" />
-                  {canDelete && <col className="w-12" />}
+                  <col className="w-[95px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[60px]" />
+                  <col className="w-[180px]" />
+                  <col className="w-[105px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[180px]" />
+                  {canDelete && <col className="w-11" />}
                 </colgroup>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
