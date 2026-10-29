@@ -155,6 +155,13 @@
       "when": 1793309400000,
       "tag": "0024_seed_q1_immobilized_can_locations",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793309401000,
+      "tag": "0025_replace_q1_official_locations",
+      "breakpoints": true
     }
   ]
 }

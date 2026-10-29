@@ -14,19 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ClipboardList, Plus, Trash2, Loader2, AlertCircle, TrendingUp, TrendingDown, Minus, Camera, Eye, Box, X, MapPin, Upload, Download, FileSpreadsheet, Search, Pencil } from 'lucide-react';
 
-const LOCATION_SUGGESTIONS = [
-  "Lata 1", "Lata 2", "Lata 3", "Lata 4", "Lata 5",
-  "Rack Colorantes C1", "Rack Colorantes C2", "Rack Colorantes C3", "Rack Colorantes C4",
-  "Rack Colorantes 1", "Rack Colorantes 2", "Rack Colorantes 3", "Rack Colorantes 4",
-  "Rack Auxiliares",
-  "Rack Auxiliares Tercer Nivel",
-  "Zona de Abastecimiento",
-  "Zona Auxiliares Abiertos 1", "Zona Auxiliares Abiertos 2", "Zona Auxiliares Abiertos 3",
-  "Zona Auxiliares Pasadizo Afuera",
-  "Zona Inmovilizados",
-  "Zona Muestras",
-  "Zona Disposición Final",
-];
 import {
   WAREHOUSES, NUM_BOXES, EMPTY_PRODUCTS, EMPTY_BALANCES, today, emptyBoxes, sinMovimiento, apiJson, apiForm,
   TARE_PRESETS, getAutoTare, calcNetWeight,
@@ -40,6 +27,7 @@ interface InventoryLocation {
   parentLocationId: string | null; isActive: boolean; mapLabel?: string | null;
 }
 function inventoryLocationLabel(location: InventoryLocation): string {
+  if (location.mapLabel?.trim()) return location.mapLabel.trim();
   const parts = [location.zone, location.rack, location.shelf, location.position]
     .map(value => value?.trim()).filter((value): value is string => Boolean(value));
   const uniqueParts = parts.filter((part, index) => parts.findIndex(value => value.toLocaleLowerCase() === part.toLocaleLowerCase()) === index);
@@ -231,7 +219,9 @@ export default function TomaDeInventarioPage() {
     queryKey: ["/api/locations", selectedWarehouse],
     queryFn: async () => {
       return (await fetchAllPages<InventoryLocation>(`/api/locations?warehouse=${selectedWarehouse}`))
-        .filter(location => location.isActive);
+        .filter(location => location.isActive && (
+          selectedWarehouse !== "Q1" || location.type === "shelf" || location.type === "position"
+        ));
     },
   });
   const locationOptions = useMemo(() => inventoryLocations.map(location => ({ id: location.id, label: inventoryLocationLabel(location), type: location.type })), [inventoryLocations]);
