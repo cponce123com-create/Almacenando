@@ -682,8 +682,21 @@ export default function TomaDeInventarioPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
+            <div className="min-w-0">
+              <Table className="min-w-[1280px] table-fixed">
+                <colgroup>
+                  <col className="w-[95px]" />
+                  <col className="w-[215px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[95px]" />
+                  <col className="w-[100px]" />
+                  <col className="w-[60px]" />
+                  <col className="w-[180px]" />
+                  <col className="w-[105px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[180px]" />
+                  {canDelete && <col className="w-11" />}
+                </colgroup>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
                     <TableHead className="font-semibold text-slate-600">Fecha</TableHead>
@@ -714,16 +727,16 @@ export default function TomaDeInventarioPage() {
                         className={`${canWrite ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-600" : ""} hover:bg-slate-50/70`}
                       >
                         <TableCell className="text-sm text-slate-700 font-medium whitespace-nowrap">{r.recordDate}</TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="text-sm font-medium text-slate-900">{product?.name ?? r.productId}</p>
+                        <TableCell className="overflow-hidden">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-slate-900" title={product?.name ?? r.productId}>{product?.name ?? r.productId}</p>
                             <p className="text-xs text-slate-400">{product?.code} · {product?.unit}</p>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm text-slate-500">
+                        <TableCell className="whitespace-nowrap text-right font-mono text-sm text-slate-500">
                           {parseFloat(r.previousBalance).toFixed(2)}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm font-bold text-slate-900">
+                        <TableCell className="whitespace-nowrap text-right font-mono text-sm font-bold text-slate-900">
                           {r.physicalCount != null
                             ? parseFloat(r.physicalCount).toFixed(2)
                             : <span className="text-slate-300">—</span>}
@@ -756,19 +769,20 @@ export default function TomaDeInventarioPage() {
                             <span className="text-slate-300 text-xs">—</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-sm max-w-[150px]">
+                        <TableCell className="overflow-hidden text-sm">
                           {r.location
-                            ? <span className="inline-flex items-center gap-1 text-slate-700 bg-slate-100 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap">
-                                <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />{r.location}
+                            ? <span title={r.location} className="flex min-w-0 max-w-full items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                                <MapPin className="h-3 w-3 flex-shrink-0 text-slate-400" />
+                                <span className="min-w-0 truncate">{r.location}</span>
                               </span>
                             : <span className="text-slate-300 text-xs">—</span>
                           }
                         </TableCell>
-                        <TableCell className="text-sm whitespace-nowrap">
+                        <TableCell className="overflow-hidden text-sm whitespace-nowrap">
                           {(() => {
                             const uc = product ? balanceByCode[`${product.warehouse}::${product.type ?? ""}::${product.code}`]?.ultimoConsumo : null;
                             return uc
-                              ? <span className="text-slate-700 font-medium">{uc}</span>
+                              ? <span className="font-medium text-slate-700">{uc}</span>
                               : <span className="text-slate-300">—</span>;
                           })()}
                         </TableCell>
@@ -779,7 +793,7 @@ export default function TomaDeInventarioPage() {
                             return <span className={`text-xs font-semibold ${sm.color}`}>{sm.label}</span>;
                           })()}
                         </TableCell>
-                        <TableCell className="text-sm text-slate-500 max-w-[180px] truncate">
+                        <TableCell className="max-w-[190px] overflow-hidden text-ellipsis whitespace-nowrap text-sm text-slate-500" title={r.notes ?? undefined}>
                           {r.notes || <span className="text-slate-300">—</span>}
                         </TableCell>
                         {canDelete && (
