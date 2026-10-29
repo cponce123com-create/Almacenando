@@ -42,8 +42,7 @@ const CONFIG = {
   },
 } as const;
 
-// Destinatarios configurados en backend vía NOTIFY_LOT_CHANGE env var.
-// El frontend muestra la cantidad; los emails reales están en el servidor.
+// Los destinatarios se ingresan y validan directamente en este formulario.
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 interface Product {
@@ -150,7 +149,7 @@ const useLotChangeForm = () => {
     if (!form.to.trim()) {
       newErrors.to = "Al menos un destinatario Para es requerido";
     } else {
-      const toEmails = form.to.split(",").map((s) => s.trim()).filter(Boolean);
+      const toEmails = form.to.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const invalidTo = toEmails.find((e) => !emailRegex.test(e));
       if (invalidTo) {
@@ -159,7 +158,7 @@ const useLotChangeForm = () => {
     }
 
     if (form.cc.trim()) {
-      const ccEmails = form.cc.split(",").map((s) => s.trim()).filter(Boolean);
+      const ccEmails = form.cc.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       const invalidCc = ccEmails.find((e) => !emailRegex.test(e));
       if (invalidCc) {
@@ -255,8 +254,8 @@ export default function LotChangeNotificationPage() {
       });
     },
     onSuccess: () => {
-      const toList = form.to.split(",").map((s) => s.trim()).filter(Boolean);
-      const ccList = form.cc.split(",").map((s) => s.trim()).filter(Boolean);
+      const toList = form.to.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+      const ccList = form.cc.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
       const totalRecipients = toList.length + ccList.length;
       toast({
         title: "✅ Notificación enviada",

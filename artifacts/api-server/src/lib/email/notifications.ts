@@ -19,15 +19,15 @@ export async function sendLotChangeNotificationEmail({
   newLot,
   productionOrder,
   senderName,
-  to: explicitTo,
-  cc: explicitCc,
+  to,
+  cc,
 }: {
   productName: string;
   oldLot: string;
   newLot: string;
   productionOrder: string;
   senderName: string;
-  to?: string[];
+  to: string[];
   cc?: string[];
 }): Promise<void> {
   const smtpUser = process.env.SMTP_EMAIL;
@@ -35,22 +35,10 @@ export async function sendLotChangeNotificationEmail({
 
   if (!smtpUser || !smtpPass) {
     logger.warn("[email] SMTP_EMAIL o SMTP_APP_PASSWORD no configurados");
-    return;
+    throw new Error("El servicio de correo no está configurado");
   }
 
-  let to: string[];
-  if (explicitTo && explicitTo.length > 0) {
-    to = explicitTo;
-  } else {
-    const { getLotChangeRecipients } = await import("../email-recipients.js");
-    to = getLotChangeRecipients();
-  }
-  const cc = explicitCc && explicitCc.length > 0 ? explicitCc : undefined;
-
-  if (to.length === 0) {
-    logger.warn("[email] Sin destinatarios");
-    return;
-  }
+  const ccList = cc && cc.length > 0 ? cc : undefined;
 
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -76,14 +64,13 @@ Supervisor de Cocina Colores`;
   await transporter.sendMail({
     from: smtpUser,
     to: to.join(", "),
-    cc: cc ? cc.join(", ") : undefined,
+    cc: ccList ? ccList.join(", ") : undefined,
     subject,
     text,
   });
 
-  logger.info({ to, cc }, "[email] Notificación de cambio de lote enviada");
+  logger.info({ recipientCount: to.length, ccCount: ccList?.length ?? 0 }, "[email] Notificación de cambio de lote enviada");
 }
-
 // ── Dye Lot Notification ──────────────────────────────────────────────────────
 
 export async function sendDyeLotNotificationEmail({
@@ -138,15 +125,19 @@ Registrado por: ${senderName}`;
 export async function sendProductOutEmail({
   productCode,
   productName,
+  to,
+  cc,
 }: {
   productCode: string;
   productName: string;
+  to: string[];
+  cc?: string[];
 }): Promise<void> {
   const smtpPass = process.env.SMTP_APP_PASSWORD;
   const smtpUser = process.env.SMTP_EMAIL;
   if (!smtpPass || !smtpUser) {
     logger.warn("[email] SMTP no configurado — fin de producto no enviado");
-    return;
+    throw new Error("El servicio de correo no está configurado");
   }
   const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -162,19 +153,21 @@ Nombre: ${productName}`;
   try {
     await transporter.sendMail({
       from: smtpUser,
-      to: process.env.NOTIFY_PRODUCT_OUT ?? "",
+      to: to.join(", "),
+      cc: cc?.length ? cc.join(", ") : undefined,
       subject,
       text,
     });
     logger.info("[email] Notificación de fin de producto enviada");
   } catch (err) {
     logger.error({ err }, "[email] Error enviando fin de producto");
+    throw err;
   }
 }
 
 // ── Stock Colorante ───────────────────────────────────────────────────────────
 
-export async function sendStockColoranteEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>) {
+export async function sendStockColoranteEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, recipients: { to: string[]; cc?: string[] }) {
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
@@ -195,14 +188,12 @@ Supervisor de Cocina Colores`;
     smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
   );
 
-  const { to, cc } = await getStockRecipients("color");
-  if (!to) { logger.warn("[email-color] NOTIFY_STOCK_COLOR no configurado"); return; }
-  await transporter.sendMail({ from: smtpUser(), to, cc: cc?.join(","), subject: "Reporte de Stock de Colorantes", text, html });
+  await transporter.sendMail({ from: smtpUser(), to: recipients.to.join(","), cc: recipients.cc?.join(","), subject: "Reporte de Stock de Colorantes", text, html });
 }
 
 // ── Stock Auxiliar ────────────────────────────────────────────────────────────
 
-export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>) {
+export async function sendStockAuxiliarEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, recipients: { to: string[]; cc?: string[] }) {
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
@@ -223,14 +214,12 @@ Supervisor de Cocina Colores`;
     smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
   );
 
-  const { to, cc } = await getStockRecipients("aux");
-  if (!to) { logger.warn("[email-aux] NOTIFY_STOCK_AUX no configurado"); return; }
-  await transporter.sendMail({ from: smtpUser(), to, cc: cc?.join(","), subject: "Reporte de Stock de Auxiliares", text, html });
+  await transporter.sendMail({ from: smtpUser(), to: recipients.to.join(","), cc: recipients.cc?.join(","), subject: "Reporte de Stock de Auxiliares", text, html });
 }
 
 // ── Order Approval ────────────────────────────────────────────────────────────
 
-export async function sendOrderApprovalEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes?: string) {
+export async function sendOrderApprovalEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes: string | undefined, recipients: { to: string[]; cc?: string[] }) {
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
@@ -253,15 +242,12 @@ Supervisor de Cocina Colores`;
     smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
   );
 
-  const { getOrderApprovalRecipient } = await import("../email-recipients.js");
-  const to = getOrderApprovalRecipient();
-  if (!to) { logger.warn("[email-order] NOTIFY_ORDER_APPROVAL no configurado"); return; }
-  await transporter.sendMail({ from: smtpUser(), to, subject: "Solicitud de Aprobación de Orden Interna", text, html });
+  await transporter.sendMail({ from: smtpUser(), to: recipients.to.join(","), cc: recipients.cc?.join(","), subject: "Solicitud de Aprobación de Orden Interna", text, html });
 }
 
 // ── Plastic Bag ───────────────────────────────────────────────────────────────
 
-export async function sendPlasticBagEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes?: string) {
+export async function sendPlasticBagEmail(items: Array<{ code: string; name: string; quantity: string; unit: string }>, notes: string | undefined, recipients: { to: string[]; cc?: string[] }) {
   const transporter = buildTransporter();
   const rows = items.map(i =>
     `  ${i.code.padEnd(12)} ${i.name.padEnd(30)} ${i.quantity} ${i.unit}`
@@ -284,19 +270,11 @@ Supervisor de Cocina Colores`;
     smtpFooter("Carlos Ponce", "Supervisor de Cocina Colores"),
   );
 
-  const { getPlasticBagRecipients } = await import("../email-recipients.js");
-  const { to, cc } = getPlasticBagRecipients();
-  if (to.length === 0) { logger.warn("[email-bag] NOTIFY_PLASTIC_BAG no configurado"); return; }
-  await transporter.sendMail({ from: smtpUser(), to: to.join(","), cc: cc?.join(","), subject: "Solicitud de Bolsas Plásticas", text, html });
+  await transporter.sendMail({ from: smtpUser(), to: recipients.to.join(","), cc: recipients.cc?.join(","), subject: "Solicitud de Bolsas Plásticas", text, html });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function smtpUser() {
   return process.env.SMTP_EMAIL ?? "";
-}
-
-async function getStockRecipients(type: "color" | "aux") {
-  const { getStockColorRecipients, getStockAuxRecipients } = await import("../email-recipients.js");
-  return type === "color" ? getStockColorRecipients() : getStockAuxRecipients();
 }

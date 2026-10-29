@@ -8,7 +8,6 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { writeAuditLog } from "../lib/audit.js";
 import { logger } from "../lib/logger.js";
 import { sendLotChangeNotificationEmail, sendProductOutEmail, sendStockColoranteEmail, sendStockAuxiliarEmail, sendOrderApprovalEmail, sendPlasticBagEmail } from "../lib/email/index.js";
-import { getLotChangeRecipients, getProductOutRecipients, getStockColorRecipients, getStockAuxRecipients, getOrderApprovalRecipient, getPlasticBagRecipients } from "../lib/email-recipients.js";
 import { z } from "zod/v4";
 import { emitNotification, onNotification } from "../lib/notification-events.js";
 
@@ -19,6 +18,14 @@ import { emitNotification, onNotification } from "../lib/notification-events.js"
 
 const router = Router();
 
+const emailListSchema = z.string().trim().transform((value) => value.split(/[;,]/).map((email) => email.trim()).filter(Boolean))
+  .refine((emails) => emails.length > 0, "Ingresa al menos un destinatario")
+  .refine((emails) => emails.every((email) => z.email().safeParse(email).success), "Uno o más correos no tienen un formato válido");
+const optionalEmailListSchema = z.string().optional().default("")
+  .transform((value) => value.split(/[;,]/).map((email) => email.trim()).filter(Boolean))
+  .refine((emails) => emails.every((email) => z.email().safeParse(email).success), "Uno o más correos en CC no tienen un formato válido");
+const recipientsSchema = z.object({ to: emailListSchema, cc: optionalEmailListSchema });
+
 // ── Lot Change ────────────────────────────────────────────────────────────────
 
 const lotChangeSchema = z.object({
@@ -26,9 +33,7 @@ const lotChangeSchema = z.object({
   oldLot: z.string().min(1, "El lote antiguo es requerido"),
   newLot: z.string().min(1, "El nuevo lote es requerido"),
   productionOrder: z.string().min(1, "La orden de producción es requerida"),
-  to: z.string().optional(),
-  cc: z.string().optional(),
-});
+}).extend({ to: emailListSchema, cc: optionalEmailListSchema });
 
 /**
  * @route POST /lot-change
@@ -51,15 +56,7 @@ router.post(
       return;
     }
 
-    const { productId, oldLot, newLot, productionOrder, to: bodyTo, cc: bodyCc } = parsed.data;
-
-    // Computar destinatarios: priorizar los del body, fallback a env vars
-    const recipientsTo = bodyTo
-      ? bodyTo.split(",").map((s: string) => s.trim()).filter(Boolean)
-      : getLotChangeRecipients();
-    const recipientsCc = bodyCc
-      ? bodyCc.split(",").map((s: string) => s.trim()).filter(Boolean)
-      : [];
+    const { productId, oldLot, newLot, productionOrder, to: recipientsTo, cc: recipientsCc } = parsed.data;
 
     const [product] = await db
       .select({ id: productsTable.id, name: productsTable.name })
@@ -79,6 +76,9 @@ router.post(
       .limit(1);
     const senderName = sender?.name ?? authedReq.userId;
 
+    // Confirmar el envío antes de responder como exitoso.
+    await sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName, to: recipientsTo, cc: recipientsCc });
+
     await writeAuditLog({
       userId: authedReq.userId,
       action: "lot_change_notification",
@@ -89,10 +89,6 @@ router.post(
     });
 
     res.json({ message: "Notificación enviada correctamente", productName: product.name, recipients: recipientsTo.length, ccCount: recipientsCc.length });
-
-    // Enviar email en background, sin bloquear la respuesta
-    sendLotChangeNotificationEmail({ productName: product.name, oldLot, newLot, productionOrder, senderName, to: recipientsTo, cc: recipientsCc })
-      .catch((err) => logger.error({ err }, "Error enviando email de lote"));
   })
 );
 
@@ -101,7 +97,7 @@ router.post(
 const productOutSchema = z.object({
   productCode: z.string(),
   productName: z.string().min(1, "El nombre del producto es requerido"),
-});
+}).extend(recipientsSchema.shape);
 
 /**
  * @route POST /product-out
@@ -122,10 +118,9 @@ router.post(
       return;
     }
 
-    const { productCode, productName } = parsed.data;
-    const { to: outTo, cc: outCc } = getProductOutRecipients();
+    const { productCode, productName, to: outTo, cc: outCc } = parsed.data;
 
-    await sendProductOutEmail({ productCode, productName });
+    await sendProductOutEmail({ productCode, productName, to: outTo, cc: outCc });
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
@@ -158,17 +153,16 @@ router.post(
       return;
     }
 
-    await sendStockColoranteEmail(parsed.data.items);
-    const { to: colorTo, cc: colorCc } = getStockColorRecipients();
+    await sendStockColoranteEmail(parsed.data.items, { to: parsed.data.to, cc: parsed.data.cc });
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "stock_colorante", items: parsed.data.items, to: colorTo, cc: colorCc },
+      details: { template: "stock_colorante", items: parsed.data.items, to: parsed.data.to, cc: parsed.data.cc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Correo de stock de colorante enviado", to: colorTo, cc: colorCc.length });
+    res.json({ message: "Correo de stock de colorante enviado", to: parsed.data.to.length, cc: parsed.data.cc.length });
   })
 );
 
@@ -191,17 +185,16 @@ router.post(
       return;
     }
 
-    await sendStockAuxiliarEmail(parsed.data.items);
-    const { to: auxTo, cc: auxCc } = getStockAuxRecipients();
+    await sendStockAuxiliarEmail(parsed.data.items, { to: parsed.data.to, cc: parsed.data.cc });
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "stock_auxiliar", items: parsed.data.items, to: auxTo, cc: auxCc },
+      details: { template: "stock_auxiliar", items: parsed.data.items, to: parsed.data.to, cc: parsed.data.cc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Correo de stock de auxiliar enviado", to: auxTo, cc: auxCc.length });
+    res.json({ message: "Correo de stock de auxiliar enviado", to: parsed.data.to.length, cc: parsed.data.cc.length });
   })
 );
 
@@ -225,16 +218,16 @@ router.post(
       return;
     }
 
-    await sendOrderApprovalEmail(parsed.data.items, parsed.data.notes);
+    await sendOrderApprovalEmail(parsed.data.items, parsed.data.notes, { to: parsed.data.to, cc: parsed.data.cc });
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "order_approval", items: parsed.data.items, to: getOrderApprovalRecipient() },
+      details: { template: "order_approval", items: parsed.data.items, to: parsed.data.to, cc: parsed.data.cc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Solicitud de aprobación enviada", to: getOrderApprovalRecipient() });
+    res.json({ message: "Solicitud de aprobación enviada", to: parsed.data.to.length, cc: parsed.data.cc.length });
   })
 );
 
@@ -258,17 +251,16 @@ router.post(
       return;
     }
 
-    await sendPlasticBagEmail(parsed.data.items, parsed.data.notes);
-    const { to: bagTo, cc: bagCc } = getPlasticBagRecipients();
+    await sendPlasticBagEmail(parsed.data.items, parsed.data.notes, { to: parsed.data.to, cc: parsed.data.cc });
     await writeAuditLog({
       userId: authedReq.userId,
       action: "email_notification",
       resource: "notifications",
-      details: { template: "plastic_bag", items: parsed.data.items, to: bagTo, cc: bagCc },
+      details: { template: "plastic_bag", items: parsed.data.items, to: parsed.data.to, cc: parsed.data.cc },
       ipAddress: req.ip,
     });
 
-    res.json({ message: "Solicitud de bolsas enviada", to: bagTo.length, cc: bagCc.length });
+    res.json({ message: "Solicitud de bolsas enviada", to: parsed.data.to.length, cc: parsed.data.cc.length });
   })
 );
 
@@ -284,25 +276,13 @@ const itemSchema = z.object({
 const itemListSchema = z.object({
   items: z.array(itemSchema).min(1, "Debe agregar al menos un ítem"),
   notes: z.string().optional(),
-});
+}).extend(recipientsSchema.shape);
 
 // ── GET /api/notifications/recipients ─────────────────────────────────────────
-// Devuelve los destinatarios configurados vía variables de entorno.
+// Los destinatarios ahora se ingresan en el formulario de envío; no se exponen variables del servidor.
 
 router.get("/recipients", requireAuth, asyncHandler(async (_req, res) => {
-  const { to: productOutTo, cc: productOutCc } = getProductOutRecipients();
-  const { to: colorTo, cc: colorCc } = getStockColorRecipients();
-  const { to: auxTo, cc: auxCc } = getStockAuxRecipients();
-  const { to: bagTo, cc: bagCc } = getPlasticBagRecipients();
-
-  res.json({
-    lotChange: getLotChangeRecipients(),
-    productOut: { to: productOutTo, cc: productOutCc },
-    stockColor: { to: colorTo, cc: colorCc },
-    stockAux: { to: auxTo, cc: auxCc },
-    orderApproval: getOrderApprovalRecipient(),
-    plasticBag: { to: bagTo, cc: bagCc },
-  });
+  res.json({ recipientsAreProvidedAtSendTime: true });
 }));
 
 // ── GET /api/notifications/smtp-status ────────────────────────────────────────
@@ -317,7 +297,7 @@ router.get("/smtp-status", requireAuth, asyncHandler(async (_req, res) => {
     smtpEmail: smtpEmail ? `${smtpEmail.slice(0, 3)}...${smtpEmail.split("@")[1]}` : "(no configurado)",
     smtpPassword: smtpPass ? `configurado (${smtpPass.length} caracteres)` : "(no configurado)",
     resendApiKey: resendKey ? "configurado" : "(no configurado)",
-    willUse: smtpPass && smtpEmail ? "SMTP Gmail (prioridad 1)" : resendKey ? "Resend (prioridad 2)" : "NINGUNO — correos no se enviarán",
+    willUse: smtpPass && smtpEmail ? "SMTP Gmail" : "NINGUNO — los correos internos no se enviarán",
   };
 
   // Probar conexión SMTP si está configurado
