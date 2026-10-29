@@ -148,6 +148,13 @@
       "when": 1793224800000,
       "tag": "0023_editable_warehouse_map",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793309400000,
+      "tag": "0024_seed_q1_immobilized_can_locations",
+      "breakpoints": true
     }
   ]
 }
