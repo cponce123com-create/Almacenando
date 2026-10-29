@@ -189,6 +189,7 @@ describe("Inventory Routes", () => {
     dbTransactionMock.mockImplementation(async (callback: (tx: any) => Promise<unknown>) => callback({
       insert: dbInsertMock,
       select: dbSelectMock,
+      delete: dbDeleteMock,
     }));
     auditLogMock.mockResolvedValue(undefined);
     uploadDriveMock.mockResolvedValue({
