@@ -414,14 +414,15 @@ export default function InventoryProgressPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 10;
     const columns = [
-      { title: "Código", width: 22 },
-      { title: "Descripción", width: 57 },
-      { title: "Último\nconsumo", width: 30 },
-      { title: "Saldo\nsistema", width: 30 },
-      { title: "Lote\n(20 dígitos)", width: 54 },
-      { title: "¿Tiene\netiqueta?", width: 27 },
-      { title: "Peso\nfísico", width: 34 },
-      { title: "Tara", width: 23 },
+      { title: "Código", width: 20 },
+      { title: "Descripción", width: 49 },
+      { title: "Último\nconsumo", width: 25 },
+      { title: "Saldo\nsistema", width: 28 },
+      { title: "Lote\n(20 dígitos)", width: 43 },
+      { title: "¿Tiene\netiqueta?", width: 24 },
+      { title: "Peso\nfísico", width: 30 },
+      { title: "Tara", width: 20 },
+      { title: "Ubicación", width: 38 },
     ];
     const headerY = 42;
     const headerHeight = 12;
@@ -437,7 +438,7 @@ export default function InventoryProgressPage() {
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text(`Selección: ${rangeLabel}  ·  ${products.length} productos priorizados`, margin, 33);
-    doc.text("Marque si tiene etiqueta; anote el lote, el peso físico y la tara.", margin, 39);
+    doc.text("Marque si tiene etiqueta; anote el lote, el peso físico y la tara. Use la ubicación para encontrar cada producto.", margin, 39);
 
     let x = margin;
     for (const column of columns) {
@@ -471,6 +472,7 @@ export default function InventoryProgressPage() {
         "",
         "",
         "",
+        product.location?.trim() || "Sin ubicación",
       ];
       let cellX = margin;
       doc.setDrawColor(180, 190, 200);
@@ -494,6 +496,10 @@ export default function InventoryProgressPage() {
             checkboxSize,
             "S",
           );
+        } else if (columnIndex === 8) {
+          const value = cells[columnIndex] ?? "Sin ubicación";
+          const lines = doc.splitTextToSize(value, column.width - 4).slice(0, 2);
+          doc.text(lines, cellX + 2, y + 4.5);
         }
         cellX += column.width;
       });
