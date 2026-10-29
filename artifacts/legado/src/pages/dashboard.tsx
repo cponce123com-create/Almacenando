@@ -48,7 +48,7 @@ const KPI_CONFIG = [
     iconBg:  "#e0e7ff",     iconColor: "#4338ca",
   },
   {
-    key: "activeImmobilized", label: "Inmovilizados", sublabel: "activos actualmente",  href: "/immobilized",
+    key: "activeImmobilized", label: "Inmovilizados", sublabel: "activos actualmente",  href: "/immobilized?view=manual",
     icon: AlertTriangle,
     barFrom: "#f97316",     barTo: "#f59e0b",
     iconBg:  "#ffedd5",     iconColor: "#c2410c",
@@ -93,7 +93,7 @@ const GROUPS: Array<{
   {
     name: "Seguimiento & Alertas", icon: Activity, color: "orange",
     items: [
-      { name: "Productos Inmovilizados", href: "/immobilized",             icon: AlertTriangle },
+      { name: "Productos Inmovilizados", href: "/immobilized?view=manual", icon: AlertTriangle },
       { name: "Disposición Final",       href: "/disposition",             icon: Recycle },
       { name: "Cambio de Lote",          href: "/lot-change-notification", icon: Bell },
     ],

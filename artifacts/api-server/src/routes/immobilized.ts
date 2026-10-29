@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { db } from "@workspace/db";
 import { immobilizedProductsTable, productsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../lib/auth.js";
 import { generateId } from "../lib/id.js";
 import { z } from "zod/v4";
@@ -47,6 +47,81 @@ const immobilizedSchema = z.object({
 router.get("/", requireAuth, asyncHandler(async (_req, res) => {
   const records = await db.select().from(immobilizedProductsTable).orderBy(desc(immobilizedProductsTable.immobilizedDate));
   res.json(records);
+}));
+
+// Stock in Q1 whose latest reliable movement is at least one full year old.
+// NOW uses 2013-01-01 as a sentinel when it has no trustworthy consumption date;
+// those products are returned with a null movement date for a separate review bucket.
+router.get("/stagnant-stock", requireAuth, asyncHandler(async (_req, res) => {
+  const result = await db.execute(sql`
+    WITH latest_snapshot AS (
+      SELECT DISTINCT ON (warehouse) warehouse, balance_date, batch_id
+      FROM balance_records
+      WHERE warehouse = 'Q1'
+      ORDER BY warehouse, balance_date DESC, created_at DESC, id DESC
+    ), aggregated_stock AS (
+      SELECT
+        br.warehouse,
+        COALESCE(br.type, '') AS product_type,
+        br.code,
+        SUM(br.quantity)::numeric AS balance,
+        MAX(br.ultimo_consumo) AS raw_last_movement,
+        MAX(br.balance_date) AS balance_date,
+        STRING_AGG(DISTINCT NULLIF(CONCAT_WS(' / ', NULLIF(BTRIM(br.zone_summary), ''), NULLIF(BTRIM(br.location_summary), '')), ''), ', ') AS source_location
+      FROM balance_records br
+      JOIN latest_snapshot s
+        ON s.warehouse = br.warehouse
+       AND s.balance_date = br.balance_date
+       AND s.batch_id IS NOT DISTINCT FROM br.batch_id
+      WHERE br.warehouse = 'Q1'
+      GROUP BY br.warehouse, COALESCE(br.type, ''), br.code
+    ), reliable_stock AS (
+      SELECT *,
+        CASE
+          WHEN raw_last_movement IS NULL OR raw_last_movement <= DATE '2013-01-01' THEN NULL
+          ELSE raw_last_movement
+        END AS last_movement
+      FROM aggregated_stock
+    )
+    SELECT
+      p.id AS "productId",
+      p.warehouse,
+      p.type,
+      p.code,
+      p.name,
+      p.unit,
+      p.status AS "productStatus",
+      s.balance::text AS balance,
+      s.balance_date AS "balanceDate",
+      s.last_movement AS "lastMovement",
+      CASE WHEN s.last_movement IS NULL THEN NULL
+        ELSE EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.last_movement))::int
+      END AS "yearsWithoutMovement",
+      CASE WHEN s.last_movement IS NULL THEN NULL
+        ELSE GREATEST(CURRENT_DATE - s.last_movement, 0)
+      END AS "daysWithoutMovement",
+      s.source_location AS "sourceLocation",
+      latest_inventory.record_date AS "lastInventoryDate",
+      latest_inventory.physical_count::text AS "lastPhysicalCount"
+    FROM reliable_stock s
+    JOIN products p
+      ON p.warehouse = s.warehouse
+     AND COALESCE(p.type, '') = s.product_type
+     AND p.code = s.code
+    LEFT JOIN LATERAL (
+      SELECT ir.record_date, ir.physical_count
+      FROM inventory_records ir
+      WHERE ir.product_id = p.id
+        AND ir.warehouse = p.warehouse
+        AND ir.physical_count IS NOT NULL
+      ORDER BY ir.record_date DESC, ir.created_at DESC
+      LIMIT 1
+    ) latest_inventory ON TRUE
+    WHERE s.balance > 0
+      AND (s.last_movement IS NULL OR s.last_movement <= CURRENT_DATE - INTERVAL '1 year')
+    ORDER BY s.last_movement ASC NULLS FIRST, p.code ASC
+  `);
+  res.json(result.rows);
 }));
 
 router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
