@@ -424,9 +424,9 @@ export default function InventoryProgressPage() {
       { title: "Tara", width: 20 },
       { title: "Ubicación", width: 38 },
     ];
-    const headerY = 42;
-    const headerHeight = 12;
-    const rowHeight = 14;
+    const headerY = 41;
+    const headerHeight = 14;
+    const rowHeight = 13.5;
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(17);
@@ -447,9 +447,9 @@ export default function InventoryProgressPage() {
       doc.rect(x, headerY, column.width, headerHeight, "FD");
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(7.5);
+      doc.setFontSize(9);
       const isMultiline = column.title.includes("\n");
-      const textY = isMultiline ? headerY + 4.5 : headerY + 7.5;
+      const textY = isMultiline ? headerY + 4.5 : headerY + 8.5;
       doc.text(column.title, x + column.width / 2, textY, {
         align: "center",
         maxWidth: column.width - 4,
@@ -475,10 +475,11 @@ export default function InventoryProgressPage() {
         product.location?.trim() || "Sin ubicación",
       ];
       let cellX = margin;
-      doc.setDrawColor(180, 190, 200);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.setTextColor(30, 41, 59);
+      doc.setDrawColor(55, 65, 81);
+      doc.setLineWidth(0.45);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
       columns.forEach((column, columnIndex) => {
         doc.setFillColor(index % 2 === 0 ? 255 : 248, index % 2 === 0 ? 255 : 250, index % 2 === 0 ? 255 : 252);
         doc.rect(cellX, y, column.width, rowHeight, "FD");
@@ -506,10 +507,15 @@ export default function InventoryProgressPage() {
     });
 
     const footerY = headerY + headerHeight + products.length * rowHeight + 7;
-    doc.setFontSize(8);
-    doc.setTextColor(71, 85, 105);
-    doc.text("Pesador: ____________________________________", margin, footerY);
-    doc.text("Firma: __________________________", pageWidth - margin, footerY, { align: "right" });
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Pesador:", margin, footerY);
+    doc.text("Firma:", pageWidth / 2 + 10, footerY);
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.65);
+    doc.line(margin + 22, footerY + 2, pageWidth / 2 - margin, footerY + 2);
+    doc.line(pageWidth / 2 + 27, footerY + 2, pageWidth - margin, footerY + 2);
     doc.save(`Inventario_Quimicos_Q1_${fileDate}.pdf`);
   };
   const stats = progress?.stats ?? { pending: 0, counted: 0, verified: 0, consumptionAlert: 0, withoutMovement: 0, skipped: 0, total: 0 };
