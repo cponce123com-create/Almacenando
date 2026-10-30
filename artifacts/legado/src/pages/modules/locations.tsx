@@ -246,7 +246,7 @@ export default function GestionDeUbicacionesPage() {
             <b>Auxiliares · Q1:</b> A01 tiene 3 niveles y 9 compartimientos por nivel. A02–A05 tienen un nivel cada una.
           </div>
           <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
-            <b>Inmovilizados · Q1:</b> 50 latas numeradas (L01–L50), con capacidad aproximada de 50 kg cada una.
+            <b>Inmovilizados · Q1:</b> 50 latas numeradas, de Lata N.º 1 a Lata N.º 50.
           </div>
         </div>
 
