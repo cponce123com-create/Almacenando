@@ -162,6 +162,13 @@
       "when": 1793309401000,
       "tag": "0025_replace_q1_official_locations",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793309402000,
+      "tag": "0026_reenumerate_q1_immobilized_cans",
+      "breakpoints": true
     }
   ]
 }
