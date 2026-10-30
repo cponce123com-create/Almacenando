@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard,
@@ -15,6 +15,7 @@ import {
   Settings,
   LogOut,
   Menu,
+  Search as SearchIcon,
   X,
   ChevronRight,
   FlaskConical,
@@ -240,10 +241,29 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { logout, user } = useAuth();
   const modulePermissions = useModulePermissions();
   const { warehouse, setWarehouse } = useWarehouse();
-  const [_, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [profileHovered, setProfileHovered] = useState(false);
   const [logoutHovered, setLogoutHovered] = useState(false);
+
+  useEffect(() => {
+    setMobileSearchOpen(false);
+  }, [location]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileOpen]);
 
   const handleLogout = () => {
     logout();
@@ -407,15 +427,20 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Mobile sidebar overlay */}
       {mobileOpen && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex" }}>
+        <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex" }}>
           <div
             style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
             onClick={() => setMobileOpen(false)}
           />
-          <div style={{
+          <div
+            id="mobile-navigation"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menú de navegación"
+            style={{
             position: "relative",
             display: "flex", flexDirection: "column",
-            width: 300, maxWidth: "85vw",
+            width: 300, maxWidth: "85vw", height: "100dvh", maxHeight: "100vh",
             backgroundColor: SB.bg,
             boxShadow: "4px 0 24px rgba(0,0,0,0.4)",
             zIndex: 1,
@@ -450,14 +475,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
           position: "sticky", top: 0, zIndex: 40,
           boxShadow: "0 1px 8px rgba(13,148,136,0.1)",
         }}>
-          <div style={{ height: 56, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ height: 56, padding: "0 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
 
             {/* Left side */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
               <button
                 className="lg:hidden"
                 onClick={() => setMobileOpen(true)}
                 aria-label="Abrir menú"
+                aria-expanded={mobileOpen}
+                aria-controls="mobile-navigation"
                 style={{
                   width: 44, height: 44, border: "none", cursor: "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center",
@@ -479,17 +506,27 @@ export function AppLayout({ children }: { children: ReactNode }) {
             </div>
 
             {/* Right side */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
 
               {/* Notification Bell */}
               <NotificationBell />
+
+              <button
+                type="button"
+                className="sm:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+                onClick={() => setMobileSearchOpen(value => !value)}
+                aria-label={mobileSearchOpen ? "Cerrar búsqueda" : "Abrir búsqueda"}
+                aria-expanded={mobileSearchOpen}
+              >
+                {mobileSearchOpen ? <X style={{ width: 19, height: 19 }} /> : <SearchIcon style={{ width: 19, height: 19 }} />}
+              </button>
 
               {/* Warehouse selector */}
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <Warehouse className="hidden sm:block" style={{ width: 16, height: 16, color: "#0d9488", flexShrink: 0 }} />
                 <Select value={warehouse} onValueChange={(v) => setWarehouse(v as WarehouseType)}>
-                  <SelectTrigger className="h-8 w-28 sm:w-40 text-xs" style={{ borderColor: "#99d8d5" }}>
-                    <SelectValue placeholder="Almacén" />
+                  <SelectTrigger className="h-10 w-24 sm:h-8 sm:w-40 text-xs" style={{ borderColor: "#99d8d5" }}>
+                    <SelectValue className="truncate" placeholder="Almacén" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos los almacenes</SelectItem>
@@ -524,9 +561,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
           </div>
+          {mobileSearchOpen && (
+            <div className="sm:hidden px-3 pb-3">
+              <GlobalSearch />
+            </div>
+          )}
         </header>
 
-        <main style={{ flex: 1, overflowX: "auto", minWidth: 0 }} className="p-4 sm:p-6 lg:p-8">
+        <main style={{ flex: 1, overflowX: "auto", minWidth: 0 }} className="p-3 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>

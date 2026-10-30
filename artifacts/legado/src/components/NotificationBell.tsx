@@ -135,8 +135,8 @@ export function NotificationBell() {
 
       {open && (
         <div
-          className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-lg border border-slate-200 z-50 overflow-hidden"
-          style={{ maxHeight: "480px" }}
+          className="absolute right-0 top-full mt-2 w-[calc(100vw-1.5rem)] max-w-80 sm:w-96 bg-white rounded-xl shadow-lg border border-slate-200 z-50 overflow-hidden"
+          style={{ maxHeight: "min(480px, calc(100dvh - 6rem))" }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
@@ -171,7 +171,7 @@ export function NotificationBell() {
           </div>
 
           {/* List */}
-          <div className="overflow-y-auto" style={{ maxHeight: "360px" }}>
+          <div className="overflow-y-auto" style={{ maxHeight: "min(360px, calc(100dvh - 11rem))" }}>
             {isLoading ? (
               <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
                 <Loader2 className="w-4 h-4 animate-spin" />
