@@ -238,12 +238,15 @@ export default function GestionDeUbicacionesPage() {
           )}
         </div>
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-950">
-            <b>Colorantes · Q1:</b> 5 racks con 4 niveles cada uno. Se registran los racks y sus 20 niveles; faltan los espacios por nivel.
+            <b>Colorantes · Q1:</b> 5 racks (C01–C05), con 4 niveles cada uno.
           </div>
           <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-950">
-            <b>Auxiliares · Q1:</b> Zona A con niveles A, B y C y 9 ubicaciones por nivel. Zonas B, C y D con un nivel cada una; sus espacios aún no están especificados.
+            <b>Auxiliares · Q1:</b> A01 tiene 3 niveles y 9 compartimientos por nivel. A02–A05 tienen un nivel cada una.
+          </div>
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
+            <b>Inmovilizados · Q1:</b> 50 latas numeradas (L01–L50), con capacidad aproximada de 50 kg cada una.
           </div>
         </div>
 
