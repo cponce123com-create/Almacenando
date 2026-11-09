@@ -155,6 +155,7 @@ export default function PreparacionDePedidosPage() {
   const [manualBarcode, setManualBarcode] = useState("");
   const [weighedQuantity, setWeighedQuantity] = useState("");
   const [weighedLot, setWeighedLot] = useState("");
+  const [lotToCheck, setLotToCheck] = useState("");
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrCodeRef = useRef<any>(null);
 
@@ -183,6 +184,13 @@ export default function PreparacionDePedidosPage() {
     },
   });
   const selectedOrder = detailQuery.data ?? null;
+
+  const lotCheck = useQuery<{ matches: Array<{ id: string; lotNumber: string; qualityStatus: string; expirationDate: string | null }> }>({
+    queryKey: ["/api/picking/lot-check", scannerItemId, lotToCheck],
+    enabled: !!scannerItemId && !!lotToCheck,
+    queryFn: () => api(`/api/picking/items/${encodeURIComponent(scannerItemId!)}/lot-check?lot=${encodeURIComponent(lotToCheck)}`),
+    staleTime: 0,
+  });
 
   // ── Mutations ────────────────────────────────────────────────────────────────
   const createOrderMutation = useMutation({
@@ -222,6 +230,7 @@ export default function PreparacionDePedidosPage() {
       setManualBarcode("");
       setWeighedQuantity("");
       setWeighedLot("");
+      setLotToCheck("");
       if (html5QrCodeRef.current) { html5QrCodeRef.current.stop().catch(() => {}); html5QrCodeRef.current = null; }
     },
     onError: (err: Error) => {
@@ -293,6 +302,7 @@ export default function PreparacionDePedidosPage() {
     setManualBarcode("");
     setWeighedQuantity("");
     setWeighedLot("");
+      setLotToCheck("");
 
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
@@ -845,7 +855,22 @@ export default function PreparacionDePedidosPage() {
                                     <Scan className="w-6 h-6 animate-pulse" />
                                   </div>
                                 </div>
-                                <div className="grid gap-2 sm:grid-cols-2 mt-2">\n                                  <label className="text-xs text-slate-600">Cantidad pesada ({item.unit})<Input aria-label="Cantidad pesada" type="number" min="0.001" step="0.001" value={weighedQuantity} onChange={e => setWeighedQuantity(e.target.value)} /></label>\n                                  <label className="text-xs text-slate-600">Lote<Input aria-label="Lote" value={weighedLot} onChange={e => setWeighedLot(e.target.value)} maxLength={120} /></label>\n                                </div>\n                                <div className="flex flex-wrap gap-2 mt-2">
+                                <div className="grid gap-2 sm:grid-cols-2 mt-2">\n                                  <label className="text-xs text-slate-600">Cantidad pesada ({item.unit})<Input aria-label="Cantidad pesada" type="number" min="0.001" step="0.001" value={weighedQuantity} onChange={e => setWeighedQuantity(e.target.value)} /></label>\n                                  <label className="text-xs text-slate-600">Lote<Input aria-label="Lote" value={weighedLot} onChange={e => { setWeighedLot(e.target.value); setLotToCheck(""); }} maxLength={120} /></label>\n                                </div>\n                                <div className="mt-2">
+                                  <Button type="button" size="sm" variant="outline" disabled={!weighedLot.trim() || lotCheck.isFetching} onClick={() => {
+                                    const value = weighedLot.trim();
+                                    if (value === lotToCheck) void lotCheck.refetch(); else setLotToCheck(value);
+                                  }}>Consultar lote</Button>
+                                  {lotCheck.isFetching && lotToCheck && <p className="mt-1 text-xs text-slate-500">Consultando…</p>}
+                                  {lotToCheck && lotCheck.isError && <p role="alert" className="mt-1 text-xs text-red-700">No se pudo consultar el lote. Verifica su estado antes de usarlo.</p>}
+                                  {lotToCheck && lotCheck.data && !lotCheck.isFetching && (
+                                    <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" role="status">
+                                      {lotCheck.data.matches.length === 0 ? "No se encontró este lote para el producto en el módulo de lotes. Verifícalo con calidad." :
+                                        lotCheck.data.matches.map(match => <p key={match.id}>Estado: {match.qualityStatus === "approved" ? "aprobado" : match.qualityStatus === "rejected" ? "rechazado" : "pendiente"} · Vencimiento: {match.expirationDate ?? "sin fecha registrada"}</p>)}
+                                      <p className="mt-1">Consulta informativa: confirma el estado y vencimiento según el procedimiento del almacén.</p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-2">
                                   <input
                                     type="text"
                                     value={manualBarcode}
