@@ -103,7 +103,7 @@ export default function WorkCenterPage() {
 
         <section className="rounded-xl border bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div><h2 className="flex items-center gap-2 font-semibold text-slate-900"><Package className="h-5 w-5 text-violet-700" /> Solicitud de compra sugerida · Q1</h2><p className="mt-1 text-xs text-slate-500">Recomendación editable basada en consumo promedio y disponibilidad actual.</p></div>
+            <div><h2 className="flex items-center gap-2 font-semibold text-slate-900"><Package className="h-5 w-5 text-violet-700" /> Solicitud de compra sugerida · Q1</h2><p className="mt-1 text-xs text-slate-500">Estimación editable para 7 días: consumo diario × 7 menos disponibilidad de la última extracción. Revisa la fecha de actualización y el plazo real de reposición.</p></div>
             <div className="flex flex-wrap items-center gap-2">
               <label className="text-xs text-slate-600">Cobertura
                 <select value={coverageDays} onChange={e => setCoverageDays(Number(e.target.value))} className="ml-2 h-9 rounded-md border bg-white px-2 text-sm">
