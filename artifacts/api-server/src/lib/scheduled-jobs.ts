@@ -6,7 +6,6 @@ import { emitNotification } from "./notification-events.js";
 import { registerJob, runStartupJobs } from "./background-jobs.js";
 
 const LOW_STOCK_BATCH_SIZE = 100;
-const EXPIRING_LOTS_BATCH_SIZE = 100;
 const EXPIRING_LOTS_DAYS_THRESHOLD = 30;
 
 /**
@@ -19,16 +18,16 @@ const EXPIRING_LOTS_DAYS_THRESHOLD = 30;
  */
 
 const SUPERVISOR_ROLES = ["admin", "supervisor"];
-const QUALITY_ROLES = ["admin", "quality"];
+const QUALITY_ROLES = ["admin", "supervisor", "quality"];
 
 async function getUsersByRoles(roles: string[]): Promise<Array<{ id: string }>> {
   return db
     .select({ id: usersTable.id })
     .from(usersTable)
     .where(
-      roles.length === 1
+      and(eq(usersTable.status, "active"), roles.length === 1
         ? eq(usersTable.role, roles[0]!)
-        : sql`${usersTable.role} IN (${sql.join(roles.map((r) => sql`${r}`), sql`, `)})`,
+        : sql`${usersTable.role} IN (${sql.join(roles.map((r) => sql`${r}`), sql`, `)})`),
     );
 }
 
@@ -148,10 +147,10 @@ async function checkLowStock(): Promise<number> {
 }
 
 async function checkExpiringLots(): Promise<number> {
-  const thirtyDaysFromNow = new Date();
-  thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-
   const now = new Date();
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  const todayMs = Date.parse(`${today}T00:00:00Z`);
+  const threshold = new Date(todayMs + EXPIRING_LOTS_DAYS_THRESHOLD * 86400000).toISOString().slice(0, 10);
 
   const expiringLots = await db
     .select({
@@ -165,12 +164,8 @@ async function checkExpiringLots(): Promise<number> {
     .from(dyeLotsTable)
     .innerJoin(productsTable, eq(dyeLotsTable.productId, productsTable.id))
     .where(
-      and(
-        lte(dyeLotsTable.expirationDate, thirtyDaysFromNow.toISOString().slice(0, 10)),
-        gte(dyeLotsTable.expirationDate, now.toISOString().slice(0, 10)),
-      ),
-    )
-    .limit(EXPIRING_LOTS_BATCH_SIZE);
+      lte(dyeLotsTable.expirationDate, threshold),
+    );
 
   if (expiringLots.length === 0) {
     logger.info("Scheduled job: no expiring lots found");
@@ -199,11 +194,13 @@ async function checkExpiringLots(): Promise<number> {
   for (const lot of expiringLots) {
     if (!lot.expirationDate) continue;
     const daysLeft = Math.ceil(
-      (new Date(lot.expirationDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      (Date.parse(`${lot.expirationDate}T00:00:00Z`) - todayMs) / 86400000,
     );
 
-    const title = `Lote próximo a vencer: ${lot.lotNumber}`;
-    const message = `El lote ${lot.lotNumber} de ${lot.productName} (${lot.productCode}) vence en ${daysLeft} días (${lot.expirationDate}).`;
+    const title = `${daysLeft < 0 ? "Lote vencido" : "Lote próximo a vencer"}: ${lot.productCode} / ${lot.lotNumber}`;
+    const message = daysLeft < 0
+      ? `El lote ${lot.lotNumber} de ${lot.productName} (${lot.productCode}) venció el ${lot.expirationDate}.`
+      : `El lote ${lot.lotNumber} de ${lot.productName} (${lot.productCode}) ${daysLeft === 0 ? "vence hoy" : `vence en ${daysLeft} días`} (${lot.expirationDate}).`;
 
     for (const user of qualityUsers) {
       const key = `${user.id}::${title}`;
@@ -222,27 +219,15 @@ async function checkExpiringLots(): Promise<number> {
     }
   }
 
-  // Bulk insert in one shot
-  if (inserts.length > 0) {
-    const insertedRows = await db.insert(notificationsTable).values(inserts).returning({
-      id: notificationsTable.id,
-      title: notificationsTable.title,
-      message: notificationsTable.message,
-      type: notificationsTable.type,
-      userId: notificationsTable.userId,
-      createdAt: notificationsTable.createdAt,
+  // Keep each insert bounded even when many lots need attention.
+  for (let i = 0; i < inserts.length; i += 200) {
+    const insertedRows = await db.insert(notificationsTable).values(inserts.slice(i, i + 200)).returning({
+      id: notificationsTable.id, title: notificationsTable.title, message: notificationsTable.message,
+      type: notificationsTable.type, userId: notificationsTable.userId, createdAt: notificationsTable.createdAt,
     });
-
-    // Emitir eventos SSE para cada notificación creada
     for (const n of insertedRows) {
-      emitNotification({
-        id: n.id,
-        title: n.title,
-        message: n.message,
-        type: n.type,
-        userId: n.userId,
-        createdAt: n.createdAt.toISOString(),
-      });
+      emitNotification({ id: n.id, title: n.title, message: n.message, type: n.type,
+        userId: n.userId, createdAt: n.createdAt.toISOString() });
     }
   }
 

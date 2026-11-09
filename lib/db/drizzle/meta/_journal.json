@@ -183,6 +183,13 @@
       "when": 1793900000000,
       "tag": "0028_pick_item_weighings",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793900001000,
+      "tag": "0029_void_pick_weighings",
+      "breakpoints": true
     }
   ]
 }

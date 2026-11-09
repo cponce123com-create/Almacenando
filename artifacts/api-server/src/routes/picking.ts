@@ -5,6 +5,7 @@ import {
   pickOrdersTable,
   pickItemsTable,
   pickItemWeighingsTable,
+  dyeLotsTable,
   productsTable,
   locationsTable,
   usersTable,
@@ -284,6 +285,9 @@ router.get(
       quantity: pickItemWeighingsTable.quantity,
       lot: pickItemWeighingsTable.lot,
       recordedByName: usersTable.name,
+      voidedAt: pickItemWeighingsTable.voidedAt,
+      voidedBy: pickItemWeighingsTable.voidedBy,
+      voidReason: pickItemWeighingsTable.voidReason,
       createdAt: pickItemWeighingsTable.createdAt,
     }).from(pickItemWeighingsTable)
       .leftJoin(usersTable, eq(pickItemWeighingsTable.recordedBy, usersTable.id))
@@ -333,6 +337,62 @@ router.get(
     res.json(items);
   }),
 );
+
+// Consulta informativa: un lote puede tener varios registros y su ausencia
+// en este módulo no demuestra que el lote no exista físicamente.
+router.get("/items/:id/lot-check", requireAuth, asyncHandler(async (req, res) => {
+  const lot = typeof req.query.lot === "string" ? req.query.lot.trim().slice(0, 120) : "";
+  if (!lot) { res.status(400).json({ error: "Ingresa el número de lote." }); return; }
+  const [item] = await db.select({ productId: pickItemsTable.productId })
+    .from(pickItemsTable).where(eq(pickItemsTable.id, String(req.params.id))).limit(1);
+  if (!item) { res.status(404).json({ error: "Ítem de picking no encontrado." }); return; }
+  const matches = await db.select({
+    id: dyeLotsTable.id, lotNumber: dyeLotsTable.lotNumber,
+    qualityStatus: dyeLotsTable.qualityStatus, expirationDate: dyeLotsTable.expirationDate,
+  }).from(dyeLotsTable).where(and(
+    eq(dyeLotsTable.productId, item.productId),
+    sql`lower(trim(${dyeLotsTable.lotNumber})) = lower(${lot})`,
+  )).orderBy(desc(dyeLotsTable.createdAt)).limit(50);
+  res.json({ matches });
+}));
+
+// A supervisor may void an erroneous weighing. The record is retained.
+router.post("/weighings/:id/void", requireAuth, requireRole("admin", "supervisor"), asyncHandler(async (req, res) => {
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (reason.length < 5 || reason.length > 500) {
+    res.status(400).json({ error: "Indica un motivo de entre 5 y 500 caracteres." }); return;
+  }
+  const id = String(req.params.id);
+  const [ref] = await db.select({ orderId: pickItemsTable.orderId })
+    .from(pickItemWeighingsTable)
+    .innerJoin(pickItemsTable, eq(pickItemWeighingsTable.itemId, pickItemsTable.id))
+    .where(eq(pickItemWeighingsTable.id, id)).limit(1);
+  if (!ref) { res.status(404).json({ error: "Pesaje no encontrado." }); return; }
+  const user = req as AuthenticatedRequest;
+  const result = await db.transaction(async tx => {
+    const [order] = await tx.select().from(pickOrdersTable).where(eq(pickOrdersTable.id, ref.orderId)).for("update");
+    if (!order || order.status === "cancelled") return { error: "No se puede modificar esta orden.", status: 409 } as const;
+    const [weighing] = await tx.select().from(pickItemWeighingsTable).where(eq(pickItemWeighingsTable.id, id)).limit(1);
+    if (!weighing) return { error: "Pesaje no encontrado.", status: 404 } as const;
+    if (weighing.voidedAt) return { error: "El pesaje ya fue anulado.", status: 409 } as const;
+    const [item] = await tx.select().from(pickItemsTable).where(eq(pickItemsTable.id, weighing.itemId)).limit(1);
+    if (!item || Math.round(item.pickedQuantity * 1000) < Math.round(weighing.quantity * 1000)) {
+      return { error: "Los totales no coinciden; revisa la orden antes de corregir.", status: 409 } as const;
+    }
+    const remaining = (Math.round(item.pickedQuantity * 1000) - Math.round(weighing.quantity * 1000)) / 1000;
+    await tx.update(pickItemWeighingsTable).set({ voidedAt: new Date(), voidedBy: user.userId, voidReason: reason })
+      .where(eq(pickItemWeighingsTable.id, id));
+    await tx.update(pickItemsTable).set({ pickedQuantity: remaining, pickedAt: remaining === 0 ? null : item.pickedAt })
+      .where(eq(pickItemsTable.id, weighing.itemId));
+    await tx.update(pickOrdersTable).set({ status: "in_progress", completedAt: null })
+      .where(eq(pickOrdersTable.id, ref.orderId));
+    return { ok: true, itemId: weighing.itemId } as const;
+  });
+  if ("error" in result) { res.status(result.status ?? 500).json({ error: result.error }); return; }
+  void writeAuditLog({ userId: user.userId, action: "update", resource: "pick_items",
+    resourceId: result.itemId, details: { action: "weighing_voided", weighingId: id, reason }, ipAddress: req.ip });
+  res.json({ message: "Pesaje anulado. La orden quedó en progreso para su corrección." });
+}));
 
 // ── Scan Item ────────────────────────────────────────────────────────────────
 

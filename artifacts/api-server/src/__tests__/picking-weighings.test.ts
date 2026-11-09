@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ select: vi.fn() }));
 vi.mock("@workspace/db", () => ({
   db: { select: mocks.select },
   pickOrdersTable: {}, pickItemsTable: {}, pickItemWeighingsTable: {},
-  productsTable: {}, locationsTable: {}, usersTable: {},
+  productsTable: {}, locationsTable: {}, usersTable: {}, dyeLotsTable: {},
 }));
 vi.mock("../lib/auth.js", () => ({
   requireAuth: (req: any, _res: any, next: any) => { req.userId = "u1"; req.userRole = req.get("x-role"); next(); },
@@ -35,5 +35,33 @@ describe("Validación de pesajes de preparación", () => {
     const res = await request(app).put("/picking/items/i1/scan").set("x-role", "viewer")
       .send({ barcode: "123", quantity: 0.5, lot: "L1" });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("Consulta informativa del lote", () => {
+  it("exige un número de lote", async () => {
+    const res = await request(app).get("/picking/items/i1/lot-check?lot=%20%20").set("x-role", "operator");
+    expect(res.status).toBe(400);
+  });
+  it("devuelve los estados y vencimientos registrados para el producto", async () => {
+    const itemQuery = { from: () => ({ where: () => ({ limit: async () => [{ productId: "p1" }] }) }) };
+    const lotQuery = { from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [
+      { id: "l1", lotNumber: "L1", qualityStatus: "pending", expirationDate: "2027-01-01" },
+    ] }) }) }) };
+    mocks.select.mockReset().mockReturnValueOnce(itemQuery).mockReturnValueOnce(lotQuery);
+    const res = await request(app).get("/picking/items/i1/lot-check?lot=L1").set("x-role", "operator");
+    expect(res.status).toBe(200);
+    expect(res.body.matches).toEqual([{ id: "l1", lotNumber: "L1", qualityStatus: "pending", expirationDate: "2027-01-01" }]);
+  });
+});
+
+describe("Anulación de pesajes", () => {
+  it("impide anular a un operador", async () => {
+    const res = await request(app).post("/picking/weighings/w1/void").set("x-role", "operator").send({ reason: "Peso equivocado" });
+    expect(res.status).toBe(403);
+  });
+  it("exige motivo al supervisor", async () => {
+    const res = await request(app).post("/picking/weighings/w1/void").set("x-role", "supervisor").send({ reason: "mal" });
+    expect(res.status).toBe(400);
   });
 });

@@ -43,6 +43,7 @@ router.get("/summary", requireAuth, asyncHandler(async (req, res) => {
     SELECT ir.id, ir.warehouse, ir.record_date AS "recordDate", ir.physical_count AS "physicalCount",
       ir.previous_balance AS "systemBalance", ir.missing_label AS "missingLabel", ir.location,
       p.id AS "productId", p.code, p.name, p.unit,
+      (ir.physical_count IS NOT NULL AND ABS(ir.physical_count - ir.previous_balance) >= 0.01) AS "hasDifference",
       COALESCE(boxes.lots, '') AS lots,
       CASE WHEN COALESCE(ir.missing_label, false) THEN 'missing_label' ELSE 'count_difference' END AS kind
     FROM latest ir
@@ -56,6 +57,21 @@ router.get("/summary", requireAuth, asyncHandler(async (req, res) => {
     ORDER BY ir.record_date DESC, p.code
     LIMIT 50
   `);
+
+  const incidentTotals = await db.execute(sql`
+    WITH latest AS (
+      SELECT DISTINCT ON (ir.product_id) ir.*
+      FROM inventory_records ir
+      WHERE ir.warehouse = ${warehouse}
+      ORDER BY ir.product_id, ir.record_date DESC, ir.created_at DESC, ir.id DESC
+    )
+    SELECT COUNT(*) FILTER (WHERE COALESCE(missing_label, false)
+      OR (physical_count IS NOT NULL AND ABS(physical_count - previous_balance) >= 0.01))::int AS incidents,
+      COUNT(*) FILTER (WHERE COALESCE(missing_label, false))::int AS "labelIssues",
+      COUNT(*) FILTER (WHERE physical_count IS NOT NULL AND ABS(physical_count - previous_balance) >= 0.01)::int AS "countDifferences"
+    FROM latest
+  `);
+  const totals = incidentTotals.rows[0] as { incidents: number; labelIssues: number; countDifferences: number } | undefined;
 
   const payload = run?.payload as { rows?: unknown[]; config?: unknown } | null;
   const availabilityRows = (payload?.rows ?? []) as Array<Record<string, unknown>>;
@@ -78,10 +94,10 @@ router.get("/summary", requireAuth, asyncHandler(async (req, res) => {
     counts: {
       purchaseCandidates: allPurchaseCandidates.filter(row => row.recommendation > 0).length,
       pendingCounts: Number((cycleStats.rows as Array<{ status: string; total: number }>).find(row => row.status === "pending")?.total ?? 0),
-      cycleAlerts: cycleAlerts.rows.length,
-      incidents: incidents.rows.length,
-      labelIssues: incidents.rows.filter((row: any) => row.kind === "missing_label").length,
-      countDifferences: incidents.rows.filter((row: any) => row.kind === "count_difference").length,
+      cycleAlerts: Number((cycleStats.rows as Array<{ status: string; total: number }>).find(row => row.status === "consumption_alert")?.total ?? 0),
+      incidents: Number(totals?.incidents ?? 0),
+      labelIssues: Number(totals?.labelIssues ?? 0),
+      countDifferences: Number(totals?.countDifferences ?? 0),
     },
   });
 }));

@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const todayInLima = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ interface PickingOrderItem {
   quantity: number;
   pickedQuantity: number;
   unit: string;
-  weighings: Array<{ id: string; quantity: number; lot: string; recordedByName: string | null; createdAt: string }>;
+  weighings: Array<{ id: string; quantity: number; lot: string; recordedByName: string | null; createdAt: string; voidedAt: string | null; voidedBy: string | null; voidReason: string | null }>;
   location?: string;
   warehouse?: string;
   zone?: string;
@@ -155,6 +156,7 @@ export default function PreparacionDePedidosPage() {
   const [manualBarcode, setManualBarcode] = useState("");
   const [weighedQuantity, setWeighedQuantity] = useState("");
   const [weighedLot, setWeighedLot] = useState("");
+  const [lotToCheck, setLotToCheck] = useState("");
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrCodeRef = useRef<any>(null);
 
@@ -183,6 +185,13 @@ export default function PreparacionDePedidosPage() {
     },
   });
   const selectedOrder = detailQuery.data ?? null;
+
+  const lotCheck = useQuery<{ matches: Array<{ id: string; lotNumber: string; qualityStatus: string; expirationDate: string | null }> }>({
+    queryKey: ["/api/picking/lot-check", scannerItemId, lotToCheck],
+    enabled: !!scannerItemId && !!lotToCheck,
+    queryFn: () => api(`/api/picking/items/${encodeURIComponent(scannerItemId!)}/lot-check?lot=${encodeURIComponent(lotToCheck)}`),
+    staleTime: 0,
+  });
 
   // ── Mutations ────────────────────────────────────────────────────────────────
   const createOrderMutation = useMutation({
@@ -222,12 +231,31 @@ export default function PreparacionDePedidosPage() {
       setManualBarcode("");
       setWeighedQuantity("");
       setWeighedLot("");
+      setLotToCheck("");
       if (html5QrCodeRef.current) { html5QrCodeRef.current.stop().catch(() => {}); html5QrCodeRef.current = null; }
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
+
+  const voidWeighingMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => api(`/api/picking/weighings/${encodeURIComponent(id)}/void`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/picking/orders"] });
+      toast({ title: "Pesaje anulado", description: "La orden volvió a quedar en progreso." });
+    },
+    onError: (err: Error) => toast({ title: "No se pudo anular", description: err.message, variant: "destructive" }),
+  });
+
+  const voidWeighing = (id: string) => {
+    const reason = window.prompt("Anular este pesaje reabre la orden y reduce la cantidad preparada. Indica el motivo (mínimo 5 caracteres):");
+    if (reason === null) return;
+    if (reason.trim().length < 5) { toast({ title: "Motivo requerido", description: "Escribe al menos 5 caracteres.", variant: "destructive" }); return; }
+    voidWeighingMutation.mutate({ id, reason: reason.trim() });
+  };
 
   // ── Product selection helpers ────────────────────────────────────────────────
   const filteredProducts = useMemo(() => {
@@ -293,6 +321,7 @@ export default function PreparacionDePedidosPage() {
     setManualBarcode("");
     setWeighedQuantity("");
     setWeighedLot("");
+      setLotToCheck("");
 
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
@@ -827,7 +856,10 @@ export default function PreparacionDePedidosPage() {
 
                             {item.weighings?.length > 0 && (
                               <ul className="mt-2 space-y-1 text-xs text-slate-600" aria-label="Pesajes registrados">
-                                {item.weighings.map(w => <li key={w.id}>Lote {w.lot} · {w.quantity} {item.unit} · {w.recordedByName ?? "Usuario"} · {new Date(w.createdAt).toLocaleString("es-PE")}</li>)}
+                                {item.weighings.map(w => <li key={w.id} className="flex flex-wrap items-center gap-2">
+                                  <span className={w.voidedAt ? "text-red-700" : ""}>Lote {w.lot} · {w.quantity} {item.unit} · {w.recordedByName ?? "Usuario"} · {new Date(w.createdAt).toLocaleString("es-PE")}{w.voidedAt ? ` · ANULADO: ${w.voidReason ?? "sin motivo"} · ${new Date(w.voidedAt).toLocaleString("es-PE")} · usuario ${w.voidedBy ?? "—"}` : ""}</span>
+                                  {!w.voidedAt && (user?.role === "admin" || user?.role === "supervisor") && <Button size="sm" variant="outline" disabled={voidWeighingMutation.isPending} onClick={() => voidWeighing(w.id)}>Anular pesaje</Button>}
+                                </li>)}
                               </ul>
                             )}
                             {item.pickedQuantity > 0 && !item.weighings?.length && <p className="mt-2 text-xs text-amber-800">Registro anterior sin detalle de pesajes o lote.</p>}
@@ -845,7 +877,22 @@ export default function PreparacionDePedidosPage() {
                                     <Scan className="w-6 h-6 animate-pulse" />
                                   </div>
                                 </div>
-                                <div className="grid gap-2 sm:grid-cols-2 mt-2">\n                                  <label className="text-xs text-slate-600">Cantidad pesada ({item.unit})<Input aria-label="Cantidad pesada" type="number" min="0.001" step="0.001" value={weighedQuantity} onChange={e => setWeighedQuantity(e.target.value)} /></label>\n                                  <label className="text-xs text-slate-600">Lote<Input aria-label="Lote" value={weighedLot} onChange={e => setWeighedLot(e.target.value)} maxLength={120} /></label>\n                                </div>\n                                <div className="flex flex-wrap gap-2 mt-2">
+                                <div className="grid gap-2 sm:grid-cols-2 mt-2">\n                                  <label className="text-xs text-slate-600">Cantidad pesada ({item.unit})<Input aria-label="Cantidad pesada" type="number" min="0.001" step="0.001" value={weighedQuantity} onChange={e => setWeighedQuantity(e.target.value)} /></label>\n                                  <label className="text-xs text-slate-600">Lote<Input aria-label="Lote" value={weighedLot} onChange={e => { setWeighedLot(e.target.value); setLotToCheck(""); }} maxLength={120} /></label>\n                                </div>\n                                <div className="mt-2">
+                                  <Button type="button" size="sm" variant="outline" disabled={!weighedLot.trim() || lotCheck.isFetching} onClick={() => {
+                                    const value = weighedLot.trim();
+                                    if (value === lotToCheck) void lotCheck.refetch(); else setLotToCheck(value);
+                                  }}>Consultar lote</Button>
+                                  {lotCheck.isFetching && lotToCheck && <p className="mt-1 text-xs text-slate-500">Consultando…</p>}
+                                  {lotToCheck && lotCheck.isError && <p role="alert" className="mt-1 text-xs text-red-700">No se pudo consultar el lote. Verifica su estado antes de usarlo.</p>}
+                                  {lotToCheck && lotCheck.data && !lotCheck.isFetching && (
+                                    <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" role="status">
+                                      {lotCheck.data.matches.length === 0 ? "No se encontró este lote para el producto en el módulo de lotes. Verifícalo con calidad." :
+                                        lotCheck.data.matches.map(match => <p key={match.id}>Estado: {match.qualityStatus === "approved" ? "aprobado" : match.qualityStatus === "rejected" ? "rechazado" : "pendiente"} · Vencimiento: {match.expirationDate ?? "sin fecha registrada"} {match.expirationDate && match.expirationDate < todayInLima() ? "— VENCIDO" : ""}</p>)}
+                                      <p className="mt-1">Consulta informativa: confirma el estado y vencimiento según el procedimiento del almacén.</p>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-2 mt-2">
                                   <input
                                     type="text"
                                     value={manualBarcode}
