@@ -176,6 +176,13 @@
       "when": 1793309403000,
       "tag": "0027_immobilized_can_labels_only",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793900000000,
+      "tag": "0028_pick_item_weighings",
+      "breakpoints": true
     }
   ]
 }
