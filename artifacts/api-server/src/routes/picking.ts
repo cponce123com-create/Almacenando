@@ -4,6 +4,7 @@ import { db } from "@workspace/db";
 import {
   pickOrdersTable,
   pickItemsTable,
+  pickItemWeighingsTable,
   productsTable,
   locationsTable,
   usersTable,
@@ -31,14 +32,16 @@ const createOrderSchema = z.object({
     .array(
       z.object({
         productId: z.string().min(1, "El ID del producto es requerido"),
-        quantity: z.number().int().min(1, "La cantidad debe ser al menos 1"),
+        quantity: z.number().finite().positive().max(1_000_000_000).refine(v => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, "Usa hasta tres decimales"),
       }),
     )
     .min(1, "Debe incluir al menos un producto"),
 });
 
 const scanSchema = z.object({
-  barcode: z.string().min(1, "El código de barras es requerido"),
+  barcode: z.string().trim().min(1, "El código de barras es requerido"),
+  quantity: z.number().finite().positive().max(1_000_000_000).refine(v => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6, "Usa hasta tres decimales"),
+  lot: z.string().trim().min(1, "Ingresa el lote").max(120),
 });
 
 // ── List Orders ──────────────────────────────────────────────────────────────
@@ -261,6 +264,7 @@ router.get(
         pickedAt: pickItemsTable.pickedAt,
         productCode: productsTable.code,
         productName: productsTable.name,
+        unit: productsTable.unit,
         barcode: productsTable.barcode,
         warehouse: locationsTable.warehouse,
         zone: locationsTable.zone,
@@ -274,7 +278,18 @@ router.get(
       .where(eq(pickItemsTable.orderId, id as string))
       .orderBy(asc(locationsTable.rack), asc(locationsTable.shelf), asc(locationsTable.position));
 
-    res.json({ order, items });
+    const weighings = items.length ? await db.select({
+      id: pickItemWeighingsTable.id,
+      itemId: pickItemWeighingsTable.itemId,
+      quantity: pickItemWeighingsTable.quantity,
+      lot: pickItemWeighingsTable.lot,
+      recordedByName: usersTable.name,
+      createdAt: pickItemWeighingsTable.createdAt,
+    }).from(pickItemWeighingsTable)
+      .leftJoin(usersTable, eq(pickItemWeighingsTable.recordedBy, usersTable.id))
+      .where(inArray(pickItemWeighingsTable.itemId, items.map(item => item.id)))
+      .orderBy(asc(pickItemWeighingsTable.createdAt)) : [];
+    res.json({ order, items: items.map(item => ({ ...item, weighings: weighings.filter(w => w.itemId === item.id) })) });
   }),
 );
 
@@ -301,6 +316,7 @@ router.get(
         pickedAt: pickItemsTable.pickedAt,
         productCode: productsTable.code,
         productName: productsTable.name,
+        unit: productsTable.unit,
         barcode: productsTable.barcode,
         warehouse: locationsTable.warehouse,
         zone: locationsTable.zone,
@@ -337,95 +353,59 @@ router.put(
       return;
     }
 
-    const { barcode } = parsed.data;
-
-    // Find the pick item
-    const [pickItem] = await db
-      .select()
-      .from(pickItemsTable)
-      .where(eq(pickItemsTable.id, id as string))
-      .limit(1);
-
-    if (!pickItem) {
-      res.status(404).json({ error: "Ítem de picking no encontrado" });
-      return;
-    }
-
-    // Find the product and validate barcode
-    const [product] = await db
-      .select({ id: productsTable.id, barcode: productsTable.barcode, name: productsTable.name })
-      .from(productsTable)
-      .where(eq(productsTable.id, pickItem.productId))
-      .limit(1);
-
-    if (!product) {
-      res.status(404).json({ error: "Producto asociado no encontrado" });
-      return;
-    }
-
-    if (product.barcode !== barcode) {
-      res.status(400).json({ error: "El código de barras no coincide con el producto esperado" });
-      return;
-    }
-
-    // Mark item as fully picked
-    const now = new Date();
-    const [updatedItem] = await db
-      .update(pickItemsTable)
-      .set({
-        pickedQuantity: pickItem.quantity,
-        pickedAt: now,
-      })
-      .where(eq(pickItemsTable.id, id as string))
-      .returning();
-
-    if (!updatedItem) {
-      res.status(500).json({ error: "Error al actualizar el ítem" });
-      return;
-    }
-
+    const { barcode, quantity, lot } = parsed.data;
     const authedReq = req as AuthenticatedRequest;
 
-    void writeAuditLog({
-      userId: authedReq.userId,
-      action: "update",
-      resource: "pick_items",
-      resourceId: id,
-      details: { orderId: pickItem.orderId, productName: product.name, barcode, action: "item_picked" },
-      ipAddress: req.ip,
-    });
+    // Lock the order first so simultaneous weighings cannot lose updates or
+    // incorrectly complete an order while another item is being processed.
+    const [found] = await db.select({ orderId: pickItemsTable.orderId })
+      .from(pickItemsTable).where(eq(pickItemsTable.id, id)).limit(1);
+    if (!found) { res.status(404).json({ error: "Ítem de picking no encontrado" }); return; }
 
-    // Check if all items in the order are now picked
-    const [pendingCount] = await db
-      .select({ total: count() })
-      .from(pickItemsTable)
-      .where(
-        and(
-          eq(pickItemsTable.orderId, pickItem.orderId),
-          eq(pickItemsTable.pickedQuantity, 0),
-        ),
-      );
-
-    let orderStatus: string | undefined;
-
-    if ((pendingCount?.total ?? 0) === 0) {
-      const [updatedOrder] = await db
-        .update(pickOrdersTable)
-        .set({ status: "completed", completedAt: now })
-        .where(eq(pickOrdersTable.id, pickItem.orderId))
-        .returning();
-
-      if (updatedOrder) {
-        orderStatus = updatedOrder.status;
-        logger.info({ orderId: pickItem.orderId }, "Pick order completed");
+    const result = await db.transaction(async tx => {
+      const [order] = await tx.select().from(pickOrdersTable)
+        .where(eq(pickOrdersTable.id, found.orderId)).for("update");
+      if (!order || order.status === "cancelled" || order.status === "completed") {
+        return { error: "La orden no está disponible para registrar pesajes.", status: 409 } as const;
       }
-    }
-
-    res.json({
-      item: updatedItem,
-      orderCompleted: orderStatus === "completed",
-      ...(orderStatus ? { orderStatus } : {}),
+      const [item] = await tx.select().from(pickItemsTable)
+        .where(eq(pickItemsTable.id, id)).limit(1);
+      if (!item) return { error: "Ítem de picking no encontrado", status: 404 } as const;
+      const [product] = await tx.select({ barcode: productsTable.barcode, name: productsTable.name })
+        .from(productsTable).where(eq(productsTable.id, item.productId)).limit(1);
+      if (!product || product.barcode !== barcode) {
+        return { error: "El código de barras no coincide con el producto esperado", status: 400 } as const;
+      }
+      // Integer thousandths prevent floating point drift in accumulation.
+      const expected = Math.round(item.quantity * 1000);
+      const current = Math.round(item.pickedQuantity * 1000);
+      const added = Math.round(quantity * 1000);
+      if (current + added > expected) {
+        return { error: "La cantidad supera lo pendiente de la orden. Revisa el peso antes de registrar.", status: 409 } as const;
+      }
+      const now = new Date();
+      const [updated] = await tx.update(pickItemsTable).set({
+        pickedQuantity: (current + added) / 1000,
+        pickedAt: now,
+      }).where(eq(pickItemsTable.id, id)).returning();
+      await tx.insert(pickItemWeighingsTable).values({
+        id: generateId(), itemId: id, quantity, lot, recordedBy: authedReq.userId, createdAt: now,
+      });
+      const [pending] = await tx.select({ total: count() }).from(pickItemsTable)
+        .where(and(eq(pickItemsTable.orderId, found.orderId), sql`${pickItemsTable.pickedQuantity} < ${pickItemsTable.quantity}`));
+      const completed = (pending?.total ?? 0) === 0;
+      await tx.update(pickOrdersTable).set({
+        status: completed ? "completed" : "in_progress",
+        completedAt: completed ? now : null,
+      }).where(eq(pickOrdersTable.id, found.orderId));
+      return { item: updated, orderCompleted: completed, orderStatus: completed ? "completed" : "in_progress", productName: product.name } as const;
     });
+    if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
+    void writeAuditLog({
+      userId: authedReq.userId, action: "update", resource: "pick_items", resourceId: id,
+      details: { orderId: found.orderId, productName: result.productName, quantity, lot, action: "weighing_recorded" }, ipAddress: req.ip,
+    });
+    res.json({ item: result.item, orderCompleted: result.orderCompleted, orderStatus: result.orderStatus });
   }),
 );
 
