@@ -95,7 +95,7 @@ interface OrderFormItem {
   productId: string;
   productCode: string;
   productName: string;
-  quantity: number;
+  quantity: string;
   unit: string;
 }
 
@@ -193,7 +193,7 @@ export default function PreparacionDePedidosPage() {
         body: JSON.stringify({
           items: items.map((i) => ({
             productId: i.productId,
-            quantity: i.quantity,
+            quantity: Number(i.quantity),
           })),
         }),
       }),
@@ -247,7 +247,7 @@ export default function PreparacionDePedidosPage() {
       const existing = prev.find((p) => p.productId === product.id);
       if (existing) {
         return prev.map((p) =>
-          p.productId === product.id ? { ...p, quantity: p.quantity + 1 } : p
+          p.productId === product.id ? { ...p, quantity: String((Number(p.quantity) || 0) + 1) } : p
         );
       }
       return [
@@ -256,18 +256,18 @@ export default function PreparacionDePedidosPage() {
           productId: product.id,
           productCode: product.code,
           productName: product.name,
-          quantity: 1,
+          quantity: "1",
           unit: product.unit,
         },
       ];
     });
   };
 
-  const updateQuantity = (productId: string, qty: number) => {
+  const updateQuantity = (productId: string, qty: string) => {
     setSelectedProducts((prev) =>
       prev.map((p) =>
         p.productId === productId
-          ? { ...p, quantity: Math.max(0.001, qty) }
+          ? { ...p, quantity: qty }
           : p
       )
     );
@@ -282,6 +282,8 @@ export default function PreparacionDePedidosPage() {
       toast({ title: "Sin productos", description: "Agrega al menos un producto a la orden.", variant: "destructive" });
       return;
     }
+    const invalid = selectedProducts.find(item => { const q = Number(item.quantity); return !Number.isFinite(q) || q <= 0 || Math.abs(q * 1000 - Math.round(q * 1000)) >= 1e-6; });
+    if (invalid) { toast({ title: "Cantidad inválida", description: `Revisa la cantidad de ${invalid.productName}: debe ser positiva y tener hasta tres decimales.`, variant: "destructive" }); return; }
     createOrderMutation.mutate(selectedProducts);
   };
 
@@ -475,7 +477,7 @@ export default function PreparacionDePedidosPage() {
                               min={0.001}
                               step={0.001}
                               value={item.quantity}
-                              onChange={(e) => updateQuantity(item.productId, parseFloat(e.target.value) || 0.001)}
+                              onChange={(e) => updateQuantity(item.productId, e.target.value)}
                               className="w-20 h-8 text-center text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/40"
                             />
                           </TableCell>
