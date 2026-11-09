@@ -69,7 +69,7 @@ interface PickingOrderItem {
   quantity: number;
   pickedQuantity: number;
   unit: string;
-  weighings: Array<{ id: string; quantity: number; lot: string; recordedByName: string | null; createdAt: string }>;
+  weighings: Array<{ id: string; quantity: number; lot: string; recordedByName: string | null; createdAt: string; voidedAt: string | null; voidedBy: string | null; voidReason: string | null }>;
   location?: string;
   warehouse?: string;
   zone?: string;
@@ -237,6 +237,24 @@ export default function PreparacionDePedidosPage() {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
+
+  const voidWeighingMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) => api(`/api/picking/weighings/${encodeURIComponent(id)}/void`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/picking/orders"] });
+      toast({ title: "Pesaje anulado", description: "La orden volvió a quedar en progreso." });
+    },
+    onError: (err: Error) => toast({ title: "No se pudo anular", description: err.message, variant: "destructive" }),
+  });
+
+  const voidWeighing = (id: string) => {
+    const reason = window.prompt("Anular este pesaje reabre la orden y reduce la cantidad preparada. Indica el motivo (mínimo 5 caracteres):");
+    if (reason === null) return;
+    if (reason.trim().length < 5) { toast({ title: "Motivo requerido", description: "Escribe al menos 5 caracteres.", variant: "destructive" }); return; }
+    voidWeighingMutation.mutate({ id, reason: reason.trim() });
+  };
 
   // ── Product selection helpers ────────────────────────────────────────────────
   const filteredProducts = useMemo(() => {
@@ -837,7 +855,10 @@ export default function PreparacionDePedidosPage() {
 
                             {item.weighings?.length > 0 && (
                               <ul className="mt-2 space-y-1 text-xs text-slate-600" aria-label="Pesajes registrados">
-                                {item.weighings.map(w => <li key={w.id}>Lote {w.lot} · {w.quantity} {item.unit} · {w.recordedByName ?? "Usuario"} · {new Date(w.createdAt).toLocaleString("es-PE")}</li>)}
+                                {item.weighings.map(w => <li key={w.id} className="flex flex-wrap items-center gap-2">
+                                  <span className={w.voidedAt ? "text-red-700" : ""}>Lote {w.lot} · {w.quantity} {item.unit} · {w.recordedByName ?? "Usuario"} · {new Date(w.createdAt).toLocaleString("es-PE")}{w.voidedAt ? ` · ANULADO: ${w.voidReason ?? "sin motivo"} · ${new Date(w.voidedAt).toLocaleString("es-PE")} · usuario ${w.voidedBy ?? "—"}` : ""}</span>
+                                  {!w.voidedAt && (user?.role === "admin" || user?.role === "supervisor") && <Button size="sm" variant="outline" disabled={voidWeighingMutation.isPending} onClick={() => voidWeighing(w.id)}>Anular pesaje</Button>}
+                                </li>)}
                               </ul>
                             )}
                             {item.pickedQuantity > 0 && !item.weighings?.length && <p className="mt-2 text-xs text-amber-800">Registro anterior sin detalle de pesajes o lote.</p>}
