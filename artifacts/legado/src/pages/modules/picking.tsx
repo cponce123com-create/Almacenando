@@ -375,7 +375,7 @@ export default function PreparacionDePedidosPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+        <div className="flex flex-wrap gap-1 bg-slate-100 rounded-lg p-1">
           {[
             { id: "create" as const, label: "Crear Orden", icon: Plus },
             { id: "orders" as const, label: "Órdenes Activas", icon: ListTodo },
@@ -658,7 +658,7 @@ export default function PreparacionDePedidosPage() {
         {/* ── TAB: Order Detail ────────────────────────────────────────────────── */}
         {tab === "detail" && (
           <>
-            {!selectedOrder ? (
+            {detailQuery.isLoading && selectedOrderId ? <div className="p-6 text-sm text-slate-500">Cargando detalle…</div> : detailQuery.isError ? <div role="alert" className="p-6 text-sm text-red-700">No se pudo cargar el detalle de la orden.</div> : !selectedOrder ? (
               <div className="bg-white rounded-xl border border-slate-100 p-8 text-center">
                 <div className="flex flex-col items-center gap-3 text-slate-400">
                   <Eye className="w-10 h-10" />
