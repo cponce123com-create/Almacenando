@@ -327,6 +327,7 @@ router.get(
 router.put(
   "/items/:id/scan",
   requireAuth,
+  requireRole("admin", "supervisor", "operator"),
   asyncHandler(async (req, res) => {
     const id = req.params.id as string;
 
