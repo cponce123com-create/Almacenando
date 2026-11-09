@@ -486,7 +486,7 @@ export default function PreparacionDePedidosPage() {
                   <Button
                     onClick={handleCreateOrder}
                     className="gap-2"
-                    disabled={createOrderMutation.isPending}
+                    disabled={!canWrite || createOrderMutation.isPending}
                   >
                     {createOrderMutation.isPending ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -799,6 +799,7 @@ export default function PreparacionDePedidosPage() {
                                     variant="outline"
                                     size="sm"
                                     className="gap-1.5 text-amber-600 border-amber-200"
+                                    disabled={!canWrite}
                                     onClick={() => startInlineScanner(item.id)}
                                   >
                                     <Scan className="w-3.5 h-3.5" />
