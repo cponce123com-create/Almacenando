@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const todayInLima = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -886,7 +887,7 @@ export default function PreparacionDePedidosPage() {
                                   {lotToCheck && lotCheck.data && !lotCheck.isFetching && (
                                     <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900" role="status">
                                       {lotCheck.data.matches.length === 0 ? "No se encontró este lote para el producto en el módulo de lotes. Verifícalo con calidad." :
-                                        lotCheck.data.matches.map(match => <p key={match.id}>Estado: {match.qualityStatus === "approved" ? "aprobado" : match.qualityStatus === "rejected" ? "rechazado" : "pendiente"} · Vencimiento: {match.expirationDate ?? "sin fecha registrada"}</p>)}
+                                        lotCheck.data.matches.map(match => <p key={match.id}>Estado: {match.qualityStatus === "approved" ? "aprobado" : match.qualityStatus === "rejected" ? "rechazado" : "pendiente"} · Vencimiento: {match.expirationDate ?? "sin fecha registrada"} {match.expirationDate && match.expirationDate < todayInLima() ? "— VENCIDO" : ""}</p>)}
                                       <p className="mt-1">Consulta informativa: confirma el estado y vencimiento según el procedimiento del almacén.</p>
                                     </div>
                                   )}
