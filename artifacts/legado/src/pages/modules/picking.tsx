@@ -68,6 +68,8 @@ interface PickingOrderItem {
   productName: string;
   quantity: number;
   pickedQuantity: number;
+  unit: string;
+  weighings: Array<{ id: string; quantity: number; lot: string; recordedByName: string | null; createdAt: string }>;
   location?: string;
   warehouse?: string;
   zone?: string;
@@ -151,6 +153,8 @@ export default function PreparacionDePedidosPage() {
   // ── Scanner state (inline in detail) ─────────────────────────────────────────
   const [scannerItemId, setScannerItemId] = useState<string | null>(null);
   const [manualBarcode, setManualBarcode] = useState("");
+  const [weighedQuantity, setWeighedQuantity] = useState("");
+  const [weighedLot, setWeighedLot] = useState("");
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrCodeRef = useRef<any>(null);
 
@@ -205,17 +209,20 @@ export default function PreparacionDePedidosPage() {
   });
 
   const scanItemMutation = useMutation({
-    mutationFn: ({ itemId, barcode }: { itemId: string; barcode: string }) =>
+    mutationFn: ({ itemId, barcode, quantity, lot }: { itemId: string; barcode: string; quantity: number; lot: string }) =>
       api(`/api/picking/items/${itemId}/scan`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ barcode }),
+        body: JSON.stringify({ barcode, quantity, lot }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/picking/orders"] });
-      toast({ title: "Item escaneado", description: "Producto registrado como picking completado." });
+      toast({ title: "Pesaje registrado", description: "Se guardaron la cantidad y el lote." });
       setScannerItemId(null);
       setManualBarcode("");
+      setWeighedQuantity("");
+      setWeighedLot("");
+      if (html5QrCodeRef.current) { html5QrCodeRef.current.stop().catch(() => {}); html5QrCodeRef.current = null; }
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -260,7 +267,7 @@ export default function PreparacionDePedidosPage() {
     setSelectedProducts((prev) =>
       prev.map((p) =>
         p.productId === productId
-          ? { ...p, quantity: Math.max(1, qty) }
+          ? { ...p, quantity: Math.max(0.001, qty) }
           : p
       )
     );
@@ -282,6 +289,8 @@ export default function PreparacionDePedidosPage() {
   const startInlineScanner = useCallback(async (itemId: string) => {
     setScannerItemId(itemId);
     setManualBarcode("");
+    setWeighedQuantity("");
+    setWeighedLot("");
 
     try {
       const { Html5Qrcode } = await import("html5-qrcode");
@@ -311,7 +320,7 @@ export default function PreparacionDePedidosPage() {
         { facingMode: "environment" },
         { fps: 10, qrbox: { width: 200, height: 200 } },
         (decodedText: string) => {
-          scanItemMutation.mutate({ itemId, barcode: decodedText });
+          setManualBarcode(decodedText);
           html5QrCode.stop().catch(() => {});
         },
         () => {}
@@ -347,8 +356,12 @@ export default function PreparacionDePedidosPage() {
   }, []);
 
   const handleManualScan = (itemId: string) => {
-    if (!manualBarcode.trim()) return;
-    scanItemMutation.mutate({ itemId, barcode: manualBarcode.trim() });
+    const quantity = Number(weighedQuantity);
+    if (!manualBarcode.trim() || !weighedLot.trim() || !Number.isFinite(quantity) || quantity <= 0) {
+      toast({ title: "Datos incompletos", description: "Ingresa el código, el lote y una cantidad mayor que cero.", variant: "destructive" });
+      return;
+    }
+    scanItemMutation.mutate({ itemId, barcode: manualBarcode.trim(), quantity, lot: weighedLot.trim() });
   };
 
   // ── Tab helpers ──────────────────────────────────────────────────────────────
@@ -459,9 +472,10 @@ export default function PreparacionDePedidosPage() {
                           <TableCell className="text-right">
                             <input
                               type="number"
-                              min={1}
+                              min={0.001}
+                              step={0.001}
                               value={item.quantity}
-                              onChange={(e) => updateQuantity(item.productId, parseInt(e.target.value) || 1)}
+                              onChange={(e) => updateQuantity(item.productId, parseFloat(e.target.value) || 0.001)}
                               className="w-20 h-8 text-center text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/40"
                             />
                           </TableCell>
@@ -770,7 +784,7 @@ export default function PreparacionDePedidosPage() {
                                     {item.productCode}
                                   </span>
                                   <span className="text-xs text-slate-400">
-                                    Cant: {item.quantity}
+                                    Preparado: {item.pickedQuantity} / {item.quantity} {item.unit}
                                   </span>
                                   {item.scanned && item.scannedAt && (
                                     <span className="text-xs text-emerald-600 flex items-center gap-0.5">
@@ -809,10 +823,16 @@ export default function PreparacionDePedidosPage() {
                               </div>
                             </div>
 
+                            {item.weighings?.length > 0 && (
+                              <ul className="mt-2 space-y-1 text-xs text-slate-600" aria-label="Pesajes registrados">
+                                {item.weighings.map(w => <li key={w.id}>Lote {w.lot} · {w.quantity} {item.unit} · {w.recordedByName ?? "Usuario"} · {new Date(w.createdAt).toLocaleString("es-PE")}</li>)}
+                              </ul>
+                            )}
+                            {item.pickedQuantity > 0 && !item.weighings?.length && <p className="mt-2 text-xs text-amber-800">Registro anterior sin detalle de pesajes o lote.</p>}
                             {/* Inline scanner */}
                             {scannerItemId === item.id && (
                               <div className="mt-3 pt-3 border-t border-slate-100">
-                                <p className="mb-2 text-xs text-amber-800">Al escanear se confirma la línea completa. Verifica la cantidad físicamente antes de continuar.</p>
+                                <p className="mb-2 text-xs text-slate-600">Escanea el producto y registra la cantidad realmente pesada y el lote. Pendiente: {Math.max(0, Math.round((item.quantity - item.pickedQuantity) * 1000) / 1000)} {item.unit}.</p>
                                 <div
                                   ref={scannerItemId === item.id ? scannerRef : undefined}
                                   id={`picking-scanner-${item.id}`}
@@ -823,7 +843,7 @@ export default function PreparacionDePedidosPage() {
                                     <Scan className="w-6 h-6 animate-pulse" />
                                   </div>
                                 </div>
-                                <div className="flex gap-2 mt-2">
+                                <div className="grid gap-2 sm:grid-cols-2 mt-2">\n                                  <label className="text-xs text-slate-600">Cantidad pesada ({item.unit})<Input aria-label="Cantidad pesada" type="number" min="0.001" step="0.001" value={weighedQuantity} onChange={e => setWeighedQuantity(e.target.value)} /></label>\n                                  <label className="text-xs text-slate-600">Lote<Input aria-label="Lote" value={weighedLot} onChange={e => setWeighedLot(e.target.value)} maxLength={120} /></label>\n                                </div>\n                                <div className="flex flex-wrap gap-2 mt-2">
                                   <input
                                     type="text"
                                     value={manualBarcode}
@@ -844,7 +864,7 @@ export default function PreparacionDePedidosPage() {
                                     ) : (
                                       <ArrowRight className="w-3 h-3" />
                                     )}
-                                    Validar
+                                    Registrar pesaje
                                   </Button>
                                   <Button
                                     variant="ghost"
