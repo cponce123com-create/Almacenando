@@ -55,7 +55,7 @@ interface Product {
   code: string;
   name: string;
   category: string;
-  stock: number;
+  warehouse: string;
   unit: string;
   location?: string;
 }
@@ -80,7 +80,8 @@ interface PickingOrderItem {
 
 interface PickingOrder {
   id: string;
-  orderNumber: string;
+  totalItems: number;
+  pickedItems: number;
   status: "pending" | "in_progress" | "completed" | "cancelled";
   items: PickingOrderItem[];
   createdAt: string;
@@ -93,7 +94,7 @@ interface OrderFormItem {
   productCode: string;
   productName: string;
   quantity: number;
-  maxStock: number;
+  unit: string;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
@@ -109,6 +110,19 @@ const api = async (path: string, opts?: RequestInit) => {
   }
   return res.json();
 };
+
+type Paginated<T> = { data: T[]; total: number; page: number; limit: number };
+
+async function fetchAllPages<T>(path: string): Promise<T[]> {
+  const first: Paginated<T> = await api(`${path}?page=1&limit=500`);
+  const rows = [...first.data];
+  for (let page = 2; rows.length < first.total; page++) {
+    const next: Paginated<T> = await api(`${path}?page=${page}&limit=500`);
+    if (!next.data.length) break;
+    rows.push(...next.data);
+  }
+  return rows;
+}
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "Pendiente", color: "#92400e", bg: "#fef3c7" },
@@ -141,20 +155,30 @@ export default function PreparacionDePedidosPage() {
   const html5QrCodeRef = useRef<any>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────────────
-  const { data: products = [] } = useQuery<Product[]>({
-    queryKey: ["/api/products"],
-    queryFn: () => api("/api/products"),
+  const { data: products = [], isError: productsError } = useQuery<Product[]>({
+    queryKey: ["/api/products", "picking"],
+    queryFn: () => fetchAllPages<Product>("/api/products"),
   });
 
-  const { data: orders = [], isLoading: ordersLoading } = useQuery<PickingOrder[]>({
+  const { data: orders = [], isLoading: ordersLoading, isError: ordersError } = useQuery<PickingOrder[]>({
     queryKey: ["/api/picking/orders"],
-    queryFn: () => api("/api/picking/orders"),
+    queryFn: () => fetchAllPages<PickingOrder>("/api/picking/orders"),
   });
 
-  const selectedOrder = useMemo(
-    () => orders.find((o) => o.id === selectedOrderId) ?? null,
-    [orders, selectedOrderId]
-  );
+  const detailQuery = useQuery({
+    queryKey: ["/api/picking/orders", selectedOrderId],
+    enabled: !!selectedOrderId,
+    queryFn: async () => {
+      const result = await api(`/api/picking/orders/${selectedOrderId}`);
+      return {
+        ...result.order,
+        items: result.items.map((item: PickingOrderItem & { pickedAt?: string }) => ({
+          ...item, scanned: item.pickedQuantity >= item.quantity, scannedAt: item.pickedAt,
+        })),
+      } as PickingOrder;
+    },
+  });
+  const selectedOrder = detailQuery.data ?? null;
 
   // ── Mutations ────────────────────────────────────────────────────────────────
   const createOrderMutation = useMutation({
@@ -206,7 +230,7 @@ export default function PreparacionDePedidosPage() {
         !term ||
         p.code.toLowerCase().includes(term) ||
         p.name.toLowerCase().includes(term) ||
-        p.category.toLowerCase().includes(term)
+        (p.category ?? "").toLowerCase().includes(term)
       );
     });
   }, [products, productSearch]);
@@ -216,7 +240,7 @@ export default function PreparacionDePedidosPage() {
       const existing = prev.find((p) => p.productId === product.id);
       if (existing) {
         return prev.map((p) =>
-          p.productId === product.id ? { ...p, quantity: Math.min(p.quantity + 1, p.maxStock) } : p
+          p.productId === product.id ? { ...p, quantity: p.quantity + 1 } : p
         );
       }
       return [
@@ -226,7 +250,7 @@ export default function PreparacionDePedidosPage() {
           productCode: product.code,
           productName: product.name,
           quantity: 1,
-          maxStock: product.stock,
+          unit: product.unit,
         },
       ];
     });
@@ -236,7 +260,7 @@ export default function PreparacionDePedidosPage() {
     setSelectedProducts((prev) =>
       prev.map((p) =>
         p.productId === productId
-          ? { ...p, quantity: Math.max(1, Math.min(qty, p.maxStock)) }
+          ? { ...p, quantity: Math.max(1, qty) }
           : p
       )
     );
@@ -336,7 +360,7 @@ export default function PreparacionDePedidosPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-6 p-4 md:p-6">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -394,6 +418,8 @@ export default function PreparacionDePedidosPage() {
                 </Button>
               </div>
 
+              {productsError && <p role="alert" className="mb-3 text-sm text-red-700">No se pudo cargar el catálogo. Actualiza la página o vuelve a intentarlo.</p>}
+              <p className="mb-3 text-xs text-slate-500">El catálogo no confirma stock disponible; consulta el saldo antes de preparar.</p>
               {selectedProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
                   <Package className="w-10 h-10" />
@@ -415,7 +441,7 @@ export default function PreparacionDePedidosPage() {
                       <TableRow className="bg-slate-50">
                         <TableHead className="font-semibold text-slate-600 w-24">Código</TableHead>
                         <TableHead className="font-semibold text-slate-600">Producto</TableHead>
-                        <TableHead className="font-semibold text-slate-600 w-24 text-right">Stock Disp.</TableHead>
+                        <TableHead className="font-semibold text-slate-600 w-24 text-right">Unidad</TableHead>
                         <TableHead className="font-semibold text-slate-600 w-24 text-right">Cantidad</TableHead>
                         <TableHead className="font-semibold text-slate-600 w-16"></TableHead>
                       </TableRow>
@@ -428,13 +454,12 @@ export default function PreparacionDePedidosPage() {
                           </TableCell>
                           <TableCell className="text-sm text-slate-800">{item.productName}</TableCell>
                           <TableCell className="text-right text-sm text-slate-500">
-                            {item.maxStock}
+                            {item.unit}
                           </TableCell>
                           <TableCell className="text-right">
                             <input
                               type="number"
                               min={1}
-                              max={item.maxStock}
                               value={item.quantity}
                               onChange={(e) => updateQuantity(item.productId, parseInt(e.target.value) || 1)}
                               className="w-20 h-8 text-center text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/40"
@@ -504,7 +529,7 @@ export default function PreparacionDePedidosPage() {
                           <div className="flex items-center gap-2 mt-0.5">
                             <span className="font-mono text-xs text-slate-500">{p.code}</span>
                             <Badge variant="outline" className="text-xs">{p.category}</Badge>
-                            <span className="text-xs text-slate-400">Stock: {p.stock}</span>
+                            <span className="text-xs text-slate-400">{p.warehouse} · {p.unit}</span>
                           </div>
                         </div>
                         <Button
@@ -512,7 +537,6 @@ export default function PreparacionDePedidosPage() {
                           size="sm"
                           className="ml-3 flex-shrink-0"
                           onClick={() => addProduct(p)}
-                          disabled={p.stock <= 0}
                         >
                           {isSelected ? (
                             <>
@@ -522,7 +546,7 @@ export default function PreparacionDePedidosPage() {
                           ) : (
                             <Plus className="w-3.5 h-3.5 mr-1" />
                           )}
-                          {p.stock > 0 ? "Agregar" : "Sin stock"}
+                          {isSelected ? "Agregar otro" : "Agregar"}
                         </Button>
                       </div>
                     );
@@ -541,7 +565,7 @@ export default function PreparacionDePedidosPage() {
         {/* ── TAB: Orders ──────────────────────────────────────────────────────── */}
         {tab === "orders" && (
           <div className="bg-white rounded-xl border border-slate-100 overflow-hidden">
-            {ordersLoading ? (
+            {ordersError ? <div role="alert" className="p-6 text-sm text-red-700">No se pudieron cargar las órdenes. Vuelve a intentarlo.</div> : ordersLoading ? (
               <div className="flex items-center justify-center py-16 gap-3 text-slate-500">
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Cargando órdenes...
@@ -575,13 +599,13 @@ export default function PreparacionDePedidosPage() {
                   </TableHeader>
                   <TableBody>
                     {orders.map((order) => {
-                      const totalItems = order.items?.length ?? 0;
-                      const pickedItems = order.items?.filter((i) => i.scanned).length ?? 0;
+                      const totalItems = order.totalItems ?? 0;
+                      const pickedItems = order.pickedItems ?? 0;
                       const cfg = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending;
                       return (
                         <TableRow key={order.id} className="hover:bg-slate-50/70">
                           <TableCell className="font-mono text-xs font-medium text-slate-800">
-                            {order.orderNumber}
+                            {order.id.slice(0, 8)}
                           </TableCell>
                           <TableCell>
                             <span
@@ -653,7 +677,7 @@ export default function PreparacionDePedidosPage() {
                     <div>
                       <div className="flex items-center gap-3">
                         <h2 className="text-lg font-bold text-slate-900">
-                          Orden #{selectedOrder.orderNumber}
+                          Orden #{selectedOrder.id.slice(0, 8)}
                         </h2>
                         {(() => {
                           const cfg = STATUS_CONFIG[selectedOrder.status] ?? STATUS_CONFIG.pending;
@@ -787,6 +811,7 @@ export default function PreparacionDePedidosPage() {
                             {/* Inline scanner */}
                             {scannerItemId === item.id && (
                               <div className="mt-3 pt-3 border-t border-slate-100">
+                                <p className="mb-2 text-xs text-amber-800">Al escanear se confirma la línea completa. Verifica la cantidad físicamente antes de continuar.</p>
                                 <div
                                   ref={scannerItemId === item.id ? scannerRef : undefined}
                                   id={`picking-scanner-${item.id}`}
