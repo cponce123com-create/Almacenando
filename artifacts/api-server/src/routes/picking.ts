@@ -400,7 +400,7 @@ router.put(
       }).where(eq(pickOrdersTable.id, found.orderId));
       return { item: updated, orderCompleted: completed, orderStatus: completed ? "completed" : "in_progress", productName: product.name } as const;
     });
-    if ("error" in result) { res.status(result.status).json({ error: result.error }); return; }
+    if ("error" in result) { res.status(result.status ?? 500).json({ error: result.error }); return; }
     void writeAuditLog({
       userId: authedReq.userId, action: "update", resource: "pick_items", resourceId: id,
       details: { orderId: found.orderId, productName: result.productName, quantity, lot, action: "weighing_recorded" }, ipAddress: req.ip,
