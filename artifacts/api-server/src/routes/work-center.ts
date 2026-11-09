@@ -59,14 +59,14 @@ router.get("/summary", requireAuth, asyncHandler(async (req, res) => {
 
   const payload = run?.payload as { rows?: unknown[]; config?: unknown } | null;
   const availabilityRows = (payload?.rows ?? []) as Array<Record<string, unknown>>;
-  const allPurchaseCandidates = availabilityRows.map(row => {
+  const allPurchaseCandidates = (warehouse === "Q1" ? availabilityRows : []).map(row => {
     const availability = Number(row.availability ?? 0) || 0;
     const consumptionTwoDays = Number(row.consumptionTwoDays ?? 0) || 0;
     const dailyConsumption = Math.max(0, consumptionTwoDays / 2);
     const recommendation = Math.max(0, dailyConsumption * 7 - availability);
     return { code: String(row.code ?? ""), description: String(row.description ?? ""), unit: String(row.unit ?? ""), availability, dailyConsumption, recommendation };
-  }).filter(row => row.recommendation > 0).sort((a, b) => a.availability - b.availability);
-  const purchaseCandidates = allPurchaseCandidates.slice(0, 100);
+  }).sort((a, b) => a.availability - b.availability);
+  const purchaseCandidates = allPurchaseCandidates;
 
   res.json({
     warehouse,
@@ -76,7 +76,7 @@ router.get("/summary", requireAuth, asyncHandler(async (req, res) => {
     cycleAlerts: cycleAlerts.rows,
     incidents: incidents.rows,
     counts: {
-      purchaseCandidates: allPurchaseCandidates.length,
+      purchaseCandidates: allPurchaseCandidates.filter(row => row.recommendation > 0).length,
       pendingCounts: Number((cycleStats.rows as Array<{ status: string; total: number }>).find(row => row.status === "pending")?.total ?? 0),
       cycleAlerts: cycleAlerts.rows.length,
       incidents: incidents.rows.length,
