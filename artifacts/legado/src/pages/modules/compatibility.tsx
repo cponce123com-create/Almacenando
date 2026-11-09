@@ -386,7 +386,7 @@ function MatrizONUDialog({
             Matriz de Compatibilidad ONU / SGA
           </DialogTitle>
           <p className="text-xs text-slate-500 mt-1">
-            Fuente: Anexo 1 – Guía de almacenamiento químico mixto · Sistema Globalmente Armonizado (SGA) de Naciones Unidas.
+            Matriz orientativa incorporada en la aplicación; su correspondencia con normas y fichas de productos debe ser verificada.
             Esta matriz indica compatibilidad entre <strong>clases de riesgo UN</strong>; para compatibilidad individual siempre consultá la MSDS (sección 10 y 14).
           </p>
           {highlightCat && highlightIdx >= 0 && (
@@ -404,7 +404,7 @@ function MatrizONUDialog({
         {/* Leyenda */}
         <div className="flex flex-wrap gap-4 text-xs mt-1 mb-3">
           <span className="flex items-center gap-1.5 text-emerald-700">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Compatible (pueden almacenarse juntos — verificar MSDS)
+            <CheckCircle2 className="w-3.5 h-3.5" /> Referencia de compatibilidad (verificar fichas y procedimiento)
           </span>
           <span className="flex items-center gap-1.5 text-amber-600">
             <AlertCircle className="w-3.5 h-3.5" /> Precaución (posibles restricciones — revisar incompatibilidades individuales)
@@ -785,6 +785,9 @@ export default function CompatibilityPage() {
   return (
     <AppLayout>
       <div className="p-6 max-w-full">
+        <div role="alert" className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          Información orientativa: las categorías, la matriz y la IA no confirman la compatibilidad de productos específicos. Antes de almacenarlos juntos, consulte sus fichas de datos de seguridad y el procedimiento de la planta; solicite revisión técnica cuando corresponda.
+        </div>
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">

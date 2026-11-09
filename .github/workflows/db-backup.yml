@@ -11,10 +11,18 @@ on:
         description: '¿Restaurar desde el último backup? (escribe "true" para confirmar)'
         required: false
         default: "false"
+      backup_run_id:
+        description: "ID de la ejecución que contiene el respaldo (obligatorio para restaurar)"
+        required: false
+        default: ""
       backup_filename:
         description: "Nombre del archivo de backup a restaurar (ej: backup_2026-05-25.dump). Déjalo vacío para usar el más reciente."
         required: false
         default: ""
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   backup:
@@ -45,32 +53,50 @@ jobs:
       # y escribe "true" en el input "restore".
       # ADVERTENCIA: Esto sobreescribe la base de datos actual. Úsalo con cuidado.
       # -----------------------------------------------------------------------
-      - name: Download latest backup artifact (for restore)
+      - name: Validate backup run for restore
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.restore == 'true'
+        env:
+          BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+        run: |
+          if ! [[ "$BACKUP_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Indica el ID numérico de la ejecución de respaldo a restaurar."
+            exit 1
+          fi
+
+      - name: Download backup artifact (for restore)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.restore == 'true'
         uses: actions/download-artifact@v4
         with:
           name: backup-db-latest
           path: ./restore
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.backup_run_id }}
 
       - name: Restore from backup
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.restore == 'true'
         run: |
           echo "⚠️  RESTAURANDO BASE DE DATOS — esto sobreescribirá todos los datos actuales."
-          BACKUP_FILE="${{ github.event.inputs.backup_filename }}"
-          if [ -z "$BACKUP_FILE" ]; then
-            BACKUP_FILE=$(ls -t restore/*.dump 2>/dev/null | head -1)
+          if [ -n "$BACKUP_FILENAME" ]; then
+            if [[ "$BACKUP_FILENAME" != "$(basename "$BACKUP_FILENAME")" || "$BACKUP_FILENAME" != *.dump ]]; then
+              echo "::error::Nombre de archivo inválido."
+              exit 1
+            fi
+            BACKUP_FILE="restore/$BACKUP_FILENAME"
+          else
+            BACKUP_FILE=$(find restore -maxdepth 1 -type f -name '*.dump' -print -quit)
           fi
-          if [ -z "$BACKUP_FILE" ]; then
+          if [ -z "$BACKUP_FILE" ] || [ ! -f "$BACKUP_FILE" ]; then
             echo "❌ No se encontró ningún archivo de backup para restaurar."
             exit 1
           fi
           echo "Restaurando desde: $BACKUP_FILE"
-          pg_restore --no-owner --no-acl --clean --if-exists 
-            --dbname="$DATABASE_URL" 
+          pg_restore --no-owner --no-acl --clean --if-exists --single-transaction --exit-on-error \
+            --dbname="$DATABASE_URL" \
             "$BACKUP_FILE"
           echo "✅ Restauración completada."
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_FILENAME: ${{ inputs.backup_filename }}
 
       - name: Notify on failure
         if: failure()

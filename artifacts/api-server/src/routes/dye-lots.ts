@@ -147,11 +147,16 @@ router.post("/", requireAuth, requireRole("supervisor", "admin", "quality", "ope
   }
 
   const { notifyEmails, ...lotData } = parsed.data;
+  if (authedReq.userRole === "operator" && lotData.qualityStatus !== "pending") {
+    res.status(403).json({ error: "Solo calidad o supervisión puede aprobar o rechazar un lote." });
+    return;
+  }
   const id = generateId();
   const [created] = await db.insert(dyeLotsTable).values({
     id,
     ...lotData,
     registeredBy: authedReq.userId,
+    ...(lotData.qualityStatus === "approved" ? { approvedBy: authedReq.userId, approvedAt: new Date() } : {}),
   }).returning();
 
   res.status(201).json(created);
@@ -209,9 +214,9 @@ router.put("/:id", requireAuth, requireRole("supervisor", "admin", "quality"), a
   const { notifyEmails, ...updateFields } = parsed.data as typeof parsed.data & { notifyEmails?: string[] };
 
   const updateData: Record<string, unknown> = { ...updateFields, updatedAt: new Date() };
-  if (updateFields.qualityStatus === "approved") {
-    updateData.approvedBy = authedReq.userId;
-    updateData.approvedAt = new Date();
+  if (updateFields.qualityStatus && updateFields.qualityStatus !== before.qualityStatus) {
+    updateData.approvedBy = updateFields.qualityStatus === "approved" ? authedReq.userId : null;
+    updateData.approvedAt = updateFields.qualityStatus === "approved" ? new Date() : null;
   }
 
   const [updated] = await db.update(dyeLotsTable).set(updateData).where(eq(dyeLotsTable.id, id as string)).returning();
