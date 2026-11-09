@@ -54,3 +54,14 @@ describe("Consulta informativa del lote", () => {
     expect(res.body.matches).toEqual([{ id: "l1", lotNumber: "L1", qualityStatus: "pending", expirationDate: "2027-01-01" }]);
   });
 });
+
+describe("Anulación de pesajes", () => {
+  it("impide anular a un operador", async () => {
+    const res = await request(app).post("/picking/weighings/w1/void").set("x-role", "operator").send({ reason: "Peso equivocado" });
+    expect(res.status).toBe(403);
+  });
+  it("exige motivo al supervisor", async () => {
+    const res = await request(app).post("/picking/weighings/w1/void").set("x-role", "supervisor").send({ reason: "mal" });
+    expect(res.status).toBe(400);
+  });
+});
