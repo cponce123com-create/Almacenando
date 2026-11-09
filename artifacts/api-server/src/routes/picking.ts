@@ -5,6 +5,7 @@ import {
   pickOrdersTable,
   pickItemsTable,
   pickItemWeighingsTable,
+  dyeLotsTable,
   productsTable,
   locationsTable,
   usersTable,
@@ -333,6 +334,24 @@ router.get(
     res.json(items);
   }),
 );
+
+// Consulta informativa: un lote puede tener varios registros y su ausencia
+// en este módulo no demuestra que el lote no exista físicamente.
+router.get("/items/:id/lot-check", requireAuth, asyncHandler(async (req, res) => {
+  const lot = typeof req.query.lot === "string" ? req.query.lot.trim().slice(0, 120) : "";
+  if (!lot) { res.status(400).json({ error: "Ingresa el número de lote." }); return; }
+  const [item] = await db.select({ productId: pickItemsTable.productId })
+    .from(pickItemsTable).where(eq(pickItemsTable.id, String(req.params.id))).limit(1);
+  if (!item) { res.status(404).json({ error: "Ítem de picking no encontrado." }); return; }
+  const matches = await db.select({
+    id: dyeLotsTable.id, lotNumber: dyeLotsTable.lotNumber,
+    qualityStatus: dyeLotsTable.qualityStatus, expirationDate: dyeLotsTable.expirationDate,
+  }).from(dyeLotsTable).where(and(
+    eq(dyeLotsTable.productId, item.productId),
+    sql`lower(trim(${dyeLotsTable.lotNumber})) = lower(${lot})`,
+  )).orderBy(desc(dyeLotsTable.createdAt)).limit(50);
+  res.json({ matches });
+}));
 
 // ── Scan Item ────────────────────────────────────────────────────────────────
 
