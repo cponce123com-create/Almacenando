@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, desc, asc, and, count, inArray } from "drizzle-orm";
+import { eq, desc, asc, and, count, inArray, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   pickOrdersTable,
@@ -72,7 +72,18 @@ router.get(
         .offset(offset),
     ]);
 
-    res.json({ data: orders, total: countResult[0]?.total ?? 0, page, limit });
+    const orderIds = orders.map(order => order.id);
+    const progress = orderIds.length ? await db.select({
+      orderId: pickItemsTable.orderId,
+      totalItems: count(),
+      pickedItems: sql<number>`count(*) filter (where ${pickItemsTable.pickedQuantity} >= ${pickItemsTable.quantity})::int`,
+    }).from(pickItemsTable).where(inArray(pickItemsTable.orderId, orderIds)).groupBy(pickItemsTable.orderId) : [];
+    const progressByOrder = new Map(progress.map(row => [row.orderId, row]));
+    res.json({ data: orders.map(order => ({
+      ...order,
+      totalItems: progressByOrder.get(order.id)?.totalItems ?? 0,
+      pickedItems: progressByOrder.get(order.id)?.pickedItems ?? 0,
+    })), total: countResult[0]?.total ?? 0, page, limit });
   }),
 );
 
@@ -316,6 +327,7 @@ router.get(
 router.put(
   "/items/:id/scan",
   requireAuth,
+  requireRole("admin", "supervisor", "operator"),
   asyncHandler(async (req, res) => {
     const id = req.params.id as string;
 

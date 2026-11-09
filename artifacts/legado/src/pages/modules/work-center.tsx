@@ -64,13 +64,27 @@ export default function WorkCenterPage() {
     "", "Código | Producto | Disponible | Cantidad solicitada | UM",
     ...selectedCandidates.map(row => `${row.code} | ${row.description} | ${fmt(row.availability)} | ${quantities[row.code] || row.recommendation} | ${row.unit}`),
   ].join("\n");
+  const validateRequest = () => {
+    const invalid = selectedCandidates.find(row => {
+      const value = quantities[row.code];
+      return value !== undefined && value.trim() !== "" && (!Number.isFinite(Number(value)) || Number(value) <= 0);
+    });
+    if (invalid) { toast({ title: "Cantidad inválida", description: `Ingresa una cantidad mayor que cero para ${invalid.code}.`, variant: "destructive" }); return false; }
+    return true;
+  };
   const copyRequest = async () => {
     if (!selectedCandidates.length) { toast({ title: "Selecciona productos", description: "Marca al menos un producto para preparar la solicitud." }); return; }
-    await navigator.clipboard.writeText(requestText());
-    toast({ title: "Solicitud copiada", description: `${selectedCandidates.length} productos listos para pegar en el correo.` });
+    if (!validateRequest()) return;
+    try {
+      await navigator.clipboard.writeText(requestText());
+      toast({ title: "Solicitud copiada", description: `${selectedCandidates.length} productos listos para pegar en el correo.` });
+    } catch {
+      toast({ title: "No se pudo copiar", description: "Revisa los permisos del portapapeles e inténtalo de nuevo.", variant: "destructive" });
+    }
   };
   const openEmail = () => {
     if (!selectedCandidates.length) { toast({ title: "Selecciona productos", description: "Marca al menos un producto para preparar el correo." }); return; }
+    if (!validateRequest()) return;
     window.location.href = `mailto:?subject=${encodeURIComponent(`Solicitud de abastecimiento · ${warehouse} · ${new Date().toLocaleDateString("es-PE")}`)}&body=${encodeURIComponent(requestText())}`;
   };
   const searchTrace = (event: React.FormEvent) => { event.preventDefault(); setTraceQuery(traceTerm.trim()); };
@@ -103,7 +117,7 @@ export default function WorkCenterPage() {
 
         <section className="rounded-xl border bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b p-4 lg:flex-row lg:items-center lg:justify-between">
-            <div><h2 className="flex items-center gap-2 font-semibold text-slate-900"><Package className="h-5 w-5 text-violet-700" /> Solicitud de compra sugerida · Q1</h2><p className="mt-1 text-xs text-slate-500">Estimación editable para 7 días: consumo diario × 7 menos disponibilidad de la última extracción. Revisa la fecha de actualización y el plazo real de reposición.</p></div>
+            <div><h2 className="flex items-center gap-2 font-semibold text-slate-900"><Package className="h-5 w-5 text-violet-700" /> Solicitud de compra sugerida · Q1</h2><p className="mt-1 text-xs text-slate-500">Estimación editable: consumo diario × días de cobertura menos disponibilidad de la última extracción. Revisa la fecha de actualización y el plazo real de reposición.</p></div>
             <div className="flex flex-wrap items-center gap-2">
               <label className="text-xs text-slate-600">Cobertura
                 <select value={coverageDays} onChange={e => setCoverageDays(Number(e.target.value))} className="ml-2 h-9 rounded-md border bg-white px-2 text-sm">
@@ -115,10 +129,10 @@ export default function WorkCenterPage() {
               <Button size="sm" onClick={openEmail} disabled={!selectedCandidates.length} className="bg-teal-700 hover:bg-teal-800"><Mail className="mr-1.5 h-4 w-4" />Preparar correo</Button>
             </div>
           </div>
-          {candidates.length === 0 ? <div className="p-8 text-center text-sm text-slate-500">No hay análisis de Disponibilidad. Actualiza primero la sección <Link className="text-teal-700 underline" href="/availability">Disponibilidad</Link>.</div> : <div className="max-h-[420px] overflow-auto">
+          {warehouse !== "Q1" ? <div className="p-8 text-center text-sm text-slate-500">Las recomendaciones de Disponibilidad corresponden al almacén Q1. Selecciona Q1 para consultarlas.</div> : !summary.updatedAt ? <div className="p-8 text-center text-sm text-slate-500">No hay análisis de Disponibilidad. Actualiza primero la sección <Link className="text-teal-700 underline" href="/availability">Disponibilidad</Link>.</div> : candidates.length === 0 ? <div className="p-8 text-center text-sm text-slate-500">No hay productos sugeridos para esta cobertura.</div> : <div className="max-h-[420px] overflow-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead className="sticky top-0 bg-slate-100 text-left text-xs text-slate-600"><tr><th className="p-3">Pedir</th><th className="p-3">Código / producto</th><th className="p-3 text-right">Disponible</th><th className="p-3 text-right">Consumo/día</th><th className="p-3 text-right">Sugerencia</th><th className="p-3">Cantidad solicitud</th></tr></thead>
-              <tbody>{candidates.slice(0, 50).map(row => <tr key={row.code} className="border-t hover:bg-slate-50">
+              <tbody>{candidates.map(row => <tr key={row.code} className="border-t hover:bg-slate-50">
                 <td className="p-3"><input type="checkbox" checked={selected.has(row.code)} onChange={e => setSelected(prev => { const next = new Set(prev); e.target.checked ? next.add(row.code) : next.delete(row.code); return next; })} aria-label={`Incluir ${row.code}`} /></td>
                 <td className="p-3"><b className="font-mono text-xs">{row.code}</b><div className="max-w-md truncate text-xs text-slate-600" title={row.description}>{row.description}</div></td>
                 <td className={`p-3 text-right font-semibold ${row.availability < 0 ? "text-red-700" : "text-slate-700"}`}>{fmt(row.availability)} {row.unit}</td>
@@ -127,7 +141,6 @@ export default function WorkCenterPage() {
                 <td className="p-3"><Input className="h-8 w-32" type="number" min="0" step="0.01" value={quantities[row.code] ?? ""} onChange={e => setQuantities(current => ({ ...current, [row.code]: e.target.value }))} placeholder={fmt(row.recommendation)} /></td>
               </tr>)}</tbody>
             </table>
-            {candidates.length > 50 && <div className="p-3 text-center text-xs text-slate-500">Mostrando 50 de {candidates.length}; revisa el resto en Disponibilidad.</div>}
           </div>}
           <div className="border-t bg-amber-50 px-4 py-2 text-xs text-amber-900">La cantidad sugerida es una referencia: revisa órdenes, reservas y necesidades de producción antes de enviarla.</div>
         </section>
