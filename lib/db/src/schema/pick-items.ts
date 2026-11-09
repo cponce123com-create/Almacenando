@@ -32,5 +32,8 @@ export const pickItemWeighingsTable = pgTable("pick_item_weighings", {
   quantity: doublePrecision("quantity").notNull(),
   lot: text("lot").notNull(),
   recordedBy: text("recorded_by").notNull().references(() => usersTable.id),
+  voidedAt: timestamp("voided_at"),
+  voidedBy: text("voided_by").references(() => usersTable.id),
+  voidReason: text("void_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, table => [index("pick_item_weighings_item_id_idx").on(table.itemId)]);
